@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  voice-ai:
+    build: .
+    container_name: dragbizz_voice_ai
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=False
+      - MONGODB_URI=mongodb://mongo:27017
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - RETAILER_SERVICE_URL=http://retailer-service:3002/api
+      - AUTH_SERVICE_URL=http://auth-service:3001/auth
+    volumes:
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - dragbizz-network
+
+  mongo:
+    image: mongo:7
+    container_name: dragbizz_voice_mongo
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - dragbizz-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: dragbizz_voice_redis
+    ports:
+      - "6380:6379"
+    networks:
+      - dragbizz-network
+
+volumes:
+  mongo_data:
+
+networks:
+  dragbizz-network:
+    external: true
