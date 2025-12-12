@@ -1,49 +1,51 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Setup script for DragBizz Voice AI Service
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$PROJECT_ROOT"
 
-echo "🚀 Setting up DragBizz Voice AI Service..."
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+VENV_DIR="${VENV_DIR:-env}"
 
-# Check if venv exists
-if [ ! -d "venv" ]; then
-    echo "📦 Creating virtual environment..."
-    python3 -m venv venv
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  printf "Error: %s not found. Please install Python 3.\n" "$PYTHON_BIN" >&2
+  exit 1
 fi
 
-# Activate virtual environment
-echo "✅ Activating virtual environment..."
-source venv/bin/activate
+if [ ! -d "$VENV_DIR" ]; then
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+fi
 
-# Upgrade pip
-echo "⬆️ Upgrading pip..."
+# shellcheck disable=SC1090
+source "$VENV_DIR/bin/activate"
+
+pip install --upgrade pip
+pip install -r requirements.txt
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$PROJECT_ROOT"
+
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+VENV_DIR="${VENV_DIR:-env}"
+
+echo "Using python: $PYTHON_BIN"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "Error: $PYTHON_BIN not found. Please install Python 3." >&2
+  exit 1
+fi
+
+if [ ! -d "$VENV_DIR" ]; then
+  echo "Creating virtual environment at $PROJECT_ROOT/$VENV_DIR"
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+else
+  echo "Virtual environment already exists at $PROJECT_ROOT/$VENV_DIR"
+fi
+
+echo "Activating virtual environment"
+# shellcheck disable=SC1090
+source "$VENV_DIR/bin/activate"
+
+echo "Upgrading pip"
 pip install --upgrade pip
 
-# Install dependencies
-echo "📥 Installing dependencies..."
+echo "Installing Python dependencies"
 pip install -r requirements.txt
-
-# Create necessary directories
-echo "📁 Creating directories..."
-mkdir -p storage/audio
-mkdir -p logs
-
-# Copy .env.example to .env if .env doesn't exist
-if [ ! -f ".env" ]; then
-    echo "📝 Creating .env file from .env.example..."
-    if [ -f ".env.example" ]; then
-        cp .env.example .env
-        echo "⚠️  Please update .env file with your configuration!"
-    else
-        echo "⚠️  .env.example not found. Please create .env manually."
-    fi
-fi
-
-echo ""
-echo "✅ Setup complete!"
-echo ""
-echo "To activate virtual environment manually:"
-echo "  source venv/bin/activate"
-echo ""
-echo "To run the service:"
-echo "  uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
-echo ""

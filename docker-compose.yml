@@ -1,49 +1,35 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  voice-ai:
+  api:
     build: .
-    container_name: dragbizz_voice_ai
+    container_name: dragbizz-api
+    env_file:
+      - .env
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
-      - "8000:8000"
-    environment:
-      - DEBUG=False
-      - MONGODB_URI=mongodb://mongo:27017
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - RETAILER_SERVICE_URL=http://retailer-service:3002/api
-      - AUTH_SERVICE_URL=http://auth-service:3001/auth
-    volumes:
-      - ./storage:/app/storage
-      - ./logs:/app/logs
+      - "4003:8000"  # host:container
     depends_on:
       - mongo
       - redis
-    networks:
-      - dragbizz-network
 
   mongo:
-    image: mongo:7
-    container_name: dragbizz_voice_mongo
+    image: mongo:7.0
+    container_name: dragbizz-mongo
     ports:
-      - "27018:27017"
+      - "5003:27017"
     volumes:
       - mongo_data:/data/db
-    networks:
-      - dragbizz-network
 
   redis:
-    image: redis:7-alpine
-    container_name: dragbizz_voice_redis
+    image: redis:7.2-alpine
+    container_name: dragbizz-redis
     ports:
-      - "6380:6379"
-    networks:
-      - dragbizz-network
+      - "6003:6379"
+    volumes:
+      - redis_data:/data
 
 volumes:
   mongo_data:
+  redis_data:
 
-networks:
-  dragbizz-network:
-    external: true

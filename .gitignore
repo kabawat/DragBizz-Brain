@@ -1,42 +1,31 @@
-# Python
+# Byte-compiled / cache
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
 env/
 venv/
-ENV/
-.venv
 
-# Environment
+# Environment files
 .env
-.env.local
+.env.*
 
-# IDE
-.vscode/
+# Distribution / build
+build/
+dist/
+*.egg-info/
+
+# Tooling / editors
 .idea/
-*.swp
-*.swo
-
-# Logs
-logs/
-*.log
-
-# Storage
-storage/
-*.wav
-*.mp3
-*.webm
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
+.vscode/
+.cursor/
 
 # OS
 .DS_Store
-Thumbs.db
 
-# Docker
-.dockerignore
+# Node (if present)
+node_modules/
+
