@@ -7,26 +7,6 @@ cd "$PROJECT_ROOT"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENV_DIR="${VENV_DIR:-env}"
 
-if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
-  printf "Error: %s not found. Please install Python 3.\n" "$PYTHON_BIN" >&2
-  exit 1
-fi
-
-if [ ! -d "$VENV_DIR" ]; then
-  "$PYTHON_BIN" -m venv "$VENV_DIR"
-fi
-
-# shellcheck disable=SC1090
-source "$VENV_DIR/bin/activate"
-
-pip install --upgrade pip
-pip install -r requirements.txt
-PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$PROJECT_ROOT"
-
-PYTHON_BIN="${PYTHON_BIN:-python3}"
-VENV_DIR="${VENV_DIR:-env}"
-
 echo "Using python: $PYTHON_BIN"
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   echo "Error: $PYTHON_BIN not found. Please install Python 3." >&2

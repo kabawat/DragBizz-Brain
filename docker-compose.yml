@@ -11,27 +11,4 @@ services:
       - "4003:8000"  # host:container
     volumes:
       - ./:/app  # enable live reload by syncing source into container
-    depends_on:
-      - mongo
-      - redis
-
-  mongo:
-    image: mongo:7.0
-    container_name: dragbizz-mongo
-    ports:
-      - "5003:27017"
-    volumes:
-      - mongo_data:/data/db
-
-  redis:
-    image: redis:7.2-alpine
-    container_name: dragbizz-redis
-    ports:
-      - "6003:6379"
-    volumes:
-      - redis_data:/data
-
-volumes:
-  mongo_data:
-  redis_data:
 

@@ -14,14 +14,12 @@ class HttpClient:
         url: str,
         headers: Dict[str, str] | None = None,
         json: Dict[str, Any] | None = None,
-        data: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         try:
             response: Response = requests.post(
                 url=url,
                 headers=headers or {},
                 json=json,
-                data=data,
                 timeout=self.timeout,
             )
             response.raise_for_status()
@@ -30,5 +28,4 @@ class HttpClient:
             detail = resp.text if resp is not None else str(http_err)
             status = resp.status_code if resp is not None else 500
             raise HTTPException(status_code=status, detail=detail) from http_err
-
         return response.json()
