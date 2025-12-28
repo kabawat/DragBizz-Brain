@@ -1,13 +1,16 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 
-from app.controllers.customer_extract_controller import CustomerExtractController
-from app.models.customer import CustomerExtractRequest, CustomerExtractResponse
+from app.controllers.customer_chat_controller import chat_customer as chat_customer_controller
+from app.models.customer import CustomerChatRequest
+from app.middlewares.auth_middleware import verify_token
 
 router = APIRouter(tags=["customer"])
-controller = CustomerExtractController()
 
 
-@router.post("/extract", response_model=CustomerExtractResponse)
-def extract_customer(payload: CustomerExtractRequest):
-    return controller.extract(payload)
-
+@router.post("/chat")
+async def chat_customer(
+    request: Request,
+    payload: CustomerChatRequest,
+    user: dict = Depends(verify_token)
+):
+    return await chat_customer_controller(request, payload)

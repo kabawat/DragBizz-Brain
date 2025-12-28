@@ -1,12 +1,15 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 import json
 import re
+import logging
 
 from fastapi import HTTPException
 
 from app.config.settings import get_settings
 from app.models.customer import CustomerExtractRequest, CustomerExtractResponse, CustomerPayload
 from app.services.http import HttpClient
+
+logger = logging.getLogger(__name__)
 
 
 class CustomerExtractService:
@@ -18,31 +21,18 @@ class CustomerExtractService:
     FALLBACK_MODEL = "google/gemini-2.0-flash-exp:free"  # Free fallback
     SECONDARY_FALLBACK = "meta-llama/llama-3.2-3b-instruct:free"  # Another free option
     DEFAULT_TEMPERATURE = 0.1  # Low temperature for strict extraction
-    DEFAULT_MAX_TOKENS = 500
-    REQUEST_TIMEOUT = 30
+    DEFAULT_MAX_TOKENS = 400  # Reduced for cost savings (still sufficient for extraction)
     
-    # Optimized system prompt - strict extraction rules with consistent format
-    SYSTEM_PROMPT = """Extract customer data from prompt. Return ONLY valid JSON starting with { and ending with }. No markdown, no text outside JSON.
+    # Optimized system prompt - reduced tokens for cost savings
+    SYSTEM_PROMPT = """Extract customer data. Return JSON only.
 
-Schema:
-{
-  "name": string|null,
-  "phone": string|null (digits only),
-  "email": string|null (lowercase),
-  "store": string|null,
-  "companyDetails": {"gstin": string|null (uppercase), "companyName": string|null}|null,
-  "addresses": {
-    "billing": {"addressLine1", "city", "state", "pincode", "country", "label": string|null}|null,
-    "shipping": {"addressLine1", "city", "state", "pincode", "country", "label": string|null}|null
-  }|null,
-  "extractedFields": ["field1", ...]
-}
+Schema:{"name":str|null,"phone":str|null,"email":str|null,"store":str|null,"companyDetails":{"gstin":str|null,"companyName":str|null}|null,"addresses":{"billing":{"addressLine1","city","state","pincode","country","label":str|null}|null,"shipping":{"addressLine1","city","state","pincode","country","label":str|null}|null},"extractedFields":["field1"]}
 
-Rules: Extract only mentioned data. Use exact field names. Missing data = null. Return JSON only."""
+Rules: Extract only mentioned data. Missing=null. JSON only."""
 
-    def __init__(self, http_client: HttpClient | None = None, settings=None):
+    def __init__(self, http_client: Optional[HttpClient] = None, settings: Optional[Any] = None):
         self.settings = settings or get_settings()
-        self.http_client = http_client or HttpClient(timeout=self.REQUEST_TIMEOUT)
+        self.http_client = http_client or HttpClient(timeout=self.settings.ai_request_timeout)
 
     def _build_headers(self) -> Dict[str, str]:
         """Build headers for OpenRouter API request."""
@@ -58,15 +48,37 @@ Rules: Extract only mentioned data. Use exact field names. Missing data = null. 
     def _parse_ai_response(self, ai_response: Dict[str, Any]) -> Dict[str, Any]:
         """Parse AI response and extract JSON."""
         try:
-            content = ai_response.get("choices", [{}])[0].get("message", {}).get("content", "")
-            if not content:
-                raise ValueError("Empty response from AI")
+            # Validate response structure
+            if not isinstance(ai_response, dict):
+                raise ValueError("AI response is not a dictionary")
+            
+            choices = ai_response.get("choices", [])
+            if not choices or not isinstance(choices, list):
+                raise ValueError("No choices found in AI response")
+            
+            if not choices[0] or not isinstance(choices[0], dict):
+                raise ValueError("Invalid choice format in AI response")
+            
+            message = choices[0].get("message", {})
+            if not message or not isinstance(message, dict):
+                raise ValueError("Invalid message format in AI response")
+            
+            content = message.get("content", "")
+            if not content or not isinstance(content, str):
+                raise ValueError("Empty or invalid content in AI response")
             
             # Remove markdown if present (fallback for models that don't support json_object)
             json_str = re.sub(r'^```json\s*|^```\s*|\s*```$', '', content.strip())
-            return json.loads(json_str)
+            if not json_str:
+                raise ValueError("Empty JSON string after cleaning")
             
-        except (json.JSONDecodeError, KeyError, IndexError, ValueError) as e:
+            parsed = json.loads(json_str)
+            if not isinstance(parsed, dict):
+                raise ValueError("Parsed JSON is not a dictionary")
+            
+            return parsed
+            
+        except (json.JSONDecodeError, KeyError, IndexError, ValueError, TypeError) as e:
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to parse AI response: {str(e)}"
@@ -81,7 +93,7 @@ Rules: Extract only mentioned data. Use exact field names. Missing data = null. 
         if field_name not in fields:
             fields.append(field_name)
     
-    def _validate_extracted_data(self, extracted: Dict[str, Any]) -> tuple[Dict[str, Any], list[str]]:
+    def _validate_extracted_data(self, extracted: Dict[str, Any]) -> Tuple[Dict[str, Any], list[str]]:
         """Validate and clean extracted data."""
         payload = {}
         extracted_fields = extracted.get("extractedFields", []) if isinstance(extracted.get("extractedFields"), list) else []
@@ -92,19 +104,26 @@ Rules: Extract only mentioned data. Use exact field names. Missing data = null. 
                 payload[field] = str(extracted[field]).strip()
                 self._add_field(extracted_fields, field)
         
-        # Phone (remove non-digits)
+        # Phone (remove non-digits and validate)
         if self._is_valid_value(extracted.get("phone")):
             phone = re.sub(r'\D', '', str(extracted["phone"]))
-            if phone:
+            # Validate phone: 10-15 digits (international format)
+            if phone and 10 <= len(phone) <= 15:
                 payload["phone"] = phone
                 self._add_field(extracted_fields, "phone")
+            else:
+                logger.debug(f"Invalid phone number format: {extracted.get('phone')}")
         
-        # Email (lowercase)
+        # Email (validate format)
         if self._is_valid_value(extracted.get("email")):
             email = str(extracted["email"]).strip().lower()
-            if "@" in email:
+            # Basic email validation regex
+            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if re.match(email_pattern, email):
                 payload["email"] = email
                 self._add_field(extracted_fields, "email")
+            else:
+                logger.debug(f"Invalid email format: {extracted.get('email')}")
         
         # Company details
         company_details = extracted.get("companyDetails")
@@ -160,8 +179,9 @@ Rules: Extract only mentioned data. Use exact field names. Missing data = null. 
         
         return False
 
-    def extract_customer_data(self, request: CustomerExtractRequest) -> CustomerExtractResponse:
+    async def extract_customer_data(self, request: CustomerExtractRequest) -> CustomerExtractResponse:
         """Extract customer data from natural language prompt."""
+        logger.info(f"Extracting customer data from prompt (length: {len(request.prompt)})")
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {"role": "user", "content": f'Extract: "{request.prompt}"'}
@@ -171,6 +191,7 @@ Rules: Extract only mentioned data. Use exact field names. Missing data = null. 
         last_error = None
         
         for model in models_to_try:
+            logger.debug(f"Trying extraction with model: {model}")
             try:
                 request_data = {
                     "model": model,
@@ -179,15 +200,18 @@ Rules: Extract only mentioned data. Use exact field names. Missing data = null. 
                     "max_tokens": self.DEFAULT_MAX_TOKENS,
                     "response_format": {"type": "json_object"}
                 }
-                ai_response = self.http_client.post(
+                # Use cache for similar extraction requests (cost reduction)
+                ai_response = await self.http_client.post(
                     url=f"{self.BASE_URL}{self.CHAT_ENDPOINT}",
                     headers=self._build_headers(),
-                    json=request_data
+                    json=request_data,
+                    use_cache=True  # Cache AI responses to reduce API calls
                 )
                 
                 extracted = self._parse_ai_response(ai_response)
                 payload_dict, extracted_fields = self._validate_extracted_data(extracted)
                 
+                logger.info(f"Successfully extracted {len(extracted_fields)} fields: {extracted_fields}")
                 return CustomerExtractResponse(
                     success=True,
                     payload=CustomerPayload(**payload_dict),
@@ -198,10 +222,13 @@ Rules: Extract only mentioned data. Use exact field names. Missing data = null. 
             except HTTPException as e:
                 last_error = e
                 is_rate_limit = self._is_rate_limit_error(e)
+                logger.warning(f"AI API error with model {model}: {e.status_code} - {e.detail}")
                 
                 if is_rate_limit and model != models_to_try[-1]:
+                    logger.info(f"Rate limited on {model}, trying next model")
                     continue
                 elif is_rate_limit and model == models_to_try[-1]:
+                    logger.error("All AI models are rate-limited")
                     raise HTTPException(
                         status_code=429,
                         detail=f"All AI models are rate-limited. Please try again later."
@@ -209,6 +236,7 @@ Rules: Extract only mentioned data. Use exact field names. Missing data = null. 
                 else:
                     raise
         
+        logger.error(f"All extraction models failed. Last error: {last_error}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to get response from AI service: {str(last_error)}"

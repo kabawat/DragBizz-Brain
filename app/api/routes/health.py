@@ -1,20 +1,16 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter
 
-from app.controllers.health_controller import HealthController
-from app.models.health import HealthResponse, PongResponse
+from app.controllers.health_controller import get_health as get_health_controller, ping as ping_controller
 
 router = APIRouter()
-controller = HealthController()
 
 
-@router.get("/", response_model=HealthResponse, status_code=status.HTTP_200_OK)
-def get_health():
-    """Return a hello-style response to verify the service is running."""
-    return controller.get_health()
+@router.get("/")
+async def get_health():
+    return await get_health_controller()
 
 
-@router.get("/ping", response_model=PongResponse, status_code=status.HTTP_200_OK)
-def ping():
-    """Lightweight ping endpoint for uptime monitoring."""
-    return controller.ping()
+@router.get("/ping")
+async def ping():
+    return await ping_controller()
 

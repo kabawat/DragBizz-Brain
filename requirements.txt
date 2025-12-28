@@ -2,4 +2,7 @@ fastapi==0.115.4
 uvicorn[standard]==0.30.6
 pydantic-settings==2.6.1
 python-dotenv==1.0.1
-requests==2.32.3
+httpx[http2]==0.27.2
+redis[hiredis]==5.2.0
+pyjwt[crypto]==2.9.0
+cryptography==43.0.1

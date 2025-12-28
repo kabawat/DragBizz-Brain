@@ -1,31 +1,139 @@
-from typing import Any, Dict
+"""Async HTTP client for better concurrency and performance."""
+from typing import Any, Dict, Optional
+import hashlib
+import json
+import logging
 
-import requests
+import httpx
 from fastapi import HTTPException
-from requests import HTTPError, Response
+
+from app.services.cache import get_cache, set_cache
+
+logger = logging.getLogger(__name__)
 
 
 class HttpClient:
-    def __init__(self, timeout: int = 30):
-        self.timeout = timeout
-
-    def post(
+    """Async HTTP client with response caching for cost reduction."""
+    
+    # Shared client pool across all instances (for better connection reuse)
+    _shared_client: Optional[httpx.AsyncClient] = None
+    
+    def __init__(self, timeout: int | None = None):
+        from app.config.settings import get_settings
+        settings = get_settings()
+        self.timeout = timeout or settings.http_timeout
+        # Use shared client pool for better connection reuse and cost savings
+    
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create shared async HTTP client with connection pooling."""
+        if HttpClient._shared_client is None:
+            from app.config.settings import get_settings
+            settings = get_settings()
+            HttpClient._shared_client = httpx.AsyncClient(
+                timeout=settings.http_timeout,
+                limits=httpx.Limits(
+                    max_keepalive_connections=50,  # Increased for high concurrency
+                    max_connections=200  # Increased for large number of requests
+                ),
+                http2=True  # Use HTTP/2 for better performance
+            )
+        return HttpClient._shared_client
+    
+    def _get_cache_key(self, url: str, headers: Dict[str, str], json_data: Dict[str, Any]) -> str:
+        """Generate cache key for request. Includes model name for AI requests."""
+        # Extract model name from JSON if present (for AI requests)
+        model_name = json_data.get("model", "")
+        
+        # Create hash of request for caching (exclude auth headers and timestamps)
+        cache_data = {
+            "url": url,
+            "model": model_name,  # Include model in cache key for better cache separation
+            "headers": {k: v for k, v in headers.items() if k.lower() not in ["authorization", "x-request-id", "x-title"]},
+            "json": json_data
+        }
+        cache_str = json.dumps(cache_data, sort_keys=True)
+        cache_hash = hashlib.sha256(cache_str.encode()).hexdigest()
+        return f"http:cache:{cache_hash}"
+    
+    async def post(
         self,
         url: str,
         headers: Dict[str, str] | None = None,
         json: Dict[str, Any] | None = None,
+        use_cache: bool = False,
     ) -> Dict[str, Any]:
+        """
+        Make async POST request with optional response caching.
+        
+        Args:
+            url: Request URL
+            headers: Request headers
+            json: JSON payload
+            use_cache: Whether to cache response (useful for AI API calls)
+        """
+        headers = headers or {}
+        json_data = json or {}
+        
+        # Check cache for AI responses (cost reduction)
+        if use_cache:
+            cache_key = self._get_cache_key(url, headers, json_data)
+            cached_response = get_cache(cache_key)
+            if cached_response:
+                logger.debug(f"Cache hit for URL: {url}")
+                return cached_response
+            logger.debug(f"Cache miss for URL: {url}")
+        
+        client = await self._get_client()
+        
         try:
-            response: Response = requests.post(
+            response = await client.post(
                 url=url,
-                headers=headers or {},
-                json=json,
-                timeout=self.timeout,
+                headers=headers,
+                json=json_data,
             )
             response.raise_for_status()
-        except HTTPError as http_err:
-            resp = http_err.response
-            detail = resp.text if resp is not None else str(http_err)
-            status = resp.status_code if resp is not None else 500
-            raise HTTPException(status_code=status, detail=detail) from http_err
-        return response.json()
+            result = response.json()
+            
+            # Cache successful AI responses (only if no errors in response)
+            if use_cache and response.status_code == 200:
+                from app.config.settings import get_settings
+                settings = get_settings()
+                cache_ttl = settings.ai_response_cache_ttl
+                
+                # Check for error fields in response before caching
+                if isinstance(result, dict):
+                    # OpenRouter and similar APIs may return 200 with error in body
+                    if "error" not in result:
+                        cache_key = self._get_cache_key(url, headers, json_data)
+                        set_cache(cache_key, result, cache_ttl)
+                        logger.debug(f"Cached response for URL: {url}, TTL: {cache_ttl}s")
+                    else:
+                        logger.warning(f"Not caching response with error: {result.get('error')}")
+                else:
+                    # Non-dict responses are cached as-is
+                    cache_key = self._get_cache_key(url, headers, json_data)
+                    set_cache(cache_key, result, cache_ttl)
+                    logger.debug(f"Cached non-dict response for URL: {url}, TTL: {cache_ttl}s")
+            
+            return result
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text if e.response else str(e)
+            status = e.response.status_code if e.response else 500
+            logger.error(f"HTTP error {status} for URL {url}: {detail}")
+            raise HTTPException(status_code=status, detail=detail) from e
+        except httpx.RequestError as e:
+            logger.error(f"Request error for URL {url}: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}") from e
+    
+    async def close(self):
+        """Close HTTP client connections (only closes shared client if this is the last instance)."""
+        # Note: Shared client should be closed at application shutdown, not per instance
+        # This method is kept for compatibility but doesn't close shared client
+        pass
+    
+    @classmethod
+    async def close_shared_client(cls):
+        """Close shared HTTP client (call at application shutdown)."""
+        if cls._shared_client:
+            await cls._shared_client.aclose()
+            cls._shared_client = None
