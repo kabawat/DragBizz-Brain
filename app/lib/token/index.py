@@ -11,7 +11,7 @@ from app.services.cache import get_cache, set_cache
 
 
 _settings = get_settings()
-jwks_url = f"{_settings.server_url}/auth/.well-known/jwks.json"
+jwks_url = f"{_settings.auth_url}/.well-known/jwks.json"
 parsed = urlparse(jwks_url)
 hostname = (parsed.hostname or "").lower()
 dev_indicators = ["localhost", "127.0.0.1", "0.0.0.0", ""]

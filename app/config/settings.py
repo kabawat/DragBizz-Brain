@@ -30,10 +30,22 @@ class Settings(BaseSettings):
     redis_db: int = 0
     session_ttl: int = 300
     
-    server_url: str = "http://localhost:4001"
+    # Base URL for all services (routed through nginx)
+    base_url: str = "http://testapi.dragbizz.com"  # Change to your nginx domain
+    
     jwt_issuer: str = "DragBizz-auth"
     jwt_algorithm: str = "RS256"
     jwt_audience: Union[str, list[str]] = ["VOICE-AI", "RETAILER"]
+    
+    @property
+    def server_url(self) -> str:
+        """Get retailer service URL (routed through nginx /retailer/)."""
+        return f"{self.base_url.rstrip('/')}/retailer"
+    
+    @property
+    def auth_url(self) -> str:
+        """Get auth service URL (routed through nginx /auth/)."""
+        return f"{self.base_url.rstrip('/')}/auth"
     
     # HTTP and API timeouts (for cost optimization and performance)
     http_timeout: int = 30
@@ -50,6 +62,14 @@ class Settings(BaseSettings):
     
     # Request tracking
     enable_request_id: bool = True
+    
+    # Subscription service configuration
+    subscription_enabled: bool = True  # Enable/disable subscription checks
+    
+    @property
+    def subscription_service_url(self) -> str:
+        """Get subscription service URL (routed through nginx /plans/)."""
+        return f"{self.base_url.rstrip('/')}/plans"
     
     @field_validator("jwt_audience", mode="before")
     @classmethod

@@ -13,11 +13,12 @@ async def chat_customer(request: Request, payload: CustomerChatRequest):
     try:
         # Access user from request state (set by auth middleware)
         user = getattr(request.state, 'user', None)
+        user_id = user.get('sub') or user.get('id') if user else None
         
         # Initialize service and use context manager for proper resource cleanup
         async with CustomerChatService() as service:
-            # Handle conversation
-            response = await service.handle_conversation(payload)
+            # Handle conversation with user_id for subscription limits
+            response = await service.handle_conversation(payload, user_id=user_id)
             
             # Return success response using standardized handler
             return success_response(

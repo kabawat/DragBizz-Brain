@@ -9,6 +9,7 @@ from app.models.customer import CustomerChatRequest, CustomerChatResponse, Custo
 from app.services.customer_extract_service import CustomerExtractService
 from app.services.session_service import SessionService
 from app.services.http import HttpClient
+from app.services.subscription_service import SubscriptionService
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class CustomerChatService:
         self.session_service = SessionService()
         self.settings = get_settings()
         self.http_client = HttpClient(timeout=self.settings.ai_request_timeout)
+        self.subscription_service = SubscriptionService()
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -137,7 +139,7 @@ class CustomerChatService:
         
         return base + " " + instruction
     
-    async def _get_fallback_message(self, missing_fields: list[str], user_prompt: str) -> str:
+    async def _get_fallback_message(self, missing_fields: list[str], user_prompt: str, user_id: Optional[str] = None) -> str:
         """Generate fallback message using AI in user's language when primary AI call fails."""
         # Try to generate message using AI in user's language
         try:
@@ -153,7 +155,7 @@ class CustomerChatService:
                 {"role": "user", "content": ai_user_prompt}
             ]
             
-            content = await self._call_ai_api(messages, use_cache=False)  # Don't cache fallback messages
+            content = await self._call_ai_api(messages, use_cache=False, user_id=user_id)  # Don't cache fallback messages
             if content:
                 return content
         except Exception as e:
@@ -169,7 +171,7 @@ class CustomerChatService:
         else:
             return "Some required information is missing, please provide"
     
-    async def _get_fallback_success_message(self, user_prompt: str) -> str:
+    async def _get_fallback_success_message(self, user_prompt: str, user_id: Optional[str] = None) -> str:
         """Generate success fallback message using AI in user's language."""
         # Try to generate message using AI in user's language
         try:
@@ -183,7 +185,7 @@ class CustomerChatService:
                 {"role": "user", "content": ai_user_prompt}
             ]
             
-            content = await self._call_ai_api(messages, use_cache=False)  # Don't cache fallback messages
+            content = await self._call_ai_api(messages, use_cache=False, user_id=user_id)  # Don't cache fallback messages
             if content:
                 return content
         except Exception as e:
@@ -192,7 +194,7 @@ class CustomerChatService:
         # Ultimate fallback - simple English message
         return "All required details are available. Ready to create customer."
     
-    async def _get_fallback_error_message(self, user_prompt: str, error_detail: str = "") -> str:
+    async def _get_fallback_error_message(self, user_prompt: str, error_detail: str = "", user_id: Optional[str] = None) -> str:
         """Generate error fallback message using AI in user's language."""
         # Try to generate message using AI in user's language
         try:
@@ -207,7 +209,7 @@ class CustomerChatService:
                 {"role": "user", "content": ai_user_prompt}
             ]
             
-            content = await self._call_ai_api(messages, use_cache=False)  # Don't cache fallback messages
+            content = await self._call_ai_api(messages, use_cache=False, user_id=user_id)  # Don't cache fallback messages
             if content:
                 return content
         except Exception as e:
@@ -247,10 +249,29 @@ class CustomerChatService:
         # If we get here, content was empty
         raise ValueError("Empty content in AI response")
     
-    async def _call_ai_api(self, messages: list[Dict[str, str]], use_cache: bool = True) -> Optional[str]:
-        """Call AI API with fallback models. Returns content or None if all models fail."""
+    async def _call_ai_api(self, messages: list[Dict[str, str]], use_cache: bool = True, user_id: Optional[str] = None) -> Optional[str]:
+        """
+        Call AI API with fallback models. Returns content or None if all models fail.
+        
+        Args:
+            messages: AI conversation messages
+            use_cache: Whether to use cache
+            user_id: User ID for subscription limit checking
+        """
+        # Check subscription limits before making AI API call
+        if user_id and self.settings.subscription_enabled:
+            try:
+                await self.subscription_service.check_usage(user_id=user_id, quantity=1)
+            except HTTPException:
+                # Re-raise HTTP exceptions (limit exceeded)
+                raise
+            except Exception as e:
+                # Log but continue if subscription service fails (fail-open)
+                logger.warning(f"Subscription check failed, allowing request: {str(e)}")
+        
         models_to_try = [self.DEFAULT_MODEL, self.FALLBACK_MODEL, self.SECONDARY_FALLBACK]
         last_error = None
+        successful_model = None
         
         for model in models_to_try:
             try:
@@ -271,7 +292,8 @@ class CustomerChatService:
                 
                 content = await self._parse_ai_response(ai_response)
                 logger.debug(f"AI API success with model: {model}")
-                return content
+                successful_model = model
+                break  # Success, exit loop
                 
             except HTTPException as e:
                 last_error = e
@@ -286,11 +308,31 @@ class CustomerChatService:
                     break
                 continue
         
-        if last_error:
+        # Increment usage after successful AI call
+        if successful_model and user_id and self.settings.subscription_enabled:
+            try:
+                metadata = {
+                    "model": successful_model,
+                    "tokens": self.DEFAULT_MAX_TOKENS,
+                    "cache_used": use_cache
+                }
+                await self.subscription_service.increment_usage(
+                    user_id=user_id,
+                    quantity=1,
+                    metadata=metadata
+                )
+            except Exception as e:
+                # Log but don't fail the request
+                logger.warning(f"Failed to increment usage: {str(e)}")
+        
+        if last_error and not successful_model:
             logger.error(f"All AI models failed. Last error: {last_error}")
-        return None
+            return None
+        
+        # Return content if we have it, otherwise None
+        return content if successful_model else None
     
-    async def _generate_ai_response_message(self, missing_fields: list[str], extracted_data: Dict[str, Any], user_prompt: str) -> str:
+    async def _generate_ai_response_message(self, missing_fields: list[str], extracted_data: Dict[str, Any], user_prompt: str, user_id: Optional[str] = None) -> str:
         """Generate conversational response using AI for missing fields in user's language."""
         # Detect user's language hint (just for prompt, AI will detect exact language)
         user_language_hint = self._detect_language(user_prompt)
@@ -322,14 +364,14 @@ class CustomerChatService:
             {"role": "user", "content": ai_user_prompt}
         ]
         
-        content = await self._call_ai_api(messages, use_cache=True)
+        content = await self._call_ai_api(messages, use_cache=True, user_id=user_id)
         if content:
             return content
         
         # Fallback to AI-generated message in user's language if primary AI fails
-        return await self._get_fallback_message(missing_fields, user_prompt)
+        return await self._get_fallback_message(missing_fields, user_prompt, user_id)
     
-    async def _generate_ai_success_message(self, extracted_data: Dict[str, Any], user_prompt: str) -> str:
+    async def _generate_ai_success_message(self, extracted_data: Dict[str, Any], user_prompt: str, user_id: Optional[str] = None) -> str:
         """Generate success message using AI when all fields are ready in user's language."""
         # Detect user's language hint (just for prompt, AI will detect exact language)
         user_language_hint = self._detect_language(user_prompt)
@@ -345,14 +387,14 @@ class CustomerChatService:
             {"role": "user", "content": ai_user_prompt}
         ]
         
-        content = await self._call_ai_api(messages, use_cache=True)
+        content = await self._call_ai_api(messages, use_cache=True, user_id=user_id)
         if content:
             return content
         
         # Fallback to AI-generated message in user's language if primary AI fails
-        return await self._get_fallback_success_message(user_prompt)
+        return await self._get_fallback_success_message(user_prompt, user_id)
     
-    async def _generate_ai_error_message(self, error_detail: str, user_prompt: str) -> str:
+    async def _generate_ai_error_message(self, error_detail: str, user_prompt: str, user_id: Optional[str] = None) -> str:
         """Generate user-friendly error message using AI in user's language."""
         # Detect user's language hint (just for prompt, AI will detect exact language)
         user_language_hint = self._detect_language(user_prompt)
@@ -366,14 +408,14 @@ class CustomerChatService:
             {"role": "user", "content": ai_user_message}
         ]
         
-        content = await self._call_ai_api(messages, use_cache=True)
+        content = await self._call_ai_api(messages, use_cache=True, user_id=user_id)
         if content:
             return content
         
         # Fallback to AI-generated message in user's language if primary AI fails
-        return await self._get_fallback_error_message(user_prompt, error_detail)
+        return await self._get_fallback_error_message(user_prompt, error_detail, user_id)
     
-    async def handle_conversation(self, request: CustomerChatRequest) -> CustomerChatResponse:
+    async def handle_conversation(self, request: CustomerChatRequest, user_id: Optional[str] = None) -> CustomerChatResponse:
         """Handle conversational customer creation."""
         # Validate input prompt
         if not request.prompt or not isinstance(request.prompt, str):
@@ -416,7 +458,7 @@ class CustomerChatService:
             logger.debug(f"Extracted {len(extract_response.extractedFields)} fields from prompt")
         except HTTPException as e:
             logger.error(f"Extraction error: {e.status_code} - {e.detail}")
-            error_message = await self._generate_ai_error_message(str(e.detail), prompt)
+            error_message = await self._generate_ai_error_message(str(e.detail), prompt, user_id)
             return CustomerChatResponse(
                 success=False,
                 sessionId=session_id,
@@ -456,7 +498,7 @@ class CustomerChatService:
         # Generate response based on missing fields
         if missing_fields:
             logger.info(f"Missing fields: {missing_fields}")
-            message = await self._generate_ai_response_message(missing_fields, merged_data, prompt)
+            message = await self._generate_ai_response_message(missing_fields, merged_data, prompt, user_id)
             
             # Determine status
             if "contact" in missing_fields:
@@ -479,7 +521,7 @@ class CustomerChatService:
             )
         else:
             logger.info("All required fields present, generating success message")
-            message = await self._generate_ai_success_message(merged_data, prompt)
+            message = await self._generate_ai_success_message(merged_data, prompt, user_id)
             
             return CustomerChatResponse(
                 success=True,
