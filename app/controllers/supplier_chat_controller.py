@@ -1,0 +1,54 @@
+from fastapi import Request, HTTPException
+
+from app.models.supplier import SupplierChatRequest, SupplierChatResponse
+from app.services.supplier_chat_service import SupplierChatService
+from app.utils.responseHandler.standardized import (
+    success_response,
+    error_response,
+    parse_error_for_response
+)
+
+
+async def chat_supplier(request: Request, payload: SupplierChatRequest):
+    try:
+        user = getattr(request.state, 'user', None)
+        user_id = user.get('sub') or user.get('id') if user else None
+        token = getattr(request.state, 'token', None)
+        
+        async with SupplierChatService() as service:
+            response = await service.handle_conversation(payload, user_id=user_id, token=token)
+            
+            return success_response(
+                message="Conversation processed successfully",
+                data=response.model_dump()
+            )
+        
+    except HTTPException as e:
+        error_detail = e.detail
+        
+        if isinstance(error_detail, dict):
+            error_message = error_detail.get("message", "An error occurred")
+            error_type = error_detail.get("error_type", "unknown")
+            quota = error_detail.get("quota", {})
+            
+            if error_type == "subscription_error":
+                if quota.get("hasAccess") is False:
+                    user_message = "Voice AI feature is not available in your current subscription plan. Please upgrade your plan to use this feature."
+                else:
+                    user_message = error_message
+                
+                return error_response(
+                    message=user_message,
+                    error=error_message if error_message != user_message else None,
+                    status_code=e.status_code,
+                    fields={"quota": quota} if quota else None
+                )
+        
+        raise
+    except Exception as err:
+        error_data = parse_error_for_response(err)
+        return error_response(
+            message=error_data.get("message", "An error occurred during conversation"),
+            status_code=error_data.get("status_code", 500)
+        )
+
