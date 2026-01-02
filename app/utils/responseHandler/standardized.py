@@ -28,17 +28,19 @@ def error_response(
     status_code: int = STATUS_CODES["INTERNAL_SERVER_ERROR"]
 ) -> JSONResponse:
     response = {
-        "status": "error",
+        "status": False,  # Match subscription service format
         "message": message,
     }
     
-    # Only include error in development mode
-    import os
-    if os.getenv("DEBUG", "false").lower() == "true" and error:
+    # Include error field (for compatibility with frontend)
+    if error:
         response["error"] = error
     
+    # Include fields/data for additional error information
     if fields:
         response["fields"] = fields
+        # Also include in data for compatibility
+        response["data"] = fields
     
     return JSONResponse(status_code=status_code, content=response)
 

@@ -14,7 +14,7 @@ _settings = get_settings()
 jwks_url = f"{_settings.auth_url}/.well-known/jwks.json"
 parsed = urlparse(jwks_url)
 hostname = (parsed.hostname or "").lower()
-dev_indicators = ["localhost", "127.0.0.1", "0.0.0.0", ""]
+dev_indicators = ["localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal", ""]
 is_development = any(indicator in hostname for indicator in dev_indicators) or not hostname or _settings.debug
 is_production_domain = "." in hostname and hostname and not is_development
 if is_production_domain and not jwks_url.startswith("https://"):
@@ -32,75 +32,80 @@ def get_token_cache_key(token: str) -> str:
 
 
 def extract_bearer_token(auth_header: Optional[str]) -> Optional[str]:
+    """
+    Extract Bearer token from Authorization header.
+    Same behaviour as retailer service: "Bearer <token>" only.
+    """
     if not auth_header or not isinstance(auth_header, str):
         return None
-    
+
     parts = auth_header.split()
     return parts[1] if len(parts) == 2 and parts[0] == "Bearer" else None
 
 
 async def verify_access_token(token: str) -> Dict[str, Any]:
+    """
+    Verify access token using JWKS – same logic as retailer service:
+    - Check Redis cache first
+    - Verify via JWKS with issuer, algorithm, audience
+    - Cache successful result
+    - Return a simple { valid, expired, decoded, error?, cached } dict
+    """
     settings = get_settings()
-    
+
     try:
-        # Step 1: Check Redis cache first (ultra fast - ~1ms)
+        # Step 1: Check Redis cache first
         cache_key = get_token_cache_key(token)
         cached_result = get_cache(cache_key)
-        
+
         if cached_result:
-            # Cache hit - return immediately
             return {
                 "valid": cached_result["valid"],
                 "expired": cached_result.get("expired", False),
                 "decoded": cached_result.get("decoded"),
-                "cached": True
+                "cached": True,
             }
 
         # Step 2: Cache miss - verify via JWKS
-        signing_key = JWKS_CLIENT.get_signing_key_from_jwt(token)
-        
-        # Support both single audience string and list of audiences
+        try:
+            signing_key = JWKS_CLIENT.get_signing_key_from_jwt(token)
+        except Exception as jwks_err:
+            # Mirror retailer behaviour: just surface the error
+            return {
+                "valid": False,
+                "expired": False,
+                "decoded": None,
+                "error": jwks_err,
+                "cached": False,
+            }
+
         audience = settings.jwt_audience
         if isinstance(audience, str):
             audience = [audience]
-        
-        # Decode token without audience check first, then manually validate audience
-        # This allows us to handle tokens with multiple audiences more flexibly
+
         try:
             payload = jwt.decode(
                 token,
                 signing_key.key,
                 algorithms=[settings.jwt_algorithm],
                 issuer=settings.jwt_issuer,
-                options={"verify_exp": True, "verify_aud": False}  # Disable automatic audience check
+                audience=audience,
+                options={"verify_exp": True},
             )
-            
-            # Manually validate audience
-            token_aud = payload.get("aud", [])
-            if isinstance(token_aud, str):
-                token_aud = [token_aud]
-            
-            # Check if token has any of the required audiences
-            has_valid_audience = any(aud in token_aud for aud in audience)
-            
-            if not has_valid_audience:
-                return {
-                    "valid": False,
-                    "expired": False,
-                    "decoded": None,
-                    "error": f"Token audience {token_aud} does not match required {audience}",
-                    "cached": False
-                }
-            
         except jwt.ExpiredSignatureError:
-            raise  # Re-raise to be caught by outer handler
-        except Exception as decode_err:
+            return {
+                "valid": False,
+                "expired": True,
+                "decoded": None,
+                "cached": False,
+            }
+        except Exception as err:
             return {
                 "valid": False,
                 "expired": False,
                 "decoded": None,
-                "error": f"Token decode error: {str(decode_err)}",
-                "cached": False
+                "error": err,
+                "cached": False,
             }
 
         # Step 3: Cache successful verification
@@ -108,30 +113,18 @@ async def verify_access_token(token: str) -> Dict[str, Any]:
             "valid": True,
             "expired": False,
             "decoded": payload,
-            "cached": False
+            "cached": False,
         }
-
-        # Cache for 5 minutes (less than token expiry)
         set_cache(cache_key, result, VERIFY_CACHE_TTL)
 
         return result
-        
-    except jwt.ExpiredSignatureError:
-        # Handle expired tokens
-        return {
-            "valid": False,
-            "expired": True,
-            "decoded": None,
-            "cached": False
-        }
-        
+
     except Exception as err:
-        # Don't cache invalid tokens
+        # Don't cache invalid tokens or unexpected errors
         return {
             "valid": False,
             "expired": False,
             "decoded": None,
-            "error": str(err),
-            "cached": False
+            "error": err,
+            "cached": False,
         }
-

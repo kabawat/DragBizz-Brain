@@ -13,14 +13,25 @@ def setup_logging() -> None:
     # Determine log level
     log_level = logging.DEBUG if settings.debug else logging.INFO
     
+    # Create formatter with request_id handling
+    class RequestIDFormatter(logging.Formatter):
+        def format(self, record):
+            if not hasattr(record, 'request_id'):
+                record.request_id = '-'
+            return super().format(record)
+    
+    formatter = RequestIDFormatter(
+        '%(asctime)s - %(name)s - %(levelname)s - [%(request_id)s] - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    
     # Configure root logger
     logging.basicConfig(
         level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - [%(request_id)s] - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=[handler]
     )
     
     # Set specific logger levels

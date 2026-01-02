@@ -26,6 +26,9 @@ dist/
 # OS
 .DS_Store
 
+# logs
+/logs
+
 # Node (if present)
 node_modules/
 

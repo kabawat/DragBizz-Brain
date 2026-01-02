@@ -77,7 +77,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return True
             
         except Exception as e:
-            # If Redis fails, allow request (fail open for availability)
-            logger.error(f"Rate limit check failed: {str(e)}", exc_info=logger.isEnabledFor(logging.DEBUG))
-            return True
+            logger.error(f"Rate limit check failed: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=503,
+                detail="Rate limiting service is temporarily unavailable. Please try again later."
+            )
 

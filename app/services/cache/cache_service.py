@@ -1,4 +1,3 @@
-"""Optimized cache service with connection pooling."""
 from typing import Any, Optional
 import json
 import logging
@@ -7,12 +6,10 @@ from app.services.redis_manager import get_redis_client
 
 logger = logging.getLogger(__name__)
 
-
 DEFAULT_TTL = 600
 
 
 def get_cache(key: str) -> Optional[Any]:
-    """Get cached value from Redis using connection pool."""
     try:
         client = get_redis_client()
         cached = client.get(key)
@@ -26,7 +23,6 @@ def get_cache(key: str) -> Optional[Any]:
 
 
 def set_cache(key: str, value: Any, ttl: int = DEFAULT_TTL) -> bool:
-    """Set cache value in Redis using connection pool."""
     try:
         client = get_redis_client()
         client.setex(

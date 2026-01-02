@@ -37,8 +37,9 @@ async def verify_token(
                 detail=message
             )
         
-        # Attach user to request (similar to req.user in Express)
+        # Attach user and token to request (similar to req.user in Express)
         request.state.user = result["decoded"]
+        request.state.token = token
         return result["decoded"]
         
     except HTTPException:

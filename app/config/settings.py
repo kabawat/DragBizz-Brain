@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     project_name: str = "DragBizz Voice AI"
     version: str = "0.1.0"
     debug: bool = False
+    environment: str = "development"
+    
+    base_url: str = "http://localhost"
+    server_url: str | None = None
+    allowed_origins: str | None = None
     
     openrouter_api_key: str
     openrouter_http_referer: str | None = None
@@ -30,45 +35,47 @@ class Settings(BaseSettings):
     redis_db: int = 0
     session_ttl: int = 300
     
-    # Base URL for all services (routed through nginx)
-    base_url: str = "http://testapi.dragbizz.com"  # Change to your nginx domain
-    
     jwt_issuer: str = "DragBizz-auth"
     jwt_algorithm: str = "RS256"
     jwt_audience: Union[str, list[str]] = ["VOICE-AI", "RETAILER"]
     
-    @property
-    def server_url(self) -> str:
-        """Get retailer service URL (routed through nginx /retailer/)."""
-        return f"{self.base_url.rstrip('/')}/retailer"
-    
-    @property
-    def auth_url(self) -> str:
-        """Get auth service URL (routed through nginx /auth/)."""
-        return f"{self.base_url.rstrip('/')}/auth"
-    
-    # HTTP and API timeouts (for cost optimization and performance)
     http_timeout: int = 30
     ai_request_timeout: int = 30
     
-    # Rate limiting (for cost saving and abuse prevention)
     rate_limit_enabled: bool = True
     rate_limit_per_minute: int = 60
     rate_limit_per_hour: int = 1000
     
-    # Cache TTL settings (for cost optimization)
-    ai_response_cache_ttl: int = 300  # 5 minutes
-    token_verify_cache_ttl: int = 300  # 5 minutes
+    ai_response_cache_ttl: int = 300
+    token_verify_cache_ttl: int = 300
     
-    # Request tracking
     enable_request_id: bool = True
+    subscription_enabled: bool = True
     
-    # Subscription service configuration
-    subscription_enabled: bool = True  # Enable/disable subscription checks
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
+    
+    @property
+    def allowed_origins_list(self) -> str:
+        """Get allowed origins from env or use default based on environment."""
+        if self.allowed_origins:
+            return self.allowed_origins
+        # Default: same as retailer service
+        if self.is_production:
+            return "https://dragbizz.com"
+        return "http://localhost:3000,https://test.dragbizz.com"
+    
+    @property
+    def retailer_url(self) -> str:
+        return f"{self.base_url.rstrip('/')}/retailer"
+    
+    @property
+    def auth_url(self) -> str:
+        return f"{self.base_url.rstrip('/')}/auth"
     
     @property
     def subscription_service_url(self) -> str:
-        """Get subscription service URL (routed through nginx /plans/)."""
         return f"{self.base_url.rstrip('/')}/plans"
     
     @field_validator("jwt_audience", mode="before")

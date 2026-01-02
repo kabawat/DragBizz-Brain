@@ -1,4 +1,3 @@
-"""Subscription service client for checking usage limits."""
 from typing import Dict, Any, Optional
 import logging
 import httpx
@@ -11,179 +10,104 @@ logger = logging.getLogger(__name__)
 
 
 class SubscriptionService:
-    """Service for checking subscription limits and usage."""
-    
-    # Feature key for AI service
     AI_SERVICE_FEATURE_KEY = "VOICE_AI"
     
     def __init__(self):
         self.settings = get_settings()
         self.http_client = HttpClient(timeout=10)
-        # Subscription service URL is now a property that constructs URL from base_url
     
-    async def check_usage(self, user_id: str, feature_key: str = None, quantity: int = 1) -> Dict[str, Any]:
-        """
-        Check if user has usage quota for a feature.
-        
-        Args:
-            user_id: User ID from JWT token
-            feature_key: Feature key (defaults to VOICE_AI)
-            quantity: Number of units to check (default 1)
-        
-        Returns:
-            Dict with 'allowed', 'reason', and 'quota' information
-        
-        Raises:
-            HTTPException: If limit exceeded or service unavailable
-        """
+    async def check_feature_access(self, user_id: str, feature_key: str = None, token: Optional[str] = None) -> Dict[str, Any]:
         feature_key = feature_key or self.AI_SERVICE_FEATURE_KEY
         
         try:
-            # Try HTTP API first (if subscription service exposes HTTP endpoints)
-            url = f"{self.settings.subscription_service_url}/api/v1/usage/check"
+            url = f"{self.settings.subscription_service_url}/usage/quota"
             headers = {"Content-Type": "application/json"}
-            payload = {
-                "user_id": user_id,
-                "feature_key": feature_key,
-                "quantity": quantity
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            params = {
+                "userId": user_id,
+                "featureKey": feature_key
             }
             
             try:
-                response = await self.http_client.post(url, headers=headers, json=payload, use_cache=False)
+                response = await self.http_client.get(url, headers=headers, params=params, use_cache=False)
                 
-                if not response.get("allowed", False):
-                    reason = response.get("reason", "Usage limit exceeded")
-                    quota = response.get("quota", {})
-                    
+                response_data = response.get("data", {}) if isinstance(response, dict) else {}
+                quota = response_data.get("quota", {}) if isinstance(response_data, dict) else {}
+                
+                has_access = quota.get("hasAccess", False)
+                
+                if not has_access:
                     logger.warning(
-                        f"Usage limit exceeded for user {user_id}, feature {feature_key}. "
-                        f"Reason: {reason}, Quota: {quota}"
+                        f"Feature {feature_key} not available for user {user_id}"
                     )
                     
                     raise HTTPException(
-                        status_code=429,
+                        status_code=403,
                         detail={
-                            "message": reason,
+                            "message": f"Voice AI feature is not available in your subscription plan. Please upgrade to use this feature.",
                             "quota": quota,
-                            "feature_key": feature_key
+                            "feature_key": feature_key,
+                            "error_type": "subscription_error"
                         }
                     )
                 
                 return {
-                    "allowed": True,
-                    "reason": response.get("reason", ""),
-                    "quota": response.get("quota", {})
+                    "hasAccess": True,
+                    "message": "Feature is available"
                 }
                 
             except HTTPException:
                 raise
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code if e.response else 500
+                try:
+                    error_detail = e.response.json() if e.response else {}
+                    message_obj = error_detail.get("message", {})
+                    if isinstance(message_obj, dict):
+                        error_message = message_obj.get("message", "Feature not available")
+                    else:
+                        error_message = message_obj if isinstance(message_obj, str) else "Feature not available"
+                    
+                    logger.warning(f"Feature access check failed {status_code}: {error_message}")
+                    
+                    raise HTTPException(
+                        status_code=status_code,
+                        detail={
+                            "message": error_message,
+                            "quota": {},
+                            "feature_key": feature_key,
+                            "error_type": "subscription_error"
+                        }
+                    )
+                except (ValueError, KeyError, TypeError):
+                    raise HTTPException(
+                        status_code=status_code,
+                        detail={
+                            "message": "Feature not available",
+                            "quota": {},
+                            "feature_key": feature_key,
+                            "error_type": "subscription_error"
+                        }
+                    )
             except Exception as e:
-                logger.error(f"Error checking usage via HTTP: {str(e)}")
-                # If HTTP fails, allow request (fail open for availability)
-                # In production, you might want to fail closed
-                logger.warning("Subscription service unavailable, allowing request (fail-open mode)")
-                return {
-                    "allowed": True,
-                    "reason": "Subscription service unavailable",
-                    "quota": {}
-                }
-                
+                logger.error(f"Error checking feature access: {str(e)}", exc_info=True)
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "message": "Subscription service is temporarily unavailable. Please try again later.",
+                        "error_type": "service_unavailable"
+                    }
+                )
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Unexpected error in check_usage: {str(e)}")
-            # Fail open - allow request if subscription service is down
-            return {
-                "allowed": True,
-                "reason": "Subscription service error",
-                "quota": {}
-            }
-    
-    async def increment_usage(self, user_id: str, feature_key: str = None, quantity: int = 1, metadata: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        Increment usage counter for a feature after successful AI call.
-        
-        Args:
-            user_id: User ID from JWT token
-            feature_key: Feature key (defaults to VOICE_AI)
-            quantity: Number of units used (default 1)
-            metadata: Additional metadata (model used, tokens, etc.)
-        
-        Returns:
-            Dict with 'success' and updated 'quota' information
-        """
-        feature_key = feature_key or self.AI_SERVICE_FEATURE_KEY
-        
-        try:
-            url = f"{self.settings.subscription_service_url}/api/v1/usage/increment"
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "user_id": user_id,
-                "feature_key": feature_key,
-                "quantity": quantity,
-                "metadata": metadata or {}
-            }
-            
-            try:
-                response = await self.http_client.post(url, headers=headers, json=payload, use_cache=False)
-                logger.debug(f"Incremented usage for user {user_id}, feature {feature_key}, quantity {quantity}")
-                return {
-                    "success": response.get("success", False),
-                    "quota": response.get("quota", {})
+            logger.error(f"Unexpected error in check_feature_access: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "message": "Error checking feature access",
+                    "error_type": "internal_error"
                 }
-            except Exception as e:
-                # Log error but don't fail the request
-                logger.warning(f"Failed to increment usage: {str(e)}")
-                return {
-                    "success": False,
-                    "quota": {}
-                }
-                
-        except Exception as e:
-            logger.error(f"Unexpected error in increment_usage: {str(e)}")
-            return {
-                "success": False,
-                "quota": {}
-            }
-    
-    async def get_quota(self, user_id: str, feature_key: str = None) -> Dict[str, Any]:
-        """
-        Get current quota information for a feature.
-        
-        Args:
-            user_id: User ID from JWT token
-            feature_key: Feature key (defaults to VOICE_AI)
-        
-        Returns:
-            Dict with quota information (remaining, limit, usage_type, etc.)
-        """
-        feature_key = feature_key or self.AI_SERVICE_FEATURE_KEY
-        
-        try:
-            url = f"{self.settings.subscription_service_url}/api/v1/usage/quota"
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "user_id": user_id,
-                "feature_key": feature_key
-            }
-            
-            try:
-                response = await self.http_client.post(url, headers=headers, json=payload, use_cache=True)
-                return {
-                    "success": response.get("success", False),
-                    "quota": response.get("quota", {})
-                }
-            except Exception as e:
-                logger.warning(f"Failed to get quota: {str(e)}")
-                return {
-                    "success": False,
-                    "quota": {}
-                }
-                
-        except Exception as e:
-            logger.error(f"Unexpected error in get_quota: {str(e)}")
-            return {
-                "success": False,
-                "quota": {}
-            }
+            )
 

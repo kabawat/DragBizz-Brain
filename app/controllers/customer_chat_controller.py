@@ -11,26 +11,41 @@ from app.utils.responseHandler.standardized import (
 
 async def chat_customer(request: Request, payload: CustomerChatRequest):
     try:
-        # Access user from request state (set by auth middleware)
         user = getattr(request.state, 'user', None)
         user_id = user.get('sub') or user.get('id') if user else None
+        token = getattr(request.state, 'token', None)
         
-        # Initialize service and use context manager for proper resource cleanup
         async with CustomerChatService() as service:
-            # Handle conversation with user_id for subscription limits
-            response = await service.handle_conversation(payload, user_id=user_id)
+            response = await service.handle_conversation(payload, user_id=user_id, token=token)
             
-            # Return success response using standardized handler
             return success_response(
                 message="Conversation processed successfully",
                 data=response.model_dump()
             )
         
-    except HTTPException:
-        # Re-raise HTTP exceptions (from middleware, etc.)
+    except HTTPException as e:
+        error_detail = e.detail
+        
+        if isinstance(error_detail, dict):
+            error_message = error_detail.get("message", "An error occurred")
+            error_type = error_detail.get("error_type", "unknown")
+            quota = error_detail.get("quota", {})
+            
+            if error_type == "subscription_error":
+                if quota.get("hasAccess") is False:
+                    user_message = "Voice AI feature is not available in your current subscription plan. Please upgrade your plan to use this feature."
+                else:
+                    user_message = error_message
+                
+                return error_response(
+                    message=user_message,
+                    error=error_message if error_message != user_message else None,
+                    status_code=e.status_code,
+                    fields={"quota": quota} if quota else None
+                )
+        
         raise
     except Exception as err:
-        # Use standardized error handler
         error_data = parse_error_for_response(err)
         return error_response(
             message=error_data.get("message", "An error occurred during conversation"),

@@ -40,7 +40,7 @@ def get_redis_client() -> redis.Redis:
             socket_connect_timeout=5,
             socket_keepalive=True,
             retry_on_timeout=True,
-            max_connections=50,  # Allow up to 50 concurrent connections
+            max_connections=200,
             health_check_interval=30
         )
     

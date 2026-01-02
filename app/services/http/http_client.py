@@ -125,6 +125,46 @@ class HttpClient:
             logger.error(f"Request error for URL {url}: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}") from e
     
+    async def get(
+        self,
+        url: str,
+        headers: Dict[str, str] | None = None,
+        params: Dict[str, Any] | None = None,
+        use_cache: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Make async GET request with optional response caching.
+        
+        Args:
+            url: Request URL
+            headers: Request headers
+            params: Query parameters
+            use_cache: Whether to cache response
+        """
+        headers = headers or {}
+        params = params or {}
+        
+        client = await self._get_client()
+        
+        try:
+            response = await client.get(
+                url=url,
+                headers=headers,
+                params=params,
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            return result
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text if e.response else str(e)
+            status = e.response.status_code if e.response else 500
+            logger.error(f"HTTP error {status} for URL {url}: {detail}")
+            raise HTTPException(status_code=status, detail=detail) from e
+        except httpx.RequestError as e:
+            logger.error(f"Request error for URL {url}: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}") from e
+    
     async def close(self):
         """Close HTTP client connections (only closes shared client if this is the last instance)."""
         # Note: Shared client should be closed at application shutdown, not per instance
