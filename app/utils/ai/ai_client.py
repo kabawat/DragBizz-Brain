@@ -8,10 +8,8 @@ from app.services.http import HttpClient
 from app.constants.ai import (
     AI_BASE_URL,
     AI_CHAT_ENDPOINT,
-    DEFAULT_MODEL,
-    FALLBACK_MODEL,
-    SECONDARY_FALLBACK
 )
+from app.utils.ai.model_manager import get_available_models, remove_model
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +18,21 @@ class AIClient:
     def __init__(self, http_client: Optional[HttpClient] = None, timeout: Optional[int] = None):
         self.settings = get_settings()
         self.http_client = http_client or HttpClient(timeout=timeout or self.settings.ai_request_timeout)
-        self.models = [DEFAULT_MODEL, FALLBACK_MODEL, SECONDARY_FALLBACK]
+        self._models_cache: Optional[List[str]] = None
+        self._cache_lock = asyncio.Lock()
+    
+    async def _get_models(self) -> List[str]:
+        """Get current list of available models."""
+        async with self._cache_lock:
+            if self._models_cache is None:
+                self._models_cache = await get_available_models()
+            return self._models_cache.copy()
+    
+    async def _refresh_models(self) -> List[str]:
+        """Refresh models list from file."""
+        async with self._cache_lock:
+            self._models_cache = await get_available_models()
+            return self._models_cache.copy()
     
     def _build_headers(self) -> Dict[str, str]:
         headers = {
@@ -42,10 +54,26 @@ class AIClient:
         models: Optional[List[str]] = None,
         max_retries: int = 2
     ) -> Optional[Dict[str, Any]]:
-        models_to_try = models or self.models
-        last_error = None
+        """
+        Call AI with dynamic model fallback.
+        - Uses models from file in order (first to last)
+        - Removes model from file permanently if rate limit (429) is hit
+        - Uses next model for temporary errors (500+) without removing
+        """
+        models_to_try = models or await self._get_models()
         
-        for model in models_to_try:
+        if not models_to_try:
+            logger.error("No models available!")
+            return None
+        
+        last_error = None
+        last_model = None
+        
+        while models_to_try:
+            model = models_to_try[0]
+            last_model = model
+            should_remove_model = False
+            
             for attempt in range(max_retries):
                 try:
                     request_data = {
@@ -69,34 +97,48 @@ class AIClient:
                     
                 except HTTPException as e:
                     last_error = e
+                    
                     if e.status_code == 429:
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(0.5 * (attempt + 1))
-                            continue
-                        if model != models_to_try[-1]:
-                            break
+                        logger.warning(f"Rate limit (429) for model {model} - removing permanently")
+                        should_remove_model = True
+                        break
                     elif e.status_code >= 500:
+                        logger.warning(f"Server error ({e.status_code}) for model {model}, retrying...")
                         if attempt < max_retries - 1:
                             await asyncio.sleep(0.5 * (attempt + 1))
                             continue
-                    break
+                        break
+                    else:
+                        logger.warning(f"Error {e.status_code} for model {model}, trying next model")
+                        break
+                        
                 except (ValueError, KeyError, TypeError) as e:
                     last_error = e
-                    if model == models_to_try[-1] and attempt == max_retries - 1:
-                        break
+                    logger.warning(f"Parse error for model {model}: {str(e)}")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(0.3)
                         continue
                     break
                 except Exception as e:
                     last_error = e
+                    logger.warning(f"Unexpected error for model {model}: {str(e)}")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(0.5 * (attempt + 1))
                         continue
                     break
+            
+            if should_remove_model:
+                await remove_model(model)
+                await self._refresh_models()
+            
+            models_to_try.pop(0)
+            
+            if not models_to_try:
+                models_to_try = await self._get_models()
+                if not models_to_try:
+                    break
         
         if last_error:
-            logger.error(f"All AI models failed. Last error: {last_error}")
+            logger.error(f"All AI models failed. Last error: {last_error} (model: {last_model})")
         
         return None
-

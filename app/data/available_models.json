@@ -1,0 +1,26 @@
+[
+  "xiaomi/mimo-v2-flash:free",
+  "nvidia/nemotron-3-nano-30b-a3b:free",
+  "mistralai/devstral-2512:free",
+  "arcee-ai/trinity-mini:free",
+  "tngtech/tng-r1t-chimera:free",
+  "nvidia/nemotron-nano-12b-v2-vl:free",
+  "openai/gpt-oss-120b:free",
+  "z-ai/glm-4.5-air:free",
+  "qwen/qwen3-coder:free",
+  "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+  "tngtech/deepseek-r1t2-chimera:free",
+  "deepseek/deepseek-r1-0528:free",
+  "tngtech/deepseek-r1t-chimera:free",
+  "google/gemma-3-27b-it:free",
+  "google/gemini-2.0-flash-exp:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "qwen/qwen3-4b:free",
+  "google/gemma-3n-e4b-it:free",
+  "moonshotai/kimi-k2:free",
+  "openai/gpt-oss-20b:free",
+  "nvidia/nemotron-nano-9b-v2:free",
+  "arcee-ai/trinity-mini:free",
+  "allenai/molmo-2-8b:free"
+]
+
