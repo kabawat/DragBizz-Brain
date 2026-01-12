@@ -1,9 +1,9 @@
 AI_BASE_URL = "https://openrouter.ai/api/v1"
 AI_CHAT_ENDPOINT = "/chat/completions"
 
-DEFAULT_MODEL = "openai/gpt-4o-mini"
-FALLBACK_MODEL = "google/gemini-2.0-flash-exp:free"
-SECONDARY_FALLBACK = "meta-llama/llama-3.2-3b-instruct:free"
+DEFAULT_MODEL = "allenai/molmo-2-8b:free"
+FALLBACK_MODEL = "allenai/molmo-2-8b:free"
+SECONDARY_FALLBACK = "xiaomi/mimo-v2-flash:free"
 
 DEFAULT_TEMPERATURE = 0.3
 EXTRACTION_TEMPERATURE = 0.1

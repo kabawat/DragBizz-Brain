@@ -1,7 +1,6 @@
 """Logging configuration for the application."""
 import logging
 import sys
-from typing import Any, Dict
 
 from app.config.settings import get_settings
 
@@ -42,14 +41,3 @@ def setup_logging() -> None:
     
     # Application loggers
     logging.getLogger("app").setLevel(log_level)
-
-
-class RequestIDFilter(logging.Filter):
-    """Logging filter to add request ID to log records."""
-    
-    def filter(self, record: logging.LogRecord) -> bool:
-        """Add request_id to log record if available."""
-        if not hasattr(record, 'request_id'):
-            record.request_id = getattr(record, 'request_id', '-')
-        return True
-

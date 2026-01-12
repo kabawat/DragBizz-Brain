@@ -1,5 +1,4 @@
 import logging
-from app.models.health import HealthResponse, PongResponse
 from app.utils.responseHandler.standardized import success_response
 from app.services.redis_manager import get_redis_client
 
@@ -13,11 +12,14 @@ async def get_health():
         "status": "healthy"
     }
     
-    # Check Redis connectivity
     try:
-        redis_client = get_redis_client()
-        redis_client.ping()
-        health_data["redis"] = "connected"
+        redis_client = await get_redis_client(raise_on_error=False)
+        if redis_client:
+            await redis_client.ping()
+            health_data["redis"] = "connected"
+        else:
+            health_data["redis"] = "disconnected"
+            health_data["status"] = "degraded"
     except Exception as e:
         logger.warning(f"Redis health check failed: {str(e)}")
         health_data["redis"] = "disconnected"
@@ -28,11 +30,9 @@ async def get_health():
         data=health_data
     )
 
-
 async def ping():
     """Simple ping endpoint for load balancer health checks."""
     return success_response(
         message="Service is alive",
         data={"status": "ok"}
     )
-

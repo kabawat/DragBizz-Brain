@@ -24,14 +24,15 @@ class SubscriptionService:
             headers = {"Content-Type": "application/json"}
             if token:
                 headers["Authorization"] = f"Bearer {token}"
+            else:
+                logger.warning(f"No token provided for feature access check for user {user_id}")
             params = {
                 "userId": user_id,
                 "featureKey": feature_key
             }
             
             try:
-                response = await self.http_client.get(url, headers=headers, params=params, use_cache=False)
-                
+                response = await self.http_client.get(url, headers=headers, params=params)
                 response_data = response.get("data", {}) if isinstance(response, dict) else {}
                 quota = response_data.get("quota", {}) if isinstance(response_data, dict) else {}
                 

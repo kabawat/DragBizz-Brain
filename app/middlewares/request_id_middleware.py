@@ -22,17 +22,13 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Add request ID to request state and response headers."""
         if self.enabled:
-            # Get request ID from header or generate new one
             request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
             request.state.request_id = request_id
-            
-            # Add to logger context
             logger.info(f"Request started: {request.method} {request.url.path}", extra={"request_id": request_id})
         
         response = await call_next(request)
         
         if self.enabled and hasattr(request.state, 'request_id'):
-            # Add request ID to response headers
             response.headers["X-Request-ID"] = request.state.request_id
         
         return response

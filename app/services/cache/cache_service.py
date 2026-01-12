@@ -9,10 +9,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_TTL = 600
 
 
-def get_cache(key: str) -> Optional[Any]:
+async def get_cache(key: str) -> Optional[Any]:
     try:
-        client = get_redis_client()
-        cached = client.get(key)
+        client = await get_redis_client(raise_on_error=False)
+        if client is None:
+            logger.debug(f"Redis unavailable, cache miss for key: {key[:50]}...")
+            return None
+        cached = await client.get(key)
         if cached:
             logger.debug(f"Cache hit for key: {key[:50]}...")
             return json.loads(cached)
@@ -22,10 +25,13 @@ def get_cache(key: str) -> Optional[Any]:
     return None
 
 
-def set_cache(key: str, value: Any, ttl: int = DEFAULT_TTL) -> bool:
+async def set_cache(key: str, value: Any, ttl: int = DEFAULT_TTL) -> bool:
     try:
-        client = get_redis_client()
-        client.setex(
+        client = await get_redis_client(raise_on_error=False)
+        if client is None:
+            logger.debug(f"Redis unavailable, skipping cache set for key: {key[:50]}...")
+            return False
+        await client.setex(
             key,
             ttl,
             json.dumps(value)
@@ -35,4 +41,3 @@ def set_cache(key: str, value: Any, ttl: int = DEFAULT_TTL) -> bool:
     except Exception as e:
         logger.warning(f"Cache set error for key {key[:50]}...: {str(e)}", exc_info=logger.isEnabledFor(logging.DEBUG))
         return False
-

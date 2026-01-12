@@ -33,7 +33,7 @@ async def check_ai_feature_access(request: Request) -> dict:
             )
         
         cache_key = _get_cache_key(user_id)
-        cached_access = get_cache(cache_key)
+        cached_access = await get_cache(cache_key)
         
         if cached_access is not None:
             has_access = cached_access.get("hasAccess", False)
@@ -79,7 +79,7 @@ async def check_ai_feature_access(request: Request) -> dict:
                 "checkedAt": None
             }
             
-            set_cache(cache_key, cache_data, AI_FEATURE_CACHE_TTL)
+            await set_cache(cache_key, cache_data, AI_FEATURE_CACHE_TTL)
             logger.debug(f"Cached AI feature access for user {user_id}: {cache_data['hasAccess']}")
             
             return user
@@ -90,7 +90,7 @@ async def check_ai_feature_access(request: Request) -> dict:
                 "quota": e.detail.get("quota", {}) if isinstance(e.detail, dict) else {},
                 "error": e.detail.get("message", "Feature not available") if isinstance(e.detail, dict) else str(e.detail)
             }
-            set_cache(cache_key, cache_data, 300)
+            await set_cache(cache_key, cache_data, 300)
             
             error_detail = e.detail if isinstance(e.detail, dict) else {"message": str(e.detail)}
             raise HTTPException(
@@ -112,7 +112,7 @@ async def check_ai_feature_access(request: Request) -> dict:
                 "quota": {},
                 "error": "Service unavailable"
             }
-            set_cache(cache_key, cache_data, 60)
+            await set_cache(cache_key, cache_data, 60)
             raise HTTPException(
                 status_code=503,
                 detail={

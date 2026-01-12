@@ -11,7 +11,6 @@ from app.constants.ai import EXTRACTION_SYSTEM_PROMPT, EXTRACTION_TEMPERATURE, E
 
 logger = logging.getLogger(__name__)
 
-# Supplier-specific extraction prompt
 SUPPLIER_EXTRACTION_SYSTEM_PROMPT = """Extract supplier data. Return JSON only.
 
 Schema:{"name":str|null,"agency":str|null,"phone":str|null,"email":str|null,"store":str|null,"address":str|null,"gstNumber":str|null,"extractedFields":["field1"]}

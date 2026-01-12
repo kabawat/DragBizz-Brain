@@ -12,6 +12,9 @@ async def verify_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
         auth_header = request.headers.get("authorization")
         token = extract_bearer_token(auth_header)
@@ -28,8 +31,10 @@ async def verify_token(
             if result.get("expired"):
                 message = "Access token expired."
             elif result.get("error"):
-                # Include actual error for debugging
-                message = f"Invalid access token: {result.get('error')}"
+                error_obj = result.get("error")
+                error_str = str(error_obj) if error_obj else "Unknown error"
+                logger.warning(f"Token verification failed: {error_str}")
+                message = f"Invalid access token: {error_str}"
             else:
                 message = "Invalid access token."
             raise HTTPException(
@@ -45,6 +50,7 @@ async def verify_token(
     except HTTPException:
         raise
     except Exception as err:
+        logger.error(f"Authentication error: {str(err)}", exc_info=True)
         error_data = parse_error_for_response(err)
         raise HTTPException(
             status_code=error_data.get("status_code", STATUS_CODES["INTERNAL_SERVER_ERROR"]),

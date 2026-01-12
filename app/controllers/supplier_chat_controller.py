@@ -1,4 +1,5 @@
 from fastapi import Request, HTTPException
+import logging
 
 from app.models.supplier import SupplierChatRequest, SupplierChatResponse
 from app.services.supplier_chat_service import SupplierChatService
@@ -8,11 +9,15 @@ from app.utils.responseHandler.standardized import (
     parse_error_for_response
 )
 
+logger = logging.getLogger(__name__)
 
 async def chat_supplier(request: Request, payload: SupplierChatRequest):
     try:
         user = getattr(request.state, 'user', None)
-        user_id = user.get('sub') or user.get('id') if user else None
+        # Safely extract user_id - check if user is a dict before accessing
+        user_id = None
+        if user and isinstance(user, dict):
+            user_id = user.get('sub') or user.get('id')
         token = getattr(request.state, 'token', None)
         
         async with SupplierChatService() as service:
@@ -26,10 +31,11 @@ async def chat_supplier(request: Request, payload: SupplierChatRequest):
     except HTTPException as e:
         error_detail = e.detail
         
+        # Safely handle error_detail - it can be dict or string
         if isinstance(error_detail, dict):
             error_message = error_detail.get("message", "An error occurred")
             error_type = error_detail.get("error_type", "unknown")
-            quota = error_detail.get("quota", {})
+            quota = error_detail.get("quota", {}) if isinstance(error_detail.get("quota"), dict) else {}
             
             if error_type == "subscription_error":
                 if quota.get("hasAccess") is False:
@@ -46,9 +52,9 @@ async def chat_supplier(request: Request, payload: SupplierChatRequest):
         
         raise
     except Exception as err:
+        logger.error(f"Unexpected error in chat_supplier: {str(err)}", exc_info=True)
         error_data = parse_error_for_response(err)
         return error_response(
             message=error_data.get("message", "An error occurred during conversation"),
             status_code=error_data.get("status_code", 500)
         )
-

@@ -51,12 +51,14 @@ async def verify_access_token(token: str) -> Dict[str, Any]:
     - Cache successful result
     - Return a simple { valid, expired, decoded, error?, cached } dict
     """
+    import logging
+    logger = logging.getLogger(__name__)
     settings = get_settings()
 
     try:
         # Step 1: Check Redis cache first
         cache_key = get_token_cache_key(token)
-        cached_result = get_cache(cache_key)
+        cached_result = await get_cache(cache_key)
 
         if cached_result:
             return {
@@ -70,12 +72,14 @@ async def verify_access_token(token: str) -> Dict[str, Any]:
         try:
             signing_key = JWKS_CLIENT.get_signing_key_from_jwt(token)
         except Exception as jwks_err:
+            logger.error(f"Failed to fetch JWKS from {jwks_url}: {str(jwks_err)}")
             # Mirror retailer behaviour: just surface the error
+            error_message = str(jwks_err)
             return {
                 "valid": False,
                 "expired": False,
                 "decoded": None,
-                "error": jwks_err,
+                "error": error_message,
                 "cached": False,
             }
 
@@ -100,11 +104,12 @@ async def verify_access_token(token: str) -> Dict[str, Any]:
                 "cached": False,
             }
         except Exception as err:
+            logger.warning(f"JWT decode error: {str(err)}")
             return {
                 "valid": False,
                 "expired": False,
                 "decoded": None,
-                "error": err,
+                "error": str(err),
                 "cached": False,
             }
 
@@ -115,16 +120,17 @@ async def verify_access_token(token: str) -> Dict[str, Any]:
             "decoded": payload,
             "cached": False,
         }
-        set_cache(cache_key, result, VERIFY_CACHE_TTL)
+        await set_cache(cache_key, result, VERIFY_CACHE_TTL)
 
         return result
 
     except Exception as err:
+        logger.error(f"Unexpected error in token verification: {str(err)}", exc_info=True)
         # Don't cache invalid tokens or unexpected errors
         return {
             "valid": False,
             "expired": False,
             "decoded": None,
-            "error": err,
+            "error": str(err),
             "cached": False,
         }

@@ -122,7 +122,7 @@ class CustomerExtractService:
                 )
             raise
         except Exception as e:
-            logger.error(f"Extraction failed: {str(e)}")
+            logger.error(f"Extraction failed: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to extract customer data: {str(e)}"

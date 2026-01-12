@@ -15,14 +15,11 @@ logger = logging.getLogger(__name__)
 class HttpClient:
     """Async HTTP client with response caching for cost reduction."""
     
-    # Shared client pool across all instances (for better connection reuse)
+    # Shared client pool across all instances
     _shared_client: Optional[httpx.AsyncClient] = None
     
     def __init__(self, timeout: int | None = None):
-        from app.config.settings import get_settings
-        settings = get_settings()
-        self.timeout = timeout or settings.http_timeout
-        # Use shared client pool for better connection reuse and cost savings
+        pass
     
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create shared async HTTP client with connection pooling."""
@@ -32,10 +29,10 @@ class HttpClient:
             HttpClient._shared_client = httpx.AsyncClient(
                 timeout=settings.http_timeout,
                 limits=httpx.Limits(
-                    max_keepalive_connections=50,  # Increased for high concurrency
-                    max_connections=200  # Increased for large number of requests
+                    max_keepalive_connections=100,
+                    max_connections=500
                 ),
-                http2=True  # Use HTTP/2 for better performance
+                http2=True
             )
         return HttpClient._shared_client
     
@@ -62,22 +59,13 @@ class HttpClient:
         json: Dict[str, Any] | None = None,
         use_cache: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Make async POST request with optional response caching.
-        
-        Args:
-            url: Request URL
-            headers: Request headers
-            json: JSON payload
-            use_cache: Whether to cache response (useful for AI API calls)
-        """
         headers = headers or {}
         json_data = json or {}
         
         # Check cache for AI responses (cost reduction)
         if use_cache:
             cache_key = self._get_cache_key(url, headers, json_data)
-            cached_response = get_cache(cache_key)
+            cached_response = await get_cache(cache_key)
             if cached_response:
                 logger.debug(f"Cache hit for URL: {url}")
                 return cached_response
@@ -93,7 +81,6 @@ class HttpClient:
             )
             response.raise_for_status()
             result = response.json()
-            
             # Cache successful AI responses (only if no errors in response)
             if use_cache and response.status_code == 200:
                 from app.config.settings import get_settings
@@ -105,14 +92,14 @@ class HttpClient:
                     # OpenRouter and similar APIs may return 200 with error in body
                     if "error" not in result:
                         cache_key = self._get_cache_key(url, headers, json_data)
-                        set_cache(cache_key, result, cache_ttl)
+                        await set_cache(cache_key, result, cache_ttl)
                         logger.debug(f"Cached response for URL: {url}, TTL: {cache_ttl}s")
                     else:
                         logger.warning(f"Not caching response with error: {result.get('error')}")
                 else:
                     # Non-dict responses are cached as-is
                     cache_key = self._get_cache_key(url, headers, json_data)
-                    set_cache(cache_key, result, cache_ttl)
+                    await set_cache(cache_key, result, cache_ttl)
                     logger.debug(f"Cached non-dict response for URL: {url}, TTL: {cache_ttl}s")
             
             return result
@@ -130,17 +117,7 @@ class HttpClient:
         url: str,
         headers: Dict[str, str] | None = None,
         params: Dict[str, Any] | None = None,
-        use_cache: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Make async GET request with optional response caching.
-        
-        Args:
-            url: Request URL
-            headers: Request headers
-            params: Query parameters
-            use_cache: Whether to cache response
-        """
         headers = headers or {}
         params = params or {}
         
@@ -164,12 +141,6 @@ class HttpClient:
         except httpx.RequestError as e:
             logger.error(f"Request error for URL {url}: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}") from e
-    
-    async def close(self):
-        """Close HTTP client connections (only closes shared client if this is the last instance)."""
-        # Note: Shared client should be closed at application shutdown, not per instance
-        # This method is kept for compatibility but doesn't close shared client
-        pass
     
     @classmethod
     async def close_shared_client(cls):

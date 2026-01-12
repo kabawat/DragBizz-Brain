@@ -11,12 +11,8 @@ from app.utils.responseHandler.standardized import (
 
 async def chat_customer(request: Request, payload: CustomerChatRequest):
     try:
-        user = getattr(request.state, 'user', None)
-        user_id = user.get('sub') or user.get('id') if user else None
-        token = getattr(request.state, 'token', None)
-        
         async with CustomerChatService() as service:
-            response = await service.handle_conversation(payload, user_id=user_id, token=token)
+            response = await service.handle_conversation(payload)
             
             return success_response(
                 message="Conversation processed successfully",
@@ -26,10 +22,11 @@ async def chat_customer(request: Request, payload: CustomerChatRequest):
     except HTTPException as e:
         error_detail = e.detail
         
+        # Safely handle error_detail - it can be dict or string
         if isinstance(error_detail, dict):
             error_message = error_detail.get("message", "An error occurred")
             error_type = error_detail.get("error_type", "unknown")
-            quota = error_detail.get("quota", {})
+            quota = error_detail.get("quota", {}) if isinstance(error_detail.get("quota"), dict) else {}
             
             if error_type == "subscription_error":
                 if quota.get("hasAccess") is False:
@@ -46,6 +43,9 @@ async def chat_customer(request: Request, payload: CustomerChatRequest):
         
         raise
     except Exception as err:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Unexpected error in chat_customer: {str(err)}", exc_info=True)
         error_data = parse_error_for_response(err)
         return error_response(
             message=error_data.get("message", "An error occurred during conversation"),

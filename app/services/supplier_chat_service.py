@@ -265,15 +265,28 @@ class SupplierChatService:
         session = None
         
         if session_id:
-            session = self.session_service.get_session(session_id)
+            session = await self.session_service.get_session(session_id)
             if not session:
                 logger.info(f"Session {session_id} expired, creating new session")
                 session_id = None
         
         if not session_id:
-            session_id = self.session_service.create_session()
-            session = self.session_service.get_session(session_id)
+            session_id = await self.session_service.create_session()
+            session = await self.session_service.get_session(session_id)
+            if not session:
+                logger.error(f"Failed to retrieve session {session_id} after creation")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Session service temporarily unavailable. Please try again."
+                )
             logger.info(f"Created new session: {session_id}")
+        
+        if not session:
+            logger.error(f"Session is None for session_id: {session_id}")
+            raise HTTPException(
+                status_code=500,
+                detail="Session data unavailable. Please try again."
+            )
         
         extract_request = SupplierExtractRequest(prompt=prompt)
         
@@ -293,7 +306,7 @@ class SupplierChatService:
                 status="error"
             )
         
-        existing_data = session.get("extracted_data", {})
+        existing_data = session.get("extracted_data", {}) if isinstance(session, dict) else {}
         
         new_data = {}
         if extract_response.payload:
@@ -305,10 +318,13 @@ class SupplierChatService:
         
         missing_fields = self._check_required_fields(merged_data, store)
         
-        self.session_service.update_session(session_id, {
+        update_success = await self.session_service.update_session(session_id, {
             "extracted_data": merged_data,
             "store": store
         })
+        
+        if not update_success:
+            logger.warning(f"Failed to update session {session_id}, but continuing with response")
         
         payload = SupplierPayload(**merged_data)
         
