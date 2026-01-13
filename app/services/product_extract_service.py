@@ -238,6 +238,31 @@ Rules:
                 if extracted_data.get("category") in [None, "", "null"]:
                     extracted_data["category"] = None
                 
+                if extracted_data.get("gstInfo") in [None, "", "null"] or not isinstance(extracted_data.get("gstInfo"), dict):
+                    extracted_data["gstInfo"] = {}
+                
+                gst_info = extracted_data.get("gstInfo", {})
+                if not isinstance(gst_info, dict):
+                    gst_info = {}
+                
+                if gst_info.get("gstRate") is None or gst_info.get("gstRate") == 0:
+                    if extracted_data.get("gstRate") is not None and extracted_data.get("gstRate") != 0:
+                        gst_info["gstRate"] = float(extracted_data.get("gstRate"))
+                        logger.info(f"GST Rate found at top level, moving to gstInfo: {gst_info['gstRate']}")
+                
+                if gst_info.get("gstRate") is not None:
+                    try:
+                        gst_info["gstRate"] = float(gst_info["gstRate"])
+                        if gst_info["gstRate"] < 0:
+                            gst_info["gstRate"] = None
+                    except (ValueError, TypeError):
+                        gst_info["gstRate"] = None
+                
+                if gst_info.get("isGstApplicable") is None:
+                    gst_info["isGstApplicable"] = gst_info.get("gstRate") is not None and gst_info.get("gstRate") > 0
+                
+                extracted_data["gstInfo"] = gst_info
+                
                 try:
                     product_payload = ProductPayload(**extracted_data)
                 except Exception as e:

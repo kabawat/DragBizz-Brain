@@ -12,8 +12,8 @@ router = APIRouter(tags=["product"])
 async def extract_product(
     request: Request,
     image: UploadFile = File(..., description="Product image file (JPEG, PNG, etc.)"),
-    # user: dict = Depends(verify_token),  # First verify authentication
-    # ai_access: dict = Depends(check_ai_feature_access)  # Then check AI feature access
+    user: dict = Depends(verify_token),  # First verify authentication
+    ai_access: dict = Depends(check_ai_feature_access)  # Then check AI feature access
 ):
     return await extract_product_from_image(request, image)
 
