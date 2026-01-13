@@ -70,6 +70,27 @@ else
   echo "Models file already exists at $MODELS_FILE"
 fi
 
+echo "Initializing vision models file if not exists"
+VISION_MODELS_FILE="app/data/vision_models.json"
+if [ ! -f "$VISION_MODELS_FILE" ]; then
+  echo "Creating default vision models file..."
+  cat > "$VISION_MODELS_FILE" << 'EOF'
+[
+  "allenai/molmo-2-8b:free",
+  "nvidia/nemotron-nano-12b-v2-vl:free",
+  "mistralai/mistral-small-3.1-24b-instruct:free",
+  "google/gemma-3-4b-it:free",
+  "google/gemma-3-12b-it:free",
+  "google/gemma-3-27b-it:free",
+  "google/gemini-2.0-flash-exp:free",
+  "qwen/qwen-2.5-vl-7b-instruct:free"
+]
+EOF
+  echo "Vision models file created at $VISION_MODELS_FILE"
+else
+  echo "Vision models file already exists at $VISION_MODELS_FILE"
+fi
+
 echo "Checking for .env file"
 if [ ! -f ".env" ]; then
   echo "Warning: .env file not found. Please create one with required environment variables."

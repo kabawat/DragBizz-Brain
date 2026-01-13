@@ -7,3 +7,4 @@ httpx[http2]==0.27.2
 redis[asyncio]==5.2.0
 pyjwt[crypto]==2.9.0
 cryptography==43.0.1
+python-multipart==0.0.9

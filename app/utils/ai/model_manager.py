@@ -8,7 +8,9 @@ from typing import List, Optional
 logger = logging.getLogger(__name__)
 
 MODELS_FILE = Path(__file__).resolve().parent.parent.parent / "app" / "data" / "available_models.json"
+VISION_MODELS_FILE = Path(__file__).resolve().parent.parent.parent / "app" / "data" / "vision_models.json"
 _file_lock = asyncio.Lock()
+_vision_file_lock = asyncio.Lock()
 
 
 async def get_available_models() -> List[str]:
@@ -74,4 +76,98 @@ async def save_models(models: List[str]) -> None:
         logger.debug(f"Saved {len(models)} models to file")
     except Exception as e:
         logger.error(f"Error saving models file: {str(e)}", exc_info=True)
+
+
+# Vision Models Management
+async def get_available_vision_models() -> List[str]:
+    """Get list of available vision models from file."""
+    async with _vision_file_lock:
+        try:
+            if not VISION_MODELS_FILE.exists():
+                logger.warning(f"Vision models file not found: {VISION_MODELS_FILE}, creating with default vision models")
+                default_vision_models = [
+                    "allenai/molmo-2-8b:free",
+                    "nvidia/nemotron-nano-12b-v2-vl:free",
+                    "mistralai/mistral-small-3.1-24b-instruct:free",
+                    "google/gemma-3-4b-it:free",
+                    "google/gemma-3-12b-it:free",
+                    "google/gemma-3-27b-it:free",
+                    "google/gemini-2.0-flash-exp:free",
+                    "qwen/qwen-2.5-vl-7b-instruct:free",
+                ]
+                await save_vision_models(default_vision_models)
+                return default_vision_models
+            
+            def read_file():
+                with open(VISION_MODELS_FILE, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            
+            models = await asyncio.to_thread(read_file)
+            
+            if not isinstance(models, list) or len(models) == 0:
+                logger.warning("Vision models file is empty or invalid, using default vision models")
+                default_vision_models = [
+                    "allenai/molmo-2-8b:free",
+                    "nvidia/nemotron-nano-12b-v2-vl:free",
+                    "mistralai/mistral-small-3.1-24b-instruct:free",
+                    "google/gemma-3-4b-it:free",
+                    "google/gemma-3-12b-it:free",
+                    "google/gemma-3-27b-it:free",
+                    "google/gemini-2.0-flash-exp:free",
+                    "qwen/qwen-2.5-vl-7b-instruct:free",
+                ]
+                return default_vision_models
+            
+            return models
+        except Exception as e:
+            logger.error(f"Error reading vision models file: {str(e)}", exc_info=True)
+            return [
+                "allenai/molmo-2-8b:free",
+                "nvidia/nemotron-nano-12b-v2-vl:free",
+                "mistralai/mistral-small-3.1-24b-instruct:free",
+                "google/gemma-3-4b-it:free",
+                "google/gemma-3-12b-it:free",
+                "google/gemma-3-27b-it:free",
+                "google/gemini-2.0-flash-exp:free",
+                "qwen/qwen-2.5-vl-7b-instruct:free",
+            ]
+
+
+async def remove_vision_model(model: str) -> bool:
+    """Remove a vision model from the available vision models list when limit is reached."""
+    async with _vision_file_lock:
+        try:
+            models = await get_available_vision_models()
+            
+            if model not in models:
+                logger.debug(f"Vision model {model} not in list, skipping removal")
+                return False
+            
+            models.remove(model)
+            
+            if len(models) == 0:
+                logger.error("All vision models exhausted! Adding default vision model as fallback")
+                models = ["allenai/molmo-2-8b:free"]
+            
+            await save_vision_models(models)
+            logger.info(f"Removed vision model {model} from available vision models. Remaining: {len(models)}")
+            return True
+        except Exception as e:
+            logger.error(f"Error removing vision model {model}: {str(e)}", exc_info=True)
+            return False
+
+
+async def save_vision_models(models: List[str]) -> None:
+    """Save vision models list to file."""
+    try:
+        VISION_MODELS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        
+        def write_file():
+            with open(VISION_MODELS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(models, f, indent=2, ensure_ascii=False)
+        
+        await asyncio.to_thread(write_file)
+        logger.debug(f"Saved {len(models)} vision models to file")
+    except Exception as e:
+        logger.error(f"Error saving vision models file: {str(e)}", exc_info=True)
 

@@ -9,7 +9,7 @@ from app.constants.ai import (
     AI_BASE_URL,
     AI_CHAT_ENDPOINT,
 )
-from app.utils.ai.model_manager import get_available_models, remove_model
+from app.utils.ai.model_manager import get_available_models, remove_model, remove_vision_model
 
 logger = logging.getLogger(__name__)
 
@@ -52,19 +52,26 @@ class AIClient:
         use_cache: bool = True,
         response_format: Optional[Dict[str, str]] = None,
         models: Optional[List[str]] = None,
-        max_retries: int = 2
+        max_retries: int = 2,
+        is_vision: bool = False
     ) -> Optional[Dict[str, Any]]:
         """
         Call AI with dynamic model fallback.
         - Uses models from file in order (first to last)
         - Removes model from file permanently if rate limit (429) is hit
         - Uses next model for temporary errors (500+) without removing
+        
+        Args:
+            is_vision: If True, uses vision models and removes from vision models file on 429
         """
         models_to_try = models or await self._get_models()
         
         if not models_to_try:
             logger.error("No models available!")
             return None
+        
+        # Use appropriate remove function based on is_vision flag
+        remove_func = remove_vision_model if is_vision else remove_model
         
         last_error = None
         last_model = None
@@ -128,15 +135,24 @@ class AIClient:
                     break
             
             if should_remove_model:
-                await remove_model(model)
-                await self._refresh_models()
+                await remove_func(model)
+                if is_vision:
+                    # For vision models, we need to refresh from vision models file
+                    # But since we're passing models explicitly, we just remove from list
+                    pass
+                else:
+                    await self._refresh_models()
             
             models_to_try.pop(0)
             
             if not models_to_try:
-                models_to_try = await self._get_models()
-                if not models_to_try:
+                if is_vision:
+                    # For vision models, if list is empty, we can't fallback to text models
                     break
+                else:
+                    models_to_try = await self._get_models()
+                    if not models_to_try:
+                        break
         
         if last_error:
             logger.error(f"All AI models failed. Last error: {last_error} (model: {last_model})")
