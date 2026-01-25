@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     project_name: str = "DragBizz Voice AI"
     version: str = "0.1.0"
-    debug: bool = False
+    debug: bool = True
     environment: str = "development"
     
     base_url: str = "http://localhost"

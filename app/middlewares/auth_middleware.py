@@ -15,9 +15,15 @@ async def verify_token(
     import logging
     logger = logging.getLogger(__name__)
     
+    from app.config.settings import get_settings
+    
     try:
-        auth_header = request.headers.get("authorization")
-        token = extract_bearer_token(auth_header)
+        settings = get_settings()
+        cookie_name = "__Host-at" if settings.is_production else "at"
+        token = request.cookies.get(cookie_name)
+
+        # Debug log for troubleshooting similar to other services
+        logger.info(f"AuthMiddleware: Checking cookie '{cookie_name}', Token found: {bool(token)}")
         
         if not token:
             raise HTTPException(
