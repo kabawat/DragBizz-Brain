@@ -10,10 +10,11 @@ logger = logging.getLogger(__name__)
 
 AI_FEATURE_CACHE_TTL = 600
 CACHE_KEY_PREFIX = "ai_feature_access:"
+CACHE_KEY_VERSION = "v2"  # Bump to invalidate stale cache after auth/subscription fixes
 
 
 def _get_cache_key(user_id: str) -> str:
-    return f"{CACHE_KEY_PREFIX}{user_id}"
+    return f"{CACHE_KEY_PREFIX}{user_id}:{CACHE_KEY_VERSION}"
 
 
 async def check_ai_feature_access(request: Request) -> dict:
@@ -85,13 +86,16 @@ async def check_ai_feature_access(request: Request) -> dict:
             return user
             
         except HTTPException as e:
-            cache_data = {
-                "hasAccess": False,
-                "quota": e.detail.get("quota", {}) if isinstance(e.detail, dict) else {},
-                "error": e.detail.get("message", "Feature not available") if isinstance(e.detail, dict) else str(e.detail)
-            }
-            await set_cache(cache_key, cache_data, 300)
-            
+            # Only cache 403 (no access) - don't cache 400/5xx (auth bugs or service errors)
+            if e.status_code == 403:
+                cache_data = {
+                    "hasAccess": False,
+                    "quota": e.detail.get("quota", {}) if isinstance(e.detail, dict) else {},
+                    "error": e.detail.get("message", "Feature not available") if isinstance(e.detail, dict) else str(e.detail)
+                }
+                await set_cache(cache_key, cache_data, 300)
+            # 400, 503 etc: don't cache - allow retry (avoids stale cache after fixes)
+
             error_detail = e.detail if isinstance(e.detail, dict) else {"message": str(e.detail)}
             raise HTTPException(
                 status_code=e.status_code,
@@ -107,12 +111,7 @@ async def check_ai_feature_access(request: Request) -> dict:
             )
         except Exception as e:
             logger.error(f"Subscription service error: {str(e)}", exc_info=True)
-            cache_data = {
-                "hasAccess": False,
-                "quota": {},
-                "error": "Service unavailable"
-            }
-            await set_cache(cache_key, cache_data, 60)
+            # Don't cache service errors - allow retry on next request (avoids stale cache blocking after fix)
             raise HTTPException(
                 status_code=503,
                 detail={

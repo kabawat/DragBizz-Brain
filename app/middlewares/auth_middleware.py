@@ -1,17 +1,11 @@
-from fastapi import Depends, HTTPException, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import HTTPException, Request
 
 from app.lib.token import verify_access_token, extract_bearer_token
 from app.constants.status_code import STATUS_CODES
 from app.utils.responseHandler.standardized import parse_error_for_response
 
-security = HTTPBearer()
 
-
-async def verify_token(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> dict:
+async def verify_token(request: Request) -> dict:
     import logging
     logger = logging.getLogger(__name__)
     
@@ -21,10 +15,6 @@ async def verify_token(
         settings = get_settings()
         cookie_name = "__Host-at" if settings.is_production else "at"
         token = request.cookies.get(cookie_name)
-
-        # Debug log for troubleshooting similar to other services
-        logger.info(f"AuthMiddleware: Checking cookie '{cookie_name}', Token found: {bool(token)}")
-        
         if not token:
             raise HTTPException(
                 status_code=STATUS_CODES["UNAUTHORIZED"],
@@ -32,7 +22,6 @@ async def verify_token(
             )
         
         result = await verify_access_token(token)
-        
         if not result["valid"]:
             if result.get("expired"):
                 message = "Access token expired."

@@ -24,7 +24,9 @@ class SubscriptionService:
             headers = {"Content-Type": "application/json"}
             if token:
                 headers["Authorization"] = f"Bearer {token}"
-            else:
+            if self.settings.internal_service_secret:
+                headers["X-Internal-Secret"] = self.settings.internal_service_secret
+            if not token:
                 logger.warning(f"No token provided for feature access check for user {user_id}")
             params = {
                 "userId": user_id,

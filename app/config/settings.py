@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     
     jwt_issuer: str = "DragBizz-auth"
     jwt_algorithm: str = "RS256"
-    jwt_audience: Union[str, list[str]] = ["VOICE-AI", "RETAILER"]
+    jwt_audience: Union[str, list[str]] = ["DRAGBIZZ"]
     
     http_timeout: int = 30
     ai_request_timeout: int = 30
@@ -51,7 +51,10 @@ class Settings(BaseSettings):
     
     enable_request_id: bool = True
     subscription_enabled: bool = True
-    
+
+    # Internal service auth (Voice-AI → Retailer)
+    internal_service_secret: str | None = None
+
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
