@@ -193,9 +193,12 @@ class CustomerChatService:
         )
         
         if ai_response:
-            content = parse_text_response(ai_response)
-            if content:
-                return content
+            try:
+                content = parse_text_response(ai_response)
+                if content:
+                    return content
+            except Exception as e:
+                logger.warning(f"parse_text_response failed (missing-fields message): {str(e)}")
         
         return await self._get_fallback_message(missing_fields, user_prompt)
     
@@ -220,9 +223,12 @@ class CustomerChatService:
         )
         
         if ai_response:
-            content = parse_text_response(ai_response)
-            if content:
-                return content
+            try:
+                content = parse_text_response(ai_response)
+                if content:
+                    return content
+            except Exception as e:
+                logger.warning(f"parse_text_response failed (success message): {str(e)}")
         
         return await self._get_fallback_success_message(user_prompt)
     
@@ -245,9 +251,12 @@ class CustomerChatService:
         )
         
         if ai_response:
-            content = parse_text_response(ai_response)
-            if content:
-                return content
+            try:
+                content = parse_text_response(ai_response)
+                if content:
+                    return content
+            except Exception as e:
+                logger.warning(f"parse_text_response failed (error message): {str(e)}")
         
         return await self._get_fallback_error_message(user_prompt, error_detail)
     

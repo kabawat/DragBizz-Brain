@@ -16,8 +16,8 @@ class GstInfo(BaseModel):
 class Specification(BaseModel):
     """Product specification item."""
     
-    name: str = Field(..., description="Specification name")
-    value: str = Field(..., description="Specification value")
+    name: Optional[str] = Field(None, description="Specification name")
+    value: Optional[str] = Field(None, description="Specification value")
     unit: Optional[str] = Field(None, description="Specification unit")
 
 
@@ -34,10 +34,10 @@ class Content(BaseModel):
 class ProductPayload(BaseModel):
     """Product payload structure matching retailer API format."""
     
-    # Required fields
-    name: str = Field(..., description="Product name")
-    mrp: float = Field(..., description="Maximum Retail Price")
-    sellingPrice: float = Field(..., description="Selling price")
+    # Extracted fields can be partial; frontend can ask for missing details
+    name: Optional[str] = Field(None, description="Product name")
+    mrp: Optional[float] = Field(None, description="Maximum Retail Price")
+    sellingPrice: Optional[float] = Field(None, description="Selling price")
     
     # Optional but commonly needed fields
     store: Optional[str] = Field(None, description="Store ID")

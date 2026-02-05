@@ -4,6 +4,37 @@ import re
 from fastapi import HTTPException
 
 
+def _normalize_message_content(content: Any) -> str:
+    """
+    Normalize OpenAI/OpenRouter message content to plain text.
+    Supports:
+    - string content
+    - list content e.g. [{"type":"text","text":"..."}, ...]
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict):
+                # Common: {"type":"text","text":"..."}
+                text = item.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+                    continue
+                # Fallback keys sometimes used by adapters
+                alt = item.get("content")
+                if isinstance(alt, str) and alt:
+                    parts.append(alt)
+        return "".join(parts)
+    return ""
+
+
 def parse_text_response(ai_response: Dict[str, Any]) -> str:
     if not isinstance(ai_response, dict):
         raise ValueError("Invalid AI response format")
@@ -24,8 +55,8 @@ def parse_text_response(ai_response: Dict[str, Any]) -> str:
     if not isinstance(message, dict):
         raise ValueError("Invalid message format in AI response")
     
-    content = message.get("content", "")
-    if content and isinstance(content, str):
+    content = _normalize_message_content(message.get("content"))
+    if content:
         content = content.strip().replace("```", "").strip()
         if content:
             return content
@@ -49,7 +80,7 @@ def parse_json_response(ai_response: Dict[str, Any]) -> Dict[str, Any]:
         if not message or not isinstance(message, dict):
             raise ValueError("Invalid message format in AI response")
         
-        content = message.get("content", "")
+        content = _normalize_message_content(message.get("content"))
         if not content or not isinstance(content, str):
             raise ValueError("Empty or invalid content in AI response")
         

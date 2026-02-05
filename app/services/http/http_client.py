@@ -3,13 +3,43 @@ from typing import Any, Dict, Optional
 import hashlib
 import json
 import logging
+import time
 
 import httpx
 from fastapi import HTTPException
 
 from app.services.cache import get_cache, set_cache
+ 
 
 logger = logging.getLogger(__name__)
+
+def _extract_first_choice_text(result: Any) -> str:
+    """Best-effort extract first choice message content as text."""
+    if not isinstance(result, dict):
+        return ""
+    choices = result.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    first = choices[0]
+    if not isinstance(first, dict):
+        return ""
+    msg = first.get("message")
+    if not isinstance(msg, dict):
+        return ""
+    content = msg.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+        return "".join(parts).strip()
+    return ""
 
 
 class HttpClient:
@@ -61,6 +91,7 @@ class HttpClient:
     ) -> Dict[str, Any]:
         headers = headers or {}
         json_data = json or {}
+        started = time.perf_counter()
         
         # Check cache for AI responses (cost reduction)
         if use_cache:
@@ -79,6 +110,7 @@ class HttpClient:
                 headers=headers,
                 json=json_data,
             )
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
             response.raise_for_status()
             result = response.json()
             # Cache successful AI responses (only if no errors in response)
@@ -91,6 +123,11 @@ class HttpClient:
                 if isinstance(result, dict):
                     # OpenRouter and similar APIs may return 200 with error in body
                     if "error" not in result:
+                        # Avoid caching empty-content chat completions (can break UX for TTL duration)
+                        extracted_text = _extract_first_choice_text(result)
+                        if ("choices" in result) and (not extracted_text):
+                            logger.warning("Not caching AI response with empty content")
+                            return result
                         cache_key = self._get_cache_key(url, headers, json_data)
                         await set_cache(cache_key, result, cache_ttl)
                         logger.debug(f"Cached response for URL: {url}, TTL: {cache_ttl}s")
@@ -107,9 +144,11 @@ class HttpClient:
             detail = e.response.text if e.response else str(e)
             status = e.response.status_code if e.response else 500
             logger.error(f"HTTP error {status} for URL {url}: {detail}")
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
             raise HTTPException(status_code=status, detail=detail) from e
         except httpx.RequestError as e:
             logger.error(f"Request error for URL {url}: {str(e)}")
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
             raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}") from e
     
     async def get(
@@ -120,6 +159,7 @@ class HttpClient:
     ) -> Dict[str, Any]:
         headers = headers or {}
         params = params or {}
+        started = time.perf_counter()
         
         client = await self._get_client()
         
@@ -129,6 +169,7 @@ class HttpClient:
                 headers=headers,
                 params=params,
             )
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
             response.raise_for_status()
             result = response.json()
             
@@ -137,9 +178,11 @@ class HttpClient:
             detail = e.response.text if e.response else str(e)
             status = e.response.status_code if e.response else 500
             logger.error(f"HTTP error {status} for URL {url}: {detail}")
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
             raise HTTPException(status_code=status, detail=detail) from e
         except httpx.RequestError as e:
             logger.error(f"Request error for URL {url}: {str(e)}")
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
             raise HTTPException(status_code=500, detail=f"Request failed: {str(e)}") from e
     
     @classmethod

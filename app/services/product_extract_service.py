@@ -192,65 +192,68 @@ Rules:
                 )
             
             try:
-                if not extracted_data.get("name"):
-                    logger.warning("Product name not found in extracted data")
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Product name could not be extracted from image. Please ensure product name is clearly visible in the image."
-                    )
-                
-                selling_price = extracted_data.get("sellingPrice")
-                original_mrp = extracted_data.get("mrp")
-                mrp_was_missing = original_mrp is None or original_mrp == 0
-                
-                if selling_price is None:
-                    logger.warning("Product selling price not found in extracted data")
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Product selling price could not be extracted from image. Please ensure price is clearly visible in the image."
-                    )
-                
-                if mrp_was_missing:
-                    extracted_data["mrp"] = selling_price
-                    logger.info(f"MRP not found or 0, using sellingPrice ({selling_price}) as MRP")
-                
-                try:
-                    mrp_value = float(extracted_data["mrp"])
-                    selling_price_value = float(selling_price)
-                    
-                    if mrp_value < 0 or selling_price_value < 0:
-                        raise ValueError("Prices cannot be negative")
-                    
-                    extracted_data["mrp"] = mrp_value
-                    extracted_data["sellingPrice"] = selling_price_value
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Invalid price values: MRP={original_mrp}, SellingPrice={selling_price}, Error: {str(e)}")
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Product prices must be valid positive numbers. Please ensure prices are correctly visible in the image."
-                    )
-                
-                if not mrp_was_missing and selling_price_value > mrp_value:
-                    logger.warning(f"Selling price ({selling_price_value}) is greater than MRP ({mrp_value})")
+                # Allow partial extraction: do NOT fail request if some fields are missing.
+                missing_fields: list[str] = []
+
+                name = extracted_data.get("name")
+                if not name or str(name).strip() in ["", "null"]:
+                    extracted_data["name"] = None
+                    missing_fields.append("name")
+
+                selling_price_raw = extracted_data.get("sellingPrice")
+                mrp_raw = extracted_data.get("mrp")
+
+                def _is_missing_price(v) -> bool:
+                    return v is None or v == "" or v == "null" or v == 0
+
+                selling_missing = _is_missing_price(selling_price_raw)
+                mrp_missing = _is_missing_price(mrp_raw)
+
+                if selling_missing:
+                    extracted_data["sellingPrice"] = None
+                    missing_fields.append("sellingPrice")
+                if mrp_missing:
+                    extracted_data["mrp"] = None
+                    missing_fields.append("mrp")
+
+                # If only one price is present, use it as the other (best-effort)
+                if (not selling_missing) and mrp_missing:
+                    extracted_data["mrp"] = selling_price_raw
+                    missing_fields = [f for f in missing_fields if f != "mrp"]
+                if (not mrp_missing) and selling_missing:
+                    extracted_data["sellingPrice"] = mrp_raw
+                    missing_fields = [f for f in missing_fields if f != "sellingPrice"]
+
+                # Normalize numeric prices if present (don't hard-fail; just null them if invalid)
+                for key in ["mrp", "sellingPrice", "basePrice", "discount"]:
+                    val = extracted_data.get(key)
+                    if val is None or val == "" or val == "null":
+                        extracted_data[key] = None
+                        continue
+                    try:
+                        fval = float(val)
+                        if fval < 0:
+                            extracted_data[key] = None
+                        else:
+                            extracted_data[key] = fval
+                    except (ValueError, TypeError):
+                        extracted_data[key] = None
                 
                 if extracted_data.get("store") in [None, "", "null"]:
                     extracted_data["store"] = None
                 if extracted_data.get("category") in [None, "", "null"]:
                     extracted_data["category"] = None
                 
-                if extracted_data.get("gstInfo") in [None, "", "null"] or not isinstance(extracted_data.get("gstInfo"), dict):
-                    extracted_data["gstInfo"] = {}
+                gst_info = extracted_data.get("gstInfo")
+                if gst_info in [None, "", "null"] or not isinstance(gst_info, dict):
+                    gst_info = None
                 
-                gst_info = extracted_data.get("gstInfo", {})
-                if not isinstance(gst_info, dict):
-                    gst_info = {}
-                
-                if gst_info.get("gstRate") is None or gst_info.get("gstRate") == 0:
+                if isinstance(gst_info, dict) and (gst_info.get("gstRate") is None or gst_info.get("gstRate") == 0):
                     if extracted_data.get("gstRate") is not None and extracted_data.get("gstRate") != 0:
                         gst_info["gstRate"] = float(extracted_data.get("gstRate"))
                         logger.info(f"GST Rate found at top level, moving to gstInfo: {gst_info['gstRate']}")
                 
-                if gst_info.get("gstRate") is not None:
+                if isinstance(gst_info, dict) and gst_info.get("gstRate") is not None:
                     try:
                         gst_info["gstRate"] = float(gst_info["gstRate"])
                         if gst_info["gstRate"] < 0:
@@ -258,9 +261,12 @@ Rules:
                     except (ValueError, TypeError):
                         gst_info["gstRate"] = None
                 
-                if gst_info.get("isGstApplicable") is None:
+                if isinstance(gst_info, dict) and gst_info.get("isGstApplicable") is None:
                     gst_info["isGstApplicable"] = gst_info.get("gstRate") is not None and gst_info.get("gstRate") > 0
                 
+                # If gst_info dict is empty after normalization, drop it
+                if isinstance(gst_info, dict) and not any(v not in [None, "", "null", 0] for v in gst_info.values()):
+                    gst_info = None
                 extracted_data["gstInfo"] = gst_info
                 
                 try:
@@ -273,10 +279,24 @@ Rules:
                         detail=f"Failed to validate extracted product data: {str(e)}"
                     )
                 
+                # If nothing meaningful was extracted, return a user-facing error
+                if not product_payload.model_dump(exclude_none=True):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="No product data could be extracted from image. Please try with a clearer image."
+                    )
+
+                message = "Product data extracted successfully from image"
+                if missing_fields:
+                    message = (
+                        "Partial product data extracted from image. "
+                        f"Missing: {', '.join(sorted(set(missing_fields)))}."
+                    )
+
                 return ProductExtractResponse(
                     success=True,
                     payload=product_payload,
-                    message="Product data extracted successfully from image"
+                    message=message
                 )
                 
             except HTTPException:

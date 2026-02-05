@@ -14,6 +14,48 @@ from app.utils.ai.model_manager import get_available_models, remove_model, remov
 logger = logging.getLogger(__name__)
 
 
+def _extract_first_choice_content_type(ai_response: Any) -> str | None:
+    if not isinstance(ai_response, dict):
+        return None
+    choices = ai_response.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        return None
+    msg = choices[0].get("message")
+    if not isinstance(msg, dict):
+        return None
+    return type(msg.get("content")).__name__
+
+
+def _has_nonempty_first_choice_text(ai_response: Any) -> bool:
+    if not isinstance(ai_response, dict):
+        return False
+    if "error" in ai_response:
+        return False
+    choices = ai_response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return False
+    first = choices[0]
+    if not isinstance(first, dict):
+        return False
+    msg = first.get("message")
+    if not isinstance(msg, dict):
+        return False
+    content = msg.get("content")
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+        return bool("".join(parts).strip())
+    return False
+
+
 class AIClient:
     def __init__(self, http_client: Optional[HttpClient] = None, timeout: Optional[int] = None):
         self.settings = get_settings()
@@ -99,7 +141,10 @@ class AIClient:
                         json=request_data,
                         use_cache=use_cache
                     )
-                    
+                    # Light sanity debug (avoid printing full content)
+                    # Treat "200 but empty content" (or non-text content) as failure → fallback to next model
+                    if ("choices" in ai_response) and (not _has_nonempty_first_choice_text(ai_response)):
+                        raise ValueError("Empty content in AI response")
                     return ai_response
                     
                 except HTTPException as e:
@@ -108,6 +153,13 @@ class AIClient:
                     if e.status_code == 429:
                         logger.warning(f"Rate limit (429) for model {model} - removing permanently")
                         should_remove_model = True
+                        break
+                    elif e.status_code == 404:
+                        # Model not available / deprecated (common for free slugs ending)
+                        detail_text = str(e.detail)
+                        if "migrate" in detail_text.lower() or "not found" in detail_text.lower() or "ended" in detail_text.lower():
+                            logger.warning(f"Model not available (404) for model {model} - removing permanently")
+                            should_remove_model = True
                         break
                     elif e.status_code >= 500:
                         logger.warning(f"Server error ({e.status_code}) for model {model}, retrying...")

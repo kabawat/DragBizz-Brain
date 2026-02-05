@@ -1,6 +1,7 @@
 import logging
 from fastapi import Request, HTTPException
 
+from app.config.settings import get_settings
 from app.services.subscription_service import SubscriptionService
 from app.services.cache.cache_service import get_cache, set_cache
 from app.constants.status_code import STATUS_CODES
@@ -8,9 +9,8 @@ from app.utils.responseHandler.standardized import parse_error_for_response
 
 logger = logging.getLogger(__name__)
 
-AI_FEATURE_CACHE_TTL = 600
 CACHE_KEY_PREFIX = "ai_feature_access:"
-CACHE_KEY_VERSION = "v2"  # Bump to invalidate stale cache after auth/subscription fixes
+CACHE_KEY_VERSION = "v3"  # Bump to invalidate cache after TTL tuning
 
 
 def _get_cache_key(user_id: str) -> str:
@@ -19,6 +19,7 @@ def _get_cache_key(user_id: str) -> str:
 
 async def check_ai_feature_access(request: Request) -> dict:
     try:
+        settings = get_settings()
         user = getattr(request.state, 'user', None)
         user_id = user.get('sub') or user.get('id') if user else None
         token = getattr(request.state, 'token', None)
@@ -80,7 +81,7 @@ async def check_ai_feature_access(request: Request) -> dict:
                 "checkedAt": None
             }
             
-            await set_cache(cache_key, cache_data, AI_FEATURE_CACHE_TTL)
+            await set_cache(cache_key, cache_data, settings.ai_feature_access_cache_ttl)
             logger.debug(f"Cached AI feature access for user {user_id}: {cache_data['hasAccess']}")
             
             return user
@@ -93,7 +94,7 @@ async def check_ai_feature_access(request: Request) -> dict:
                     "quota": e.detail.get("quota", {}) if isinstance(e.detail, dict) else {},
                     "error": e.detail.get("message", "Feature not available") if isinstance(e.detail, dict) else str(e.detail)
                 }
-                await set_cache(cache_key, cache_data, 300)
+                await set_cache(cache_key, cache_data, settings.ai_feature_access_denied_cache_ttl)
             # 400, 503 etc: don't cache - allow retry (avoids stale cache after fixes)
 
             error_detail = e.detail if isinstance(e.detail, dict) else {"message": str(e.detail)}

@@ -38,6 +38,10 @@ def setup_logging() -> None:
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    # http2/hpack debug logs can leak sensitive header values
+    logging.getLogger("hpack").setLevel(logging.WARNING)
+    logging.getLogger("h2").setLevel(logging.WARNING)
+    logging.getLogger("hypercorn").setLevel(logging.WARNING)
     
     # Application loggers
     logging.getLogger("app").setLevel(log_level)

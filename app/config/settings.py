@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     
     ai_response_cache_ttl: int = 300
     token_verify_cache_ttl: int = 300
+
+    # Cache Voice AI feature access (subscription check) to reduce load
+    # Values are in seconds. Default: 10 minutes.
+    ai_feature_access_cache_ttl: int = 600
+    ai_feature_access_denied_cache_ttl: int = 600
     
     enable_request_id: bool = True
     subscription_enabled: bool = True

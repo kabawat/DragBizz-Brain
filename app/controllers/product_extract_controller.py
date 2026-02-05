@@ -80,7 +80,7 @@ async def extract_product_from_image(
             
             return success_response(
                 message=response.message,
-                data=response.payload.model_dump() if response.payload else None
+                data=response.payload.model_dump(exclude_none=True) if response.payload else None
             )
     
     except HTTPException as e:
