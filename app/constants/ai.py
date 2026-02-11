@@ -4,7 +4,7 @@ AI_CHAT_ENDPOINT = "/chat/completions"
 DEFAULT_TEMPERATURE = 0.3
 EXTRACTION_TEMPERATURE = 0.1
 DEFAULT_MAX_TOKENS = 150
-EXTRACTION_MAX_TOKENS = 400
+EXTRACTION_MAX_TOKENS = 1000
 
 CONVERSATION_PROMPT_BASE = "Voice AI. Ask missing customer details. Same language. Brief (1-2 sentences). Text only."
 LANGUAGE_INSTRUCTION = "CRITICAL: Always respond in the EXACT same language, script, and style as the user's query. Match the user's language perfectly - if they write in Hindi, respond in Hindi; if Gujarati, respond in Gujarati; if English, respond in English. Use the same script (Devanagari, Gujarati, Tamil, etc.) as the user."

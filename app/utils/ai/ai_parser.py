@@ -88,13 +88,51 @@ def parse_json_response(ai_response: Dict[str, Any]) -> Dict[str, Any]:
         if not json_str:
             raise ValueError("Empty JSON string after cleaning")
         
-        parsed = json.loads(json_str)
+        # Cleanup: Remove control characters except newline and tab
+        json_str = "".join(char for char in json_str if ord(char) >= 32 or char in "\n\r\t")
+        
+        # Cleanup: Handle potential trailing commas (common AI mistake)
+        json_str = re.sub(r',\s*([\]}])', r'\1', json_str)
+
+        try:
+            parsed = json.loads(json_str)
+        except json.JSONDecodeError as decode_err:
+            # Try to fix truncated JSON if it looks truncated (ends with a partial string or object)
+            if "Unterminated string" in str(decode_err) or "Expecting" in str(decode_err):
+                # Basic attempt to close JSON if truncated
+                temp_json = json_str.strip()
+                # If it ends with a comma, remove it
+                if temp_json.endswith(','):
+                    temp_json = temp_json[:-1]
+                
+                # Close open braces and brackets
+                open_braces = temp_json.count('{') - temp_json.count('}')
+                open_brackets = temp_json.count('[') - temp_json.count(']')
+                
+                # If it's inside an unterminated string, try to close it first
+                if "Unterminated string" in str(decode_err):
+                    temp_json += '"'
+                
+                temp_json += ']' * max(0, open_brackets)
+                temp_json += '}' * max(0, open_braces)
+                
+                try:
+                    parsed = json.loads(temp_json)
+                except:
+                    # Fallback to original error if healing fails
+                    raise decode_err
+            else:
+                raise decode_err
+
         if not isinstance(parsed, dict):
             raise ValueError("Parsed JSON is not a dictionary")
         
         return parsed
         
     except (json.JSONDecodeError, KeyError, IndexError, ValueError, TypeError) as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"JSON Parse Error: {str(e)} | Content snippet: {content[:200]}...", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Failed to parse AI response: {str(e)}"

@@ -145,6 +145,18 @@ class AIClient:
                     # Treat "200 but empty content" (or non-text content) as failure → fallback to next model
                     if ("choices" in ai_response) and (not _has_nonempty_first_choice_text(ai_response)):
                         raise ValueError("Empty content in AI response")
+                    
+                    # If JSON format was requested, verify it can be parsed
+                    if response_format and response_format.get("type") == "json_object":
+                        try:
+                            # Use late import to avoid circular dependency
+                            from app.utils.ai.ai_parser import parse_json_response
+                            parse_json_response(ai_response)
+                        except Exception as e:
+                            logger.warning(f"Model {model} returned invalid JSON for json_object request: {str(e)}")
+                            # Treat invalid JSON as a retryable error - fallback to next model
+                            raise ValueError(f"Invalid JSON content from model {model}: {str(e)}")
+
                     return ai_response
                     
                 except HTTPException as e:
