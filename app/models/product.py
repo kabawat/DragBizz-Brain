@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 class GstInfo(BaseModel):
     """GST information for product."""
     
-    isGstApplicable: bool = Field(True, description="Whether GST is applicable")
     gstRate: Optional[float] = Field(None, description="GST rate percentage")
     gstType: Optional[str] = Field(None, description="GST type (CGST_SGST, IGST, etc.)")
     hsnCode: Optional[str] = Field(None, description="HSN code")

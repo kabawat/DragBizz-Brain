@@ -71,7 +71,6 @@ class ProductExtractService:
   "sku": "SKU code or null",
   "isGstIncluded": true or false,
   "gstInfo": {
-    "isGstApplicable": true or false,
     "gstRate": 0.0 or null,
     "gstType": "CGST_SGST or null",
     "hsnCode": "HSN code or null",
@@ -260,9 +259,6 @@ Rules:
                             gst_info["gstRate"] = None
                     except (ValueError, TypeError):
                         gst_info["gstRate"] = None
-                
-                if isinstance(gst_info, dict) and gst_info.get("isGstApplicable") is None:
-                    gst_info["isGstApplicable"] = gst_info.get("gstRate") is not None and gst_info.get("gstRate") > 0
                 
                 # If gst_info dict is empty after normalization, drop it
                 if isinstance(gst_info, dict) and not any(v not in [None, "", "null", 0] for v in gst_info.values()):
