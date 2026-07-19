@@ -39,4 +39,6 @@ htmlcov/
 Thumbs.db
 
 # Docker
-.dockerignore
+*.egg-info/
+build/
+dist/

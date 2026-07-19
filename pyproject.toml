@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dragbizz-ai"
+version = "0.1.0"
+description = "Provider-independent AI orchestration service for DragBizz"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "httpx",
+  "pydantic-settings",
+  "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "ruff",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

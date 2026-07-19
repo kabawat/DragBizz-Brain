@@ -1,49 +1,33 @@
-version: '3.8'
-
 services:
-  voice-ai:
+  dragbizz-ai:
     build: .
-    container_name: dragbizz_voice_ai
+    container_name: dragbizz_ai
     ports:
-      - "8000:8000"
+      - "3000:3000"
     environment:
-      - DEBUG=False
-      - MONGODB_URI=mongodb://mongo:27017
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - RETAILER_SERVICE_URL=http://retailer-service:3002/api
-      - AUTH_SERVICE_URL=http://auth-service:3001/auth
+      AI_ENVIRONMENT: ${AI_ENVIRONMENT:-development}
+      AI_HOST: 0.0.0.0
+      AI_PORT: 3000
+      AI_LOG_LEVEL: ${AI_LOG_LEVEL:-INFO}
+      AI_DOCS_ENABLED: ${AI_DOCS_ENABLED:-true}
+      AI_RETAILER_SERVICE_URL: ${AI_RETAILER_SERVICE_URL:-http://host.docker.internal:4001}
+      AI_AUTH_SERVICE_URL: ${AI_AUTH_SERVICE_URL:-http://host.docker.internal:4000}
+      AI_UTILITY_SERVICE_URL: ${AI_UTILITY_SERVICE_URL:-http://host.docker.internal:4003}
     volumes:
-      - ./storage:/app/storage
-      - ./logs:/app/logs
-    depends_on:
-      - mongo
-      - redis
-    networks:
-      - dragbizz-network
-
-  mongo:
-    image: mongo:7
-    container_name: dragbizz_voice_mongo
-    ports:
-      - "27018:27017"
-    volumes:
-      - mongo_data:/data/db
-    networks:
-      - dragbizz-network
-
-  redis:
-    image: redis:7-alpine
-    container_name: dragbizz_voice_redis
-    ports:
-      - "6380:6379"
-    networks:
-      - dragbizz-network
-
-volumes:
-  mongo_data:
-
-networks:
-  dragbizz-network:
-    external: true
+      - ./app:/app/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "dragbizz.local:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:3000/api/v1/health')",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
