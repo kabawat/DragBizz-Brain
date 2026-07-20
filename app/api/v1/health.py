@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, status
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.core.exceptions import AppError
 from app.schemas.response import HealthResponse, ReadinessResponse, ServiceStatus
 
 router = APIRouter(tags=["health"])
@@ -24,6 +25,15 @@ async def health() -> HealthResponse:
 )
 async def readiness(request: Request) -> ReadinessResponse | JSONResponse:
     http_client_ready = getattr(request.app.state, "http_client", None) is not None
+    provider_status = "unavailable"
+    model_router = getattr(request.app.state, "model_router", None)
+    if model_router is not None:
+        try:
+            model_router.get_active()
+            provider_status = "ok"
+        except AppError:
+            provider_status = "unavailable"
+
     response = ReadinessResponse(
         status="ready" if http_client_ready else "not_ready",
         service=get_settings().app_name,
@@ -31,7 +41,8 @@ async def readiness(request: Request) -> ReadinessResponse | JSONResponse:
             ServiceStatus(
                 name="http_client",
                 status="ok" if http_client_ready else "unavailable",
-            )
+            ),
+            ServiceStatus(name="ai_provider", status=provider_status),
         ],
     )
 

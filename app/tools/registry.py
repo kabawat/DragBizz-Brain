@@ -11,10 +11,13 @@ class ToolRegistry:
         self._definitions: dict[str, ToolDefinition] = {}
         self._handlers: dict[str, ToolHandler] = {}
 
-    def register(self, definition: ToolDefinition, handler: ToolHandler) -> None:
+    def register_definition(self, definition: ToolDefinition) -> None:
         if definition.name in self._definitions:
             raise ValueError(f"Tool '{definition.name}' is already registered")
         self._definitions[definition.name] = definition
+
+    def register(self, definition: ToolDefinition, handler: ToolHandler) -> None:
+        self.register_definition(definition)
         self._handlers[definition.name] = handler
 
     def get_definition(self, name: str) -> ToolDefinition:
@@ -25,7 +28,10 @@ class ToolRegistry:
 
     def get_handler(self, name: str) -> ToolHandler:
         self.get_definition(name)
-        return self._handlers[name]
+        try:
+            return self._handlers[name]
+        except KeyError as exc:
+            raise KeyError(f"Tool '{name}' has no handler") from exc
 
     def definitions(self) -> tuple[ToolDefinition, ...]:
         return tuple(

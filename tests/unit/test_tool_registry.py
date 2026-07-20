@@ -18,6 +18,14 @@ def test_registry_returns_allowlisted_tool_contract() -> None:
         name="search_product",
         description="Search products in the active store",
         risk=ToolRisk.READ,
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "storeId": {"type": "string"},
+            },
+            "required": ["query", "storeId"],
+        },
     )
 
     registry.register(definition, search_product_handler)

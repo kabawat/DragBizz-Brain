@@ -18,11 +18,12 @@ def test_readiness_endpoint_checks_initialized_dependencies() -> None:
         response = client.get("/api/v1/ready")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "ready",
-        "service": "DragBizz AI",
-        "dependencies": [{"name": "http_client", "status": "ok"}],
-    }
+    body = response.json()
+    assert body["status"] == "ready"
+    assert body["service"] == "DragBizz AI"
+    names = {item["name"]: item["status"] for item in body["dependencies"]}
+    assert names["http_client"] == "ok"
+    assert names["ai_provider"] == "unavailable"
 
 
 def test_invalid_request_id_is_replaced() -> None:
