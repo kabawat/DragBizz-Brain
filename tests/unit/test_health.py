@@ -24,6 +24,7 @@ def test_readiness_endpoint_checks_initialized_dependencies() -> None:
     names = {item["name"]: item["status"] for item in body["dependencies"]}
     assert names["http_client"] == "ok"
     assert names["ai_provider"] == "unavailable"
+    assert names["qdrant"] == "unavailable"
 
 
 def test_invalid_request_id_is_replaced() -> None:

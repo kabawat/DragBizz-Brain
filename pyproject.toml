@@ -13,6 +13,7 @@ dependencies = [
   "jsonschema",
   "pydantic-settings",
   "PyJWT[crypto]",
+  "qdrant-client",
   "uvicorn[standard]",
 ]
 

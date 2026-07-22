@@ -12,6 +12,7 @@ from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.chat_service import ChatService
 from app.orchestrator.model_router import ModelRouter
 from app.providers.openai_compatible import OpenAICompatibleProvider
+from app.rag.vector_store import VectorStore
 from app.tools.definitions import READ_TOOL_DEFINITIONS
 from app.tools.handlers.read_tools import READ_TOOL_HANDLERS
 from app.tools.registry import ToolRegistry
@@ -26,6 +27,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         timeout=httpx.Timeout(settings.request_timeout_seconds)
     )
     app.state.http_client = http_client
+
+    vector_store = VectorStore(settings)
+    app.state.vector_store = vector_store
+    try:
+        await vector_store.ensure_collection()
+    except Exception:
+        logger.warning(
+            "Qdrant unavailable at startup (%s); chat continues without RAG",
+            settings.qdrant_url,
+            exc_info=True,
+        )
 
     retailer = RetailerClient(http_client, settings.retailer_service_url)
     tool_registry = ToolRegistry()
@@ -66,5 +78,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await vector_store.close()
         await http_client.aclose()
         logger.info("AI service stopped")

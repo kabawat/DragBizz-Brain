@@ -34,6 +34,11 @@ async def readiness(request: Request) -> ReadinessResponse | JSONResponse:
         except AppError:
             provider_status = "unavailable"
 
+    qdrant_status = "unavailable"
+    vector_store = getattr(request.app.state, "vector_store", None)
+    if vector_store is not None and await vector_store.is_ready():
+        qdrant_status = "ok"
+
     response = ReadinessResponse(
         status="ready" if http_client_ready else "not_ready",
         service=get_settings().app_name,
@@ -43,6 +48,7 @@ async def readiness(request: Request) -> ReadinessResponse | JSONResponse:
                 status="ok" if http_client_ready else "unavailable",
             ),
             ServiceStatus(name="ai_provider", status=provider_status),
+            ServiceStatus(name="qdrant", status=qdrant_status),
         ],
     )
 

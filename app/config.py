@@ -39,18 +39,24 @@ class Settings(BaseSettings):
     chat_max_tokens: int = Field(default=1024, ge=1, le=8192)
     chat_temperature: float = Field(default=0.2, ge=0, le=2)
     provider_timeout_seconds: float = Field(default=30.0, gt=0, le=60)
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str | None = None
+    qdrant_collection: str = "dragbizz_docs"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = Field(default=1536, ge=1, le=4096)
 
     @field_validator(
         "auth_service_url",
         "retailer_service_url",
         "utility_service_url",
         "openai_base_url",
+        "qdrant_url",
     )
     @classmethod
     def strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")
 
-    @field_validator("openai_api_key", mode="before")
+    @field_validator("openai_api_key", "qdrant_api_key", mode="before")
     @classmethod
     def empty_key_as_none(cls, value: object) -> object:
         if value == "":

@@ -76,6 +76,30 @@ def test_chat_requires_bearer_token(
     assert response.json()["error"]["code"] == "AUTH_MISSING"
 
 
+def test_chat_accepts_access_cookie(
+    monkeypatch: Any, rsa_keypair: dict[str, Any]
+) -> None:
+    monkeypatch.setattr(
+        "app.core.security.get_token_verifier",
+        lambda: StaticPemVerifier(rsa_keypair["public_pem"]),
+    )
+    token = make_access_token(rsa_keypair["private_pem"])
+    with TestClient(create_app()) as client:
+        _install_fake_provider(client.app)
+        client.cookies.set("at", token)
+        response = client.post(
+            "/api/v1/chat",
+            json={
+                "text": "hello",
+                "sessionId": "s1",
+                "storeId": "507f1f77bcf86cd799439011",
+                "language": "hi-IN",
+            },
+        )
+    assert response.status_code == 200
+    assert response.json()["message"] == "hello"
+
+
 def test_chat_rejects_expired_token(
     monkeypatch: Any, rsa_keypair: dict[str, Any]
 ) -> None:

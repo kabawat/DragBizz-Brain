@@ -12,6 +12,7 @@ Implemented:
 - Structured JSON logging and consistent error responses
 - **JWKS Bearer authentication** (Auth service contract)
 - **OpenAI-compatible provider** + model router wiring from env
+- **Qdrant vector DB** foundation (`VectorStore`, collection bootstrap, `/ready` status)
 - **Authenticated** `POST /api/v1/chat` with LLM text, validated `toolCalls`, and
   **auto-executed READ** `toolResults` via retailer HTTP (forwarded user JWT)
 - Tool-call JSON Schema validation with one repair retry
@@ -19,6 +20,7 @@ Implemented:
 
 Not implemented yet:
 
+- RAG chunking / embeddings / indexing / retrieval (docs → Qdrant pipeline)
 - Claude / Gemini / DeepSeek adapters
 - Write / sensitive tools (idempotency + confirmation)
 - Second LLM turn to ground `message` in `toolResults`
@@ -39,12 +41,12 @@ Matches Auth / retailer access tokens:
 | Algorithm | `RS256` |
 | Clock skew | 60s |
 | JWKS | `{AI_AUTH_SERVICE_URL}/.well-known/jwks.json` |
-| Transport | `Authorization: Bearer <access_token>` only (no cookies) |
+| Transport | `Authorization: Bearer <access_token>` **or** HttpOnly cookie `at` / `__Host-at` (web) |
 
 Claims used when present: `sub`, `agencyId`, `tenant`, `role`.
 
-Protected routes require a valid Bearer JWT. `/api/v1/health` and `/api/v1/ready`
-remain public.
+Protected routes require a valid access JWT (Bearer or session cookie).
+`/api/v1/health` and `/api/v1/ready` remain public.
 
 **Rate limiting:** deferred until Redis is available.
 
@@ -60,6 +62,11 @@ remain public.
 | `AI_CHAT_TEMPERATURE` | Default `0.2` |
 | `AI_PROVIDER_TIMEOUT_SECONDS` | Default `30` |
 | `AI_RETAILER_SERVICE_URL` | Retailer base URL for tool HTTP |
+| `AI_QDRANT_URL` | Qdrant HTTP URL (default `http://localhost:6333`) |
+| `AI_QDRANT_API_KEY` | Optional Qdrant API key |
+| `AI_QDRANT_COLLECTION` | Collection name (default `dragbizz_docs`) |
+| `AI_EMBEDDING_MODEL` | Reserved for later RAG embed step |
+| `AI_EMBEDDING_DIMENSIONS` | Vector size for collection create (default `1536`) |
 
 Production requires HTTPS for JWKS and the OpenAI base URL. Never commit API keys.
 
@@ -154,6 +161,18 @@ ruff check .
 ```bash
 docker compose up --build
 ```
+
+Compose starts **Qdrant** (`localhost:6333`) and the AI service (`localhost:4004`).
+The AI container gets `AI_QDRANT_URL=http://qdrant:6333`. For local (non-Docker) runs,
+set `AI_QDRANT_URL=http://localhost:6333` and start Qdrant via compose:
+
+```bash
+docker compose up -d qdrant
+```
+
+On startup the service ensures collection `dragbizz_docs` (cosine, 1536 dims). If
+Qdrant is down, chat still works — `/ready` reports `qdrant: unavailable` without
+failing readiness until RAG retrieval is wired.
 
 Docker exposes the service on `http://localhost:4004`. Downstream calls go through
 nginx (`http://dragbizz.local`) — e.g. `AI_AUTH_SERVICE_URL=http://dragbizz.local/auth`
