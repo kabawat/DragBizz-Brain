@@ -13,6 +13,9 @@ Implemented:
 - **JWKS Bearer authentication** (Auth service contract)
 - **OpenAI-compatible provider** + model router wiring from env
 - **Qdrant vector DB** foundation (`VectorStore`, collection bootstrap, `/ready` status)
+- **RAG chunking + embeddings** (`app/rag/chunker.py` markdown-aware chunks with
+  frontmatter metadata + deterministic IDs; `app/rag/embedding_service.py` batched
+  OpenAI `/embeddings`)
 - **Authenticated** `POST /api/v1/chat` with LLM text, validated `toolCalls`, and
   **auto-executed READ** `toolResults` via retailer HTTP (forwarded user JWT)
 - Tool-call JSON Schema validation with one repair retry
@@ -20,7 +23,7 @@ Implemented:
 
 Not implemented yet:
 
-- RAG chunking / embeddings / indexing / retrieval (docs → Qdrant pipeline)
+- RAG indexing / retrieval (chunks → Qdrant upsert, query-time search)
 - Claude / Gemini / DeepSeek adapters
 - Write / sensitive tools (idempotency + confirmation)
 - Second LLM turn to ground `message` in `toolResults`
@@ -65,7 +68,7 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_QDRANT_URL` | Qdrant HTTP URL (default `http://localhost:6333`) |
 | `AI_QDRANT_API_KEY` | Optional Qdrant API key |
 | `AI_QDRANT_COLLECTION` | Collection name (default `dragbizz_docs`) |
-| `AI_EMBEDDING_MODEL` | Reserved for later RAG embed step |
+| `AI_EMBEDDING_MODEL` | Embedding model (default `text-embedding-3-small`) |
 | `AI_EMBEDDING_DIMENSIONS` | Vector size for collection create (default `1536`) |
 
 Production requires HTTPS for JWKS and the OpenAI base URL. Never commit API keys.
