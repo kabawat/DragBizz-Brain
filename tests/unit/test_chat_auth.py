@@ -41,6 +41,7 @@ def _install_fake_provider(app: Any) -> None:
         gateway=gateway,
         tool_registry=app.state.tool_registry,
         settings=get_settings(),
+        tool_executor=app.state.tool_executor,
     )
 
 
@@ -204,4 +205,5 @@ def test_chat_happy_path(
     assert payload["provider"] == "fake"
     assert payload["model"] == "fake-model"
     assert payload["toolCalls"] == []
+    assert payload["toolResults"] == []
     assert response.headers["X-Request-ID"] == "req-test-1"

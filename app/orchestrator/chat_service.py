@@ -4,6 +4,7 @@ from typing import Any
 
 from app.config import Settings
 from app.core.exceptions import AppError
+from app.executors.tool_executor import ToolExecutor
 from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.prompts.system.chat import build_chat_system_prompt
@@ -25,11 +26,13 @@ class ChatService:
         gateway: AiGateway,
         tool_registry: ToolRegistry,
         settings: Settings,
+        tool_executor: ToolExecutor,
         validator: ToolCallValidator | None = None,
     ) -> None:
         self._gateway = gateway
         self._registry = tool_registry
         self._settings = settings
+        self._executor = tool_executor
         self._validator = validator or ToolCallValidator(tool_registry)
 
     async def handle(
@@ -39,6 +42,7 @@ class ChatService:
         user: dict[str, Any],
         request_id: str,
         store_id: str,
+        access_token: str,
     ) -> ChatResponse:
         tools = list(self._registry.definitions())
         messages = [
@@ -74,6 +78,12 @@ class ChatService:
                 generation.tool_calls, store_id=store_id
             )
 
+        tool_results = await self._executor.execute_reads(
+            tool_calls,
+            access_token=access_token,
+            store_id=store_id,
+        )
+
         return ChatResponse(
             message=generation.content or "",
             session_id=body.session_id,
@@ -82,6 +92,7 @@ class ChatService:
             provider=generation.provider,
             model=generation.model,
             tool_calls=tool_calls,
+            tool_results=tool_results,
         )
 
     async def _generate_with_optional_parse_repair(

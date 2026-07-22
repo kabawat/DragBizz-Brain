@@ -12,21 +12,21 @@ Implemented:
 - Structured JSON logging and consistent error responses
 - **JWKS Bearer authentication** (Auth service contract)
 - **OpenAI-compatible provider** + model router wiring from env
-- **Authenticated** `POST /api/v1/chat` with real LLM text + validated `toolCalls`
-- Allowlisted read-tool **definitions** (schemas only; not executed yet)
+- **Authenticated** `POST /api/v1/chat` with LLM text, validated `toolCalls`, and
+  **auto-executed READ** `toolResults` via retailer HTTP (forwarded user JWT)
 - Tool-call JSON Schema validation with one repair retry
 - Docker runtime and unit tests
 
 Not implemented yet:
 
 - Claude / Gemini / DeepSeek adapters
-- Tool **execution** against retailer HTTP (`toolResults`)
+- Write / sensitive tools (idempotency + confirmation)
+- Second LLM turn to ground `message` in `toolResults`
 - `/voice`, `/image`, or `/document` APIs
 - Conversation persistence, Redis rate limiting, queues, STT, TTS
-- Write / sensitive tools
 
-The service does not access DragBizz databases directly. Future tool handlers must
-call approved business-service APIs with caller identity and store scope preserved.
+The service does not access DragBizz databases directly. Tool handlers call
+approved business-service APIs with caller identity and store scope preserved.
 
 ## Auth contract
 
@@ -48,7 +48,7 @@ remain public.
 
 **Rate limiting:** deferred until Redis is available.
 
-## Provider config
+## Provider + retailer config
 
 | Env | Purpose |
 |---|---|
@@ -59,17 +59,24 @@ remain public.
 | `AI_CHAT_MAX_TOKENS` | Default `1024` |
 | `AI_CHAT_TEMPERATURE` | Default `0.2` |
 | `AI_PROVIDER_TIMEOUT_SECONDS` | Default `30` |
+| `AI_RETAILER_SERVICE_URL` | Retailer base URL for tool HTTP |
 
 Production requires HTTPS for JWKS and the OpenAI base URL. Never commit API keys.
 
-## Chat API (Phase 2)
+## Chat API (Phase 3)
 
 `POST /api/v1/chat` validates JWT + `storeId`, calls the active provider, validates
-allowlisted tool calls, and returns assistant text. **Tools are not executed yet**
-(Phase 3). Missing API key → `503 AI_PROVIDER_NOT_CONFIGURED`.
+allowlisted tool calls, **executes READ tools** against retailer with the same
+Bearer token and `?store=<storeId>`, and returns `toolCalls` + `toolResults`.
 
-Allowlisted read tools (schemas only): `search_product`, `today_sale`,
-`stock_summary`, `payment_history`.
+There is **no second LLM synthesis turn** yet — `message` is the first model reply.
+
+| Tool | Retailer |
+|---|---|
+| `search_product` | `GET /product?store=&search=&limit=20` |
+| `today_sale` | `GET /analytics/revenue?store=` → `data.today` |
+| `stock_summary` | `GET /analytics/stock?store=` → `data.totals` |
+| `payment_history` | `GET /customer-account/payments?store=&limit=20` |
 
 ```bash
 curl -sS -X POST "http://localhost:4004/api/v1/chat" \
@@ -100,13 +107,24 @@ Example `200` body:
       "name": "today_sale",
       "arguments": { "storeId": "507f1f77bcf86cd799439011" }
     }
+  ],
+  "toolResults": [
+    {
+      "tool": "today_sale",
+      "success": true,
+      "data": { "revenue": 0, "profit": 0, "sales": 0 }
+    }
   ]
 }
 ```
 
-Error codes: `401` `AUTH_*`, `400` `STORE_ID_*` / `TOOL_NOT_ALLOWED` /
-`TOOL_ARGS_INVALID`, `422` `VALIDATION_ERROR`, `502` `AI_PROVIDER_ERROR`,
-`503` `AI_PROVIDER_NOT_CONFIGURED`.
+Error codes: `401` `AUTH_*` / `TOOL_UNAUTHORIZED`, `400` `STORE_ID_*` /
+`TOOL_NOT_ALLOWED` / `TOOL_ARGS_INVALID`, `422` `VALIDATION_ERROR`,
+`502` `AI_PROVIDER_ERROR`, `503` `AI_PROVIDER_NOT_CONFIGURED`.
+
+Per-tool failures (`403`/`404`/`429`/5xx) return `toolResults[].success=false`
+with `data.code` of `TOOL_FORBIDDEN` / `TOOL_NOT_FOUND` / `TOOL_RATE_LIMITED` /
+`RETAILER_ERROR`.
 
 ## Local setup
 
@@ -137,18 +155,17 @@ ruff check .
 docker compose up --build
 ```
 
-Docker exposes the service on `http://localhost:3000`. Use
-`AI_AUTH_SERVICE_URL=http://host.docker.internal:4000` so JWKS is reachable
-from the container.
+Docker exposes the service on `http://localhost:4004`. Downstream calls go through
+nginx (`http://dragbizz.local`) — e.g. `AI_AUTH_SERVICE_URL=http://dragbizz.local/auth`
+and `AI_RETAILER_SERVICE_URL=http://dragbizz.local/retailer`. The compose file maps
+`dragbizz.local` to the host gateway.
 
 ## Configuration
 
 Copy `.env.example` to `.env`. All service settings use the `AI_` prefix.
 
 ## Extension flow
-
 1. Add more `ModelProvider` adapters in `app/providers/`.
 2. Register and activate through `ModelRouter` / `AI_ACTIVE_PROVIDER`.
-3. Phase 3: attach handlers on allowlisted tools and call retailer HTTP.
-4. Require validation, permissions, idempotency, and confirmation according to
-   each tool's risk.
+3. Add write/sensitive tool handlers with idempotency and confirmation.
+4. Require validation, permissions, and confirmation according to each tool's risk.

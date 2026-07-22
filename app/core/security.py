@@ -26,4 +26,5 @@ async def get_current_user(
     verifier = get_token_verifier()
     claims = await verifier.verify(credentials.credentials, http_client)
     request.state.user = claims
+    request.state.access_token = credentials.credentials
     return claims

@@ -17,5 +17,5 @@ def build_chat_system_prompt(
         "- Never invent IDs, amounts, stock, or customer data.\n"
         "- Prefer an allowlisted tool over guessing business facts.\n"
         "- When a tool schema includes storeId, it must equal the active storeId.\n"
-        "- Tools are validated only in this phase; do not claim they already ran.\n"
+        "- Read tools may be executed by the server after you call them.\n"
     )

@@ -16,6 +16,6 @@ RUN pip install .
 
 USER dragbizz
 
-EXPOSE 3000
+EXPOSE 4004
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4004"]

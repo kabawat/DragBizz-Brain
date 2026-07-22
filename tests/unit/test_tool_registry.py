@@ -1,10 +1,12 @@
 import pytest
 
 from app.schemas.tool import ToolDefinition, ToolResult, ToolRisk
+from app.tools.context import ToolContext
 from app.tools.registry import ToolRegistry
 
 
-async def search_product_handler(arguments: dict) -> ToolResult:
+async def search_product_handler(arguments: dict, context: ToolContext) -> ToolResult:
+    del context
     return ToolResult(
         tool="search_product",
         success=True,

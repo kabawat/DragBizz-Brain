@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.tool import ToolCall, ToolDefinition
+from app.schemas.tool import ToolCall, ToolDefinition, ToolResult
 
 OBJECT_ID_PATTERN = re.compile(r"^[a-fA-F0-9]{24}$")
 
@@ -48,6 +48,9 @@ class ChatResponse(BaseModel):
     model: str
     tool_calls: list[ToolCall] = Field(
         default_factory=list, serialization_alias="toolCalls"
+    )
+    tool_results: list[ToolResult] = Field(
+        default_factory=list, serialization_alias="toolResults"
     )
 
     model_config = {"populate_by_name": True}

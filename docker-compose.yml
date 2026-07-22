@@ -3,16 +3,16 @@ services:
     build: .
     container_name: dragbizz_ai
     ports:
-      - "3000:3000"
+      - "4004:4004"
     environment:
       AI_ENVIRONMENT: ${AI_ENVIRONMENT:-development}
       AI_HOST: 0.0.0.0
-      AI_PORT: 3000
+      AI_PORT: 4004
       AI_LOG_LEVEL: ${AI_LOG_LEVEL:-INFO}
       AI_DOCS_ENABLED: ${AI_DOCS_ENABLED:-true}
-      AI_RETAILER_SERVICE_URL: ${AI_RETAILER_SERVICE_URL:-http://host.docker.internal:4001}
-      AI_AUTH_SERVICE_URL: ${AI_AUTH_SERVICE_URL:-http://host.docker.internal:4000}
-      AI_UTILITY_SERVICE_URL: ${AI_UTILITY_SERVICE_URL:-http://host.docker.internal:4003}
+      AI_RETAILER_SERVICE_URL: ${AI_RETAILER_SERVICE_URL:-http://dragbizz.local/retailer}
+      AI_AUTH_SERVICE_URL: ${AI_AUTH_SERVICE_URL:-http://dragbizz.local/auth}
+      AI_UTILITY_SERVICE_URL: ${AI_UTILITY_SERVICE_URL:-http://dragbizz.local/utility}
     volumes:
       - ./app:/app/app
     extra_hosts:
@@ -24,7 +24,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:3000/api/v1/health')",
+          "import urllib.request; urllib.request.urlopen('http://localhost:4004/api/v1/health')",
         ]
       interval: 15s
       timeout: 5s

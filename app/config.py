@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     docs_enabled: bool = True
     cors_origins: list[str] = Field(default_factory=list)
-    retailer_service_url: str = "http://host.docker.internal:4001"
-    auth_service_url: str = "http://host.docker.internal:4000"
-    utility_service_url: str = "http://host.docker.internal:4003"
+    retailer_service_url: str = "http://dragbizz.local/retailer"
+    auth_service_url: str = "http://dragbizz.local/auth"
+    utility_service_url: str = "http://dragbizz.local/utility"
     request_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     jwt_issuer: str = "DragBizz-auth"
     jwt_audience: str = "DRAGBIZZ"

@@ -29,9 +29,17 @@ async def chat(
     chat_service: Annotated[ChatService, Depends(get_chat_service)],
 ) -> ChatResponse:
     store_id = assert_valid_store_id(body.store_id)
+    access_token = getattr(request.state, "access_token", None)
+    if not access_token:
+        raise AppError(
+            code="AUTH_MISSING",
+            message="Access token missing or invalid",
+            status_code=401,
+        )
     return await chat_service.handle(
         body,
         user=user,
         request_id=getattr(request.state, "request_id", None) or "",
         store_id=store_id,
+        access_token=access_token,
     )

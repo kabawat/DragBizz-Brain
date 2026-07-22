@@ -2,8 +2,9 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.schemas.tool import ToolDefinition, ToolResult
+from app.tools.context import ToolContext
 
-ToolHandler = Callable[[dict[str, Any]], Awaitable[ToolResult]]
+ToolHandler = Callable[[dict[str, Any], ToolContext], Awaitable[ToolResult]]
 
 
 class ToolRegistry:
