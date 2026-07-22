@@ -18,6 +18,7 @@ def reset_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("AI_ENVIRONMENT", "test")
     monkeypatch.setenv("AI_JWT_ISSUER", "DragBizz-auth")
     monkeypatch.setenv("AI_JWT_AUDIENCE", "DRAGBIZZ")
+    monkeypatch.setenv("AI_OPENAI_API_KEY", "")
     get_settings.cache_clear()
     reset_token_verifier()
     yield
