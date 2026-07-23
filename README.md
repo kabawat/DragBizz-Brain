@@ -16,6 +16,26 @@ Implemented:
 - **RAG chunking + embeddings** (`app/rag/chunker.py` markdown-aware chunks with
   frontmatter metadata + deterministic IDs; `app/rag/embedding_service.py` batched
   OpenAI `/embeddings`)
+- **RAG indexer** (`python -m app.rag.indexer`): incremental `knowledge/` → Qdrant sync
+- **RAG retriever** (`app/rag/retriever.py`): question → top-k chunks with score
+  threshold; Qdrant outage degrades to empty context (never fails chat)
+- **RAG chat integration**: retrieved docs injected into the system prompt with
+  source citations under a token budget; retrieval failure degrades to no docs;
+  chat API contract unchanged
+- **Input guard** (`app/guards/input_guard.py`): prompt-injection + off-topic
+  heuristics before the LLM call. Modes via `AI_INPUT_GUARD_MODE`: `off`, `log`
+  (default — flags only), `enforce` (returns a refusal in the same chat schema
+  without spending tokens). Refusal copy: `app/prompts/refusal.py`
+- **RAG vs tool routing**: system-prompt rules (live numbers → tools only;
+  Documentation → how-to/features only) + "live/current" tool descriptions.
+  Eval set: `tests/eval/routing_cases.json` (20 questions, also the seed for
+  manual live-LLM routing evals)
+- **Output guard** (`app/guards/output_guard.py`): last check before the
+  response leaves — secret/token/credential scrub and "currency amounts must
+  come from tool results" validation. Modes via `AI_OUTPUT_GUARD_MODE`: `off`,
+  `log` (default — flags only), `enforce` (secrets redacted in place;
+  unverified numbers replaced by the safe fallback in
+  `app/prompts/fallback.py`)
 - **Authenticated** `POST /api/v1/chat` with LLM text, validated `toolCalls`, and
   **auto-executed READ** `toolResults` via retailer HTTP (forwarded user JWT)
 - Tool-call JSON Schema validation with one repair retry
@@ -23,7 +43,6 @@ Implemented:
 
 Not implemented yet:
 
-- RAG indexing / retrieval (chunks → Qdrant upsert, query-time search)
 - Claude / Gemini / DeepSeek adapters
 - Write / sensitive tools (idempotency + confirmation)
 - Second LLM turn to ground `message` in `toolResults`
@@ -70,6 +89,10 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_QDRANT_COLLECTION` | Collection name (default `dragbizz_docs`) |
 | `AI_EMBEDDING_MODEL` | Embedding model (default `text-embedding-3-small`) |
 | `AI_EMBEDDING_DIMENSIONS` | Vector size for collection create (default `1536`) |
+| `AI_RAG_TOP_K` | Max retrieved chunks per question (default `5`) |
+| `AI_RAG_SCORE_THRESHOLD` | Min cosine score; lower-scoring chunks dropped (default `0.3`) |
+| `AI_RAG_CONTEXT_MAX_TOKENS` | Token budget for the docs block in the prompt (default `2000`) |
+| `AI_INPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` |
 
 Production requires HTTPS for JWKS and the OpenAI base URL. Never commit API keys.
 
@@ -176,6 +199,60 @@ docker compose up -d qdrant
 On startup the service ensures collection `dragbizz_docs` (cosine, 1536 dims). If
 Qdrant is down, chat still works — `/ready` reports `qdrant: unavailable` without
 failing readiness until RAG retrieval is wired.
+
+### Indexing knowledge docs
+
+```bash
+python -m app.rag.indexer            # index knowledge/ into AI_QDRANT_COLLECTION
+python -m app.rag.indexer --root path/to/docs
+```
+
+Needs `AI_OPENAI_API_KEY` (embeddings) and a reachable Qdrant. Runs are
+incremental and idempotent: deterministic chunk IDs mean unchanged docs are
+skipped, changed docs re-embed only their changed chunks, and points for
+removed docs are deleted. The summary logs files scanned, chunks
+embedded/skipped, deletions, and estimated embedding cost. In production the
+command requires an explicit `--yes`.
+
+### Operations: monitoring, backup, reindex on deploy
+
+**Per-request metrics.** Every completed chat request emits one structured
+JSON log line (`"message": "Chat request metrics"`) with a `metrics` object:
+`latency_ms`, `provider`/`model`, `input_tokens`/`output_tokens`,
+`est_cost_usd` (priced via `AI_CHAT_INPUT_USD_PER_MILLION_TOKENS` /
+`AI_CHAT_OUTPUT_USD_PER_MILLION_TOKENS`, defaults for gpt-4o-mini),
+`retrieved_docs` (chunk id + source + score), and `tools_called`. Question
+and answer text, user data, and tool arguments are never logged.
+
+**Indexer alerts.** `python -m app.rag.indexer` exits `0` with
+`Index run completed in Ns` on success, and exits `1` logging
+`Index run FAILED` with the traceback on any error — point cron/CI alerting
+at the exit code or that log marker.
+
+**Qdrant backup.** Data lives in the `qdrant_storage` named volume (survives
+`docker compose down`; only `down -v` removes it). The collection is fully
+rebuildable from `knowledge/` via the indexer, so the docs in git are the
+source of truth. For a point-in-time backup without reindexing (avoids
+embedding cost), use Qdrant's snapshot API:
+
+```bash
+curl -X POST "http://localhost:6333/collections/dragbizz_docs/snapshots"
+curl "http://localhost:6333/collections/dragbizz_docs/snapshots"   # list
+```
+
+**Reindex on deploy.** Whenever a deploy changes `knowledge/` docs (or the
+chunker/embedding model), run the indexer after the new containers are up:
+
+```bash
+docker compose up -d --build
+docker compose exec dragbizz-ai python -m app.rag.indexer --yes   # --yes needed in production
+```
+
+Runs are incremental — unchanged docs are skipped, so a no-docs-change deploy
+costs nothing. A failed reindex leaves the previous points serving (chunks are
+only deleted after their replacements are upserted), and chat degrades to
+no-context rather than failing, so reindex failures are non-fatal but should
+be alerted on and retried.
 
 Docker exposes the service on `http://localhost:4004`. Downstream calls go through
 nginx (`http://dragbizz.local`) — e.g. `AI_AUTH_SERVICE_URL=http://dragbizz.local/auth`

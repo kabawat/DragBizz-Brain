@@ -7,14 +7,15 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.http import models as qmodels
 
 from app.config import Settings
+from app.rag.chunker import DocumentChunk
 
 logger = logging.getLogger(__name__)
 
 
 class VectorStore:
-    """Thin Qdrant wrapper for collection health and bootstrap.
+    """Thin Qdrant wrapper: collection bootstrap + point maintenance.
 
-    Upsert/search land in later RAG indexing/retrieval steps.
+    Search lands in the RAG retrieval step.
     """
 
     def __init__(
@@ -69,6 +70,66 @@ class VectorStore:
             "Created Qdrant collection %s (dims=%s, distance=cosine)",
             name,
             self._settings.embedding_dimensions,
+        )
+
+    async def upsert_chunks(
+        self, chunks: list[DocumentChunk], vectors: list[list[float]]
+    ) -> None:
+        if len(chunks) != len(vectors):
+            raise ValueError("chunks and vectors length mismatch")
+        if not chunks:
+            return
+
+        points = [
+            qmodels.PointStruct(
+                id=chunk.id,
+                vector=vector,
+                payload={"text": chunk.content, **chunk.metadata},
+            )
+            for chunk, vector in zip(chunks, vectors, strict=True)
+        ]
+        await self._client.upsert(
+            collection_name=self.collection_name, points=points, wait=True
+        )
+
+    async def list_point_ids(self) -> set[str]:
+        ids: set[str] = set()
+        offset = None
+        while True:
+            records, offset = await self._client.scroll(
+                collection_name=self.collection_name,
+                limit=256,
+                offset=offset,
+                with_payload=False,
+                with_vectors=False,
+            )
+            ids.update(str(record.id) for record in records)
+            if offset is None:
+                return ids
+
+    async def search(
+        self,
+        vector: list[float],
+        *,
+        limit: int,
+        score_threshold: float,
+    ) -> list[qmodels.ScoredPoint]:
+        response = await self._client.query_points(
+            collection_name=self.collection_name,
+            query=vector,
+            limit=limit,
+            score_threshold=score_threshold,
+            with_payload=True,
+        )
+        return response.points
+
+    async def delete_points(self, ids: list[str]) -> None:
+        if not ids:
+            return
+        await self._client.delete(
+            collection_name=self.collection_name,
+            points_selector=qmodels.PointIdsList(points=list(ids)),
+            wait=True,
         )
 
     async def _collection_exists(self, name: str) -> bool:

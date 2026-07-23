@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     qdrant_collection: str = "dragbizz_docs"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = Field(default=1536, ge=1, le=4096)
+    rag_top_k: int = Field(default=5, ge=1, le=20)
+    rag_score_threshold: float = Field(default=0.3, ge=0, le=1)
+    rag_context_max_tokens: int = Field(default=2000, ge=100, le=8000)
+    input_guard_mode: Literal["off", "log", "enforce"] = "log"
+    output_guard_mode: Literal["off", "log", "enforce"] = "log"
+    # Chat pricing for per-request cost metrics (defaults: gpt-4o-mini).
+    chat_input_usd_per_million_tokens: float = Field(default=0.15, ge=0)
+    chat_output_usd_per_million_tokens: float = Field(default=0.60, ge=0)
 
     @field_validator(
         "auth_service_url",

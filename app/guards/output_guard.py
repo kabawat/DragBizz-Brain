@@ -1,0 +1,122 @@
+"""Output guard — last line of defense before a response leaves the service.
+
+Two deterministic checks on the outbound assistant message:
+
+1. Secret scrub (``SECRET_LEAK``): API keys, JWTs, bearer tokens, connection
+   strings, and ``key=value`` credential assignments are detected and can be
+   redacted from the text. The rest of the answer stays usable.
+
+2. Unsupported numbers (``UNSUPPORTED_NUMBERS``): currency amounts in the
+   message must be quoted from tool results, not invented. Every ``₹``/"Rs"
+   amount in the text is checked against the numbers present in the tool
+   result payloads; any amount without a source flags the response. Scoped to
+   currency amounts on purpose — flagging every bare number would over-block
+   how-to answers ("Step 2", "GSTR-1").
+
+Deliberately conservative, mirroring the input guard: false negatives are
+acceptable (prompt rules + tool allowlist still constrain the model); false
+positives replace real answers.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+
+from app.schemas.tool import ToolResult
+
+_REDACTED = "[REDACTED]"
+
+_SECRET_PATTERNS = (
+    # OpenAI-style API keys.
+    r"\bsk-[A-Za-z0-9_-]{16,}\b",
+    # JWTs (three base64url segments starting with eyJ).
+    r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b",
+    # Bearer tokens.
+    r"\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*",
+    # AWS access key IDs.
+    r"\bAKIA[A-Z0-9]{16}\b",
+    # Connection strings with embedded credentials.
+    r"\b(?:mongodb(?:\+srv)?|postgres(?:ql)?|redis|amqp|mysql)://[^\s'\"]+",
+    # key/token/password/secret assignments with a non-trivial value.
+    r"(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret"
+    r"|password|passwd|secret)\s*[:=]\s*['\"]?[A-Za-z0-9@#$%^&*._+/-]{8,}",
+)
+
+_SECRET_RE = re.compile("|".join(_SECRET_PATTERNS), re.IGNORECASE)
+
+# ₹1,200 / Rs. 1200.50 / 1200 rupees / 1,200 rs
+_CURRENCY_RE = re.compile(
+    r"(?:₹|rs\.?\s*|inr\s*)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"
+    r"|([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:rupees?|rupaye|rs\b)",
+    re.IGNORECASE,
+)
+
+_NUMBER_RE = re.compile(r"[0-9][0-9,]*(?:\.[0-9]+)?")
+
+
+@dataclass(frozen=True)
+class OutputGuardDecision:
+    allowed: bool
+    category: str | None = None
+    matched: str | None = None
+    # Message with secrets redacted; equals the original when nothing matched.
+    sanitized_text: str = ""
+
+
+def _normalize_amount(raw: str) -> str:
+    """'1,200.00' -> '1200' ; '1200.50' -> '1200.5'."""
+    value = raw.replace(",", "")
+    if "." in value:
+        value = value.rstrip("0").rstrip(".")
+    return value or "0"
+
+
+def _numbers_in_tool_results(tool_results: list[ToolResult]) -> set[str]:
+    numbers: set[str] = set()
+    for result in tool_results:
+        blob = json.dumps(result.data or {})
+        for match in _NUMBER_RE.finditer(blob):
+            numbers.add(_normalize_amount(match.group(0)))
+    return numbers
+
+
+class OutputGuard:
+    def evaluate(
+        self, text: str, tool_results: list[ToolResult]
+    ) -> OutputGuardDecision:
+        secret = _SECRET_RE.search(text)
+        if secret:
+            return OutputGuardDecision(
+                allowed=False,
+                category="SECRET_LEAK",
+                matched=secret.group(0),
+                sanitized_text=_SECRET_RE.sub(_REDACTED, text),
+            )
+
+        unsupported = self._first_unsupported_amount(text, tool_results)
+        if unsupported is not None:
+            return OutputGuardDecision(
+                allowed=False,
+                category="UNSUPPORTED_NUMBERS",
+                matched=unsupported,
+                sanitized_text=text,
+            )
+
+        return OutputGuardDecision(allowed=True, sanitized_text=text)
+
+    def _first_unsupported_amount(
+        self, text: str, tool_results: list[ToolResult]
+    ) -> str | None:
+        amounts = [
+            (match.group(0), _normalize_amount(match.group(1) or match.group(2)))
+            for match in _CURRENCY_RE.finditer(text)
+        ]
+        if not amounts:
+            return None
+        known = _numbers_in_tool_results(tool_results)
+        for raw, normalized in amounts:
+            if normalized not in known:
+                return raw
+        return None

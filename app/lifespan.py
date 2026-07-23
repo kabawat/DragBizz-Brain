@@ -12,6 +12,8 @@ from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.chat_service import ChatService
 from app.orchestrator.model_router import ModelRouter
 from app.providers.openai_compatible import OpenAICompatibleProvider
+from app.rag.embedding_service import EmbeddingService
+from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStore
 from app.tools.definitions import READ_TOOL_DEFINITIONS
 from app.tools.handlers.read_tools import READ_TOOL_HANDLERS
@@ -67,11 +69,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.tool_registry = tool_registry
     app.state.retailer_client = retailer
     app.state.tool_executor = tool_executor
+    retriever = Retriever(
+        settings, EmbeddingService(settings, http_client), vector_store
+    )
+    app.state.retriever = retriever
     app.state.chat_service = ChatService(
         gateway=gateway,
         tool_registry=tool_registry,
         settings=settings,
         tool_executor=tool_executor,
+        retriever=retriever,
     )
 
     logger.info("AI service started")

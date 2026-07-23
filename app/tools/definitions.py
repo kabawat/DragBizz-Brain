@@ -9,7 +9,10 @@ _STORE_ID_PROP = {
 READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="search_product",
-        description="Search products in the active store by name or SKU",
+        description=(
+            "Search live products in the active store by name or SKU "
+            "(current price, stock, status)"
+        ),
         risk=ToolRisk.READ,
         parameters={
             "type": "object",
@@ -28,7 +31,10 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="today_sale",
-        description="Get today's sale summary for the active store",
+        description=(
+            "Get today's live sales numbers (revenue, profit, bill count) "
+            "for the active store"
+        ),
         risk=ToolRisk.READ,
         parameters={
             "type": "object",
@@ -39,7 +45,10 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="stock_summary",
-        description="Get stock summary for the active store",
+        description=(
+            "Get current stock totals (SKUs, quantities, low/out of stock) "
+            "for the active store"
+        ),
         risk=ToolRisk.READ,
         parameters={
             "type": "object",
@@ -50,7 +59,9 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="payment_history",
-        description="Get recent payment history for the active store",
+        description=(
+            "Get recent live customer payment records for the active store"
+        ),
         risk=ToolRisk.READ,
         parameters={
             "type": "object",
