@@ -43,6 +43,8 @@ def test_system_prompt_with_documentation_adds_block_and_rule() -> None:
     )
     assert "Never answer live numbers from Documentation" in prompt
     assert "Documentation:\n[1] source=invoice/pos.md\nPOS needs a paid plan." in prompt
+    assert "do not mention Tally unless the user asked" in prompt
+    assert "[Tally](/dashboard/integrations/tally)" not in prompt
 
 
 def test_documentation_block_cites_sources_in_score_order() -> None:

@@ -3,15 +3,18 @@ module: settings
 feature: payments
 version: 1
 language: en
-updated_at: 2026-07-23
+updated_at: 2026-07-25
 status: shipped
 ---
+
 
 # UPI IDs & Payment Gateway Setup
 
 ## Overview
 
 Payment collection settings live under **Integrations → Payment** (`/dashboard/integrations/payment`), with two sub-tabs: **UPI** (for counter QR codes) and **Payment Gateway** (Razorpay and similar, for online payment links). UPI powers the "Show UPI QR" collect flow and the customer payment display; the gateway powers payment links on invoices and khata.
+
+This page is **only** for UPI + payment gateways. **Tally** (`/dashboard/integrations/tally`) is a separate accounting export — never point payment-gateway questions to Tally.
 
 ## Workflow
 
@@ -38,6 +41,7 @@ Payment collection settings live under **Integrations → Payment** (`/dashboard
 
 ## Examples
 
+- "Custom / payment gateway integrate karna hai?" → Integrations → Payment → Payment Gateway → add Razorpay / Paytm / Cashfree (not Tally).
 - "Counter par UPI QR chahiye" → add your UPI ID here, set default → the Collect Payment → Show UPI QR uses it.
 - "Invoice payment links setup karne hain" → add Razorpay in Live mode with your Key ID/Secret, configure the webhook, wait for Verified.
 - "Webhook secret leak ho gaya" → Regenerate secret → update it in the Razorpay dashboard.
@@ -52,6 +56,12 @@ Payment collection settings live under **Integrations → Payment** (`/dashboard
 - "Webhook secret rotation is not supported for this gateway type".
 
 ## FAQ
+
+**Q: Does DragBizz let me integrate a payment gateway / custom payment gateway?**  
+Yes — under [Integrations → Payment](/dashboard/integrations/payment) → **Payment Gateway**. Supported types today: **Razorpay, Paytm, Cashfree** (Test or Live). There is no open "bring any custom SDK / arbitrary gateway" option beyond these types.
+
+**Q: Where do I open payment gateway settings after setup?**  
+Always [Integrations → Payment](/dashboard/integrations/payment) — not Tally, not GST. Tally is a separate accounting-export integration.
 
 **Q: Do QR payments record automatically in DragBizz?** 
 No — UPI QR payments happen outside the app; record them as You Got / invoice payment. Only gateway payment links update automatically.
