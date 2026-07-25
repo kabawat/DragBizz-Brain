@@ -3,26 +3,36 @@ module: settings
 feature: account
 version: 1
 language: en
-updated_at: 2026-07-23
+updated_at: 2026-07-25
 status: partial
 ---
 
-# Appearance, Language, Profile & Security
+
+# Profile & Security
 
 ## Overview
 
-Personal settings live in **Settings** (`/dashboard/settings`): Appearance (theme), Language, Profile, and Security (password). These are the only Settings tabs staff members can see; owners additionally get Store, Signatures, Invoice Number, Notifications, and Account tabs.
+Personal settings live in **Settings** (`/dashboard/settings`): Appearance, Language, Profile, and Security (password). These are the only Settings tabs staff members can see; owners additionally get Store, Signatures, Invoice Number, Notifications, and Account tabs. Appearance and Language have dedicated knowledge docs.
 
-## Appearance
+## Appearance (summary)
 
-- **Light** or **Dark** mode (no system-follow option).
-- Accent color themes grouped by category (warm, cool, green, vibrant, neutral), plus **Reset to defaults**.
-- Saved per device/browser — signing in elsewhere starts with defaults.
+Full accent-theme catalog lives in the Appearance knowledge doc. Short facts only:
 
-## Language
+- **Interface mode:** Light or Dark (not the same as color themes).
+- **Accent color themes:** **5 types/categories** (Warm, Cool, Green, Vibrant, Neutral) with **22** named themes (Default, Ocean, Violet, Emerald, Amber, Slate, etc.).
+- Reset to Defaults → Default accent + Light mode. Saved per device/browser.
 
-- Four options: **English, हिंदी (Hindi), ગુજરાતી (Gujarati), Hinglish**.
-- Switching applies immediately across the app and is remembered on the device for a year. It also sets the voice assistant's speech language.
+For "kitne color themes / theme types" questions, answer with the 5 categories and 22 themes — do **not** answer only Light/Dark.
+
+## Language (summary)
+
+Full how-to lives in the Language knowledge doc. Short facts only:
+
+- **4 options:** English, हिंदी (Hindi), ગુજરાતી (Gujarati), Hinglish.
+- Change at **Settings → Language** — click a language card; applies immediately (no restart).
+- Per device/user; also drives the voice assistant speech language.
+
+For "language change kaise kare / kitni languages" questions, use the Language doc steps — never refuse language settings help.
 
 ## Profile
 
@@ -54,7 +64,7 @@ Personal settings live in **Settings** (`/dashboard/settings`): Appearance (them
 Not from the app currently — contact support.
 
 **Q: My theme reset on another computer — why?** 
-Theme is stored per device, not on your account.
+Theme is stored per device, not on your account. See Appearance docs for the full theme list.
 
 **Q: Does language change affect my staff?** 
 No — language is a per-user, per-device setting.
