@@ -268,3 +268,12 @@ Copy `.env.example` to `.env`. All service settings use the `AI_` prefix.
 2. Register and activate through `ModelRouter` / `AI_ACTIVE_PROVIDER`.
 3. Add write/sensitive tool handlers with idempotency and confirmation.
 4. Require validation, permissions, and confirmation according to each tool's risk.
+
+## Full Co-Partner build docs
+
+All future AI features are implemented **in this repo**, using product context from
+`dragbizz-ai-service` but this codebase’s orchestration flow.
+
+Start here: **[docs/README.md](./docs/README.md)**  
+Hinglish quick guide: **[docs/QUICKSTART_HINGLISH.md](./docs/QUICKSTART_HINGLISH.md)**  
+Master plan: **[docs/03_MASTER_IMPLEMENTATION_PLAN.md](./docs/03_MASTER_IMPLEMENTATION_PLAN.md)**
