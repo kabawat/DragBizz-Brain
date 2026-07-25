@@ -102,6 +102,27 @@ def test_plain_numbers_without_currency_are_not_flagged() -> None:
     assert decision.allowed is True
 
 
+def test_word_ending_in_rs_before_numbered_list_not_flagged() -> None:
+    # Regression: "ledgers.\n\n2. ..." was matched as "Rs. 2".
+    decision = guard.evaluate(
+        "It helps manage ledgers.\n\n2. Inventory Management: track stock.\n"
+        "3. Tax Management: GST compliance.",
+        [],
+    )
+    assert decision.allowed is True
+
+
+def test_rs_amount_across_lines_not_treated_as_currency() -> None:
+    decision = guard.evaluate("Payment methods: UPI, Cash, Rs.\n2 options.", [])
+    assert decision.allowed is True
+
+
+def test_real_rs_amount_still_flagged_after_regex_tightening() -> None:
+    decision = guard.evaluate("Total Rs. 2500 hua.", [])
+    assert decision.allowed is False
+    assert decision.category == "UNSUPPORTED_NUMBERS"
+
+
 def test_clean_how_to_answer_passes_untouched() -> None:
     text = "POS kholen, product scan karein, aur Save Bill dabayen."
     decision = guard.evaluate(text, [])

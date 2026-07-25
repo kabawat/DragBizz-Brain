@@ -15,8 +15,8 @@ A DragBizz invoice moves through a fixed lifecycle: **Draft → Released → (Ca
 
 ## Workflow
 
-1. **Create draft** — from Invoices → Create Invoice (`/dashboard/invoices/create`) or POS checkout. Add line items (product + quantity), optional customer (defaults to walk-in), optional total discount in ₹. The invoice number is assigned at creation. Keyboard: Ctrl+S or F1 to save.
-2. **Edit draft** — only `DRAFT` invoices can be edited (`/dashboard/invoices/[id]/edit`). Editing recalculates totals and resets payment status to `UNPAID`.
+1. **Create draft** — open Invoices (**Alt+I**), then Create Invoice (**Shift+N**) — or go to Invoices → Create Invoice (`/dashboard/invoices/create`), or use POS (**Alt+K**). Add line items (product + quantity), optional customer (defaults to walk-in), optional total discount in ₹. Invoice number is assigned at creation. Save with **Ctrl+S** or **F1**.
+2. **Edit draft** — only `DRAFT` invoices can be edited (`/dashboard/invoices/[id]/edit`; **Ctrl+E** from the list/view). Editing recalculates totals and resets payment status to `UNPAID`.
 3. **Release** — from the invoice list, view page, or the payment modal shown right after creation. Releasing finalizes the invoice: it cannot be edited afterwards. Stock is deducted FIFO for goods; service items skip stock. You can release as PAID, PARTIAL, or UNPAID.
 4. **Online payment path** — if the customer pays online, the draft moves to `PENDING_PAYMENT` while the payment order is active; a successful payment releases it automatically as `PAID`. Stale payment orders (about 30 minutes) revert the invoice to `DRAFT`.
 5. **Cancel** — only `RELEASED` invoices can be cancelled. Cancelling restores stock from the invoice's recorded batches and reverses khata (customer account) entries. The invoice stays in the system with status `CANCELLED`.
@@ -35,6 +35,7 @@ A DragBizz invoice moves through a fixed lifecycle: **Draft → Released → (Ca
 
 ## Examples
 
+- "Jaldi naya invoice" → **Alt+I** then **Shift+N** (Invoices → Create Invoice).
 - "Create a bill for 2 units of Sugar 1kg for walk-in customer" → creates a draft; the payment modal then lets you collect and release.
 - "Why can't I edit this invoice?" → it is already `RELEASED`; only drafts are editable. Issue a credit note or cancel it instead.
 - "Return one item from a released invoice" → create a **partial credit note** selecting that line and quantity.

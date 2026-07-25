@@ -47,9 +47,12 @@ _SECRET_PATTERNS = (
 _SECRET_RE = re.compile("|".join(_SECRET_PATTERNS), re.IGNORECASE)
 
 # ₹1,200 / Rs. 1200.50 / 1200 rupees / 1,200 rs
+# "rs"/"inr" must not be the tail of a word ("ledgers.") and the amount must
+# be on the same line — otherwise numbered lists after a word ending in "rs"
+# get flagged as currency.
 _CURRENCY_RE = re.compile(
-    r"(?:₹|rs\.?\s*|inr\s*)\s*([0-9][0-9,]*(?:\.[0-9]+)?)"
-    r"|([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:rupees?|rupaye|rs\b)",
+    r"(?:₹|(?<![a-z])rs\.?|(?<![a-z])inr)[ \t]*([0-9][0-9,]*(?:\.[0-9]+)?)"
+    r"|([0-9][0-9,]*(?:\.[0-9]+)?)[ \t]*(?:rupees?|rupaye|rs\b)",
     re.IGNORECASE,
 )
 

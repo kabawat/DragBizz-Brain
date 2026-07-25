@@ -69,10 +69,20 @@ def test_guard_flags_off_topic_samples(text: str) -> None:
 
 
 def test_refusal_message_language_fallback() -> None:
-    assert "DragBizz store" in get_refusal_message("en-IN")
-    assert get_refusal_message("hi-IN") == get_refusal_message("hi")
-    assert get_refusal_message("gu-IN").startswith("Hun")
-    assert get_refusal_message("fr-FR") == get_refusal_message("hi")
+    from app.prompts.refusal import get_refusal_messages
+
+    en = get_refusal_messages("en-IN")
+    hi = get_refusal_messages("hi-IN")
+    gu = get_refusal_messages("gu-IN")
+    assert get_refusal_messages("hi") == hi
+    assert get_refusal_messages("fr-FR") == hi
+    assert get_refusal_message("en-IN") in en
+    assert get_refusal_message("hi-IN") in hi
+    assert get_refusal_message("gu-IN") in gu
+    assert any("DragBizz" in msg for msg in en)
+    assert any("DragBizz" in msg for msg in gu)
+    assert len(hi) >= 3
+    assert len(en) >= 3
 
 
 class _CountingProvider(ModelProvider):
@@ -125,7 +135,9 @@ def test_enforce_mode_refuses_without_llm_call() -> None:
     assert provider.calls == 0
     assert response.provider == "input_guard"
     assert response.model == ""
-    assert response.message == get_refusal_message("hi-IN")
+    from app.prompts.refusal import get_refusal_messages
+
+    assert response.message in get_refusal_messages("hi-IN")
     assert response.tool_calls == []
     assert response.tool_results == []
     assert response.session_id == "s1"
