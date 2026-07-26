@@ -43,6 +43,7 @@ services:
       ]
     volumes:
       - ./app:/app/app
+      - ./knowledge:/app/knowledge:ro
       - ./.env:/app/.env:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

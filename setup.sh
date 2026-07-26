@@ -15,4 +15,4 @@ if [ ! -f ".env" ]; then
   cp .env.example .env
 fi
 
-echo "Setup complete. Run ./run.sh to start the service."
+echo "Setup complete. Run ./run.sh (Docker) or ./run.sh --normal (local)."

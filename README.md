@@ -163,7 +163,10 @@ with `data.code` of `TOOL_FORBIDDEN` / `TOOL_NOT_FOUND` / `TOOL_RATE_LIMITED` /
 
 ```bash
 ./setup.sh
-./run.sh
+./run.sh                 # Docker Compose (qdrant + AI)
+./run.sh --index         # Docker up, then index knowledge/
+./run.sh --normal        # local .venv + uvicorn --reload
+./run.sh --normal --index
 ```
 
 Service endpoints:

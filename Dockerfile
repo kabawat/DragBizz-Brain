@@ -11,6 +11,7 @@ RUN addgroup --system dragbizz \
 
 COPY pyproject.toml ./
 COPY app ./app
+COPY knowledge ./knowledge
 
 RUN pip install .
 
