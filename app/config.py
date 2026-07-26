@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
     chat_max_tokens: int = Field(default=1024, ge=1, le=8192)
+    # Second-turn grounded answer after tools (cost/latency cap).
+    chat_synthesis_max_tokens: int = Field(default=512, ge=1, le=4096)
     chat_temperature: float = Field(default=0.2, ge=0, le=2)
     provider_timeout_seconds: float = Field(default=30.0, gt=0, le=60)
     qdrant_url: str = "http://localhost:6333"
@@ -49,6 +51,10 @@ class Settings(BaseSettings):
     rag_context_max_tokens: int = Field(default=2000, ge=100, le=8000)
     input_guard_mode: Literal["off", "log", "enforce"] = "log"
     output_guard_mode: Literal["off", "log", "enforce"] = "log"
+    # Short-lived multi-turn memory (in-process until Redis).
+    session_ttl_seconds: int = Field(default=1_800, ge=60, le=86_400)
+    session_max_turns: int = Field(default=10, ge=1, le=50)
+    session_history_max_tokens: int = Field(default=2_000, ge=200, le=16_000)
     # Chat pricing for per-request cost metrics (defaults: gpt-4o-mini).
     chat_input_usd_per_million_tokens: float = Field(default=0.15, ge=0)
     chat_output_usd_per_million_tokens: float = Field(default=0.60, ge=0)
@@ -86,6 +92,18 @@ class Settings(BaseSettings):
             "https://"
         ):
             raise ValueError("OpenAI base URL must use HTTPS in production")
+
+        if self.environment == "production":
+            if self.input_guard_mode != "enforce":
+                raise ValueError(
+                    "AI_INPUT_GUARD_MODE must be 'enforce' in production "
+                    "(use 'log' in staging to tune false positives first)"
+                )
+            if self.output_guard_mode != "enforce":
+                raise ValueError(
+                    "AI_OUTPUT_GUARD_MODE must be 'enforce' in production "
+                    "(use 'log' in staging to tune false positives first)"
+                )
 
         return self
 

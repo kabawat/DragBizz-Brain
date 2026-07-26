@@ -9,15 +9,17 @@ Conversational Co-Partner for store questions and (later) confirmed actions, usi
 - `POST /api/v1/chat`
 - READ tools: `search_product`, `today_sale`, `stock_summary`, `payment_history`
 - RAG + input/output guards
-- No synthesis turn; no WRITE tools; sessionId not persisted
+- Second LLM synthesis turn after tools (grounded `message`)
+- In-memory session history (`sessionId` + user + store; TTL)
+- No WRITE tools
 
 ## Build
 
-1. **A1 Synthesis** — second LLM turn with tool results.
-2. **A2 More READ tools** — revenue range, top sellers, slow movers, low stock, customer search/dues.
-3. **C1 WRITE** — `create_invoice_draft` + confirm endpoint.
-4. Persist history (B2) keyed by `sessionId` + `storeId` + `userId`.
-5. Optional stream later.
+1. ~~**A1 Synthesis** — second LLM turn with tool results.~~
+2. ~~**B2 Session memory** — multi-turn history.~~
+3. **A2 More READ tools** — revenue range, top sellers, slow movers, low stock, customer search/dues.
+4. **C1 WRITE** — `create_invoice_draft` + confirm endpoint.
+5. Optional stream later / Redis-backed sessions.
 
 ## Implementation notes
 
@@ -28,6 +30,6 @@ Conversational Co-Partner for store questions and (later) confirmed actions, usi
 
 ## DoD
 
-- Synthesis grounded in toolResults (output guard enforce mode test).
+- ~~Synthesis grounded in toolResults (output guard enforce mode test).~~
 - New READ tools covered by unit tests.
 - Invoice draft requires confirm; release idempotent.

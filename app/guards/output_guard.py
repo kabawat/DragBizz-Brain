@@ -1,22 +1,4 @@
-"""Output guard — last line of defense before a response leaves the service.
-
-Two deterministic checks on the outbound assistant message:
-
-1. Secret scrub (``SECRET_LEAK``): API keys, JWTs, bearer tokens, connection
-   strings, and ``key=value`` credential assignments are detected and can be
-   redacted from the text. The rest of the answer stays usable.
-
-2. Unsupported numbers (``UNSUPPORTED_NUMBERS``): currency amounts in the
-   message must be quoted from tool results, not invented. Every ``₹``/"Rs"
-   amount in the text is checked against the numbers present in the tool
-   result payloads; any amount without a source flags the response. Scoped to
-   currency amounts on purpose — flagging every bare number would over-block
-   how-to answers ("Step 2", "GSTR-1").
-
-Deliberately conservative, mirroring the input guard: false negatives are
-acceptable (prompt rules + tool allowlist still constrain the model); false
-positives replace real answers.
-"""
+"""Outbound checks: scrub leaked secrets; flag currency amounts not backed by tools."""
 
 from __future__ import annotations
 

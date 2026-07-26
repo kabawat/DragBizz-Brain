@@ -130,7 +130,12 @@ def test_chat_returns_tool_calls_and_results(
                         arguments={"storeId": STORE_ID},
                     )
                 ],
-            )
+            ),
+            GenerationResponse(
+                provider="scripted",
+                model="m1",
+                content="Aaj ki sale ₹500 hai.",
+            ),
         ]
     )
     client, mock_http = _auth_client(monkeypatch, rsa_keypair, provider)
@@ -152,6 +157,7 @@ def test_chat_returns_tool_calls_and_results(
     assert response.status_code == 200
     payload = response.json()
     assert payload["provider"] == "scripted"
+    assert payload["message"] == "Aaj ki sale ₹500 hai."
     assert payload["toolCalls"][0]["name"] == "today_sale"
     assert payload["toolResults"] == [
         {
@@ -160,7 +166,7 @@ def test_chat_returns_tool_calls_and_results(
             "data": {"revenue": 500, "profit": 100, "sales": 3},
         }
     ]
-    assert provider.calls == 1
+    assert provider.calls == 2
 
 
 def test_chat_tool_forbidden_in_results(
@@ -182,7 +188,12 @@ def test_chat_tool_forbidden_in_results(
                         arguments={"storeId": STORE_ID},
                     )
                 ],
-            )
+            ),
+            GenerationResponse(
+                provider="scripted",
+                model="m1",
+                content="Stock check ke liye permission nahi hai.",
+            ),
         ]
     )
     client, mock_http = _auth_client(
@@ -204,11 +215,15 @@ def test_chat_tool_forbidden_in_results(
         mock_http._transport = None  # noqa: SLF001
 
     assert response.status_code == 200
+    assert response.json()["message"] == (
+        "Stock check ke liye permission nahi hai."
+    )
     assert response.json()["toolResults"][0] == {
         "tool": "stock_summary",
         "success": False,
         "data": {"code": "TOOL_FORBIDDEN", "message": "No permission"},
     }
+    assert provider.calls == 2
 
 
 def test_chat_tool_unauthorized(
@@ -284,6 +299,11 @@ def test_chat_repairs_invalid_tool_args_once(
                     )
                 ],
             ),
+            GenerationResponse(
+                provider="scripted",
+                model="m1",
+                content="Atta mil gaya.",
+            ),
         ]
     )
     client, mock_http = _auth_client(monkeypatch, rsa_keypair, provider)
@@ -305,7 +325,8 @@ def test_chat_repairs_invalid_tool_args_once(
     assert response.status_code == 200
     assert response.json()["toolCalls"][0]["arguments"]["query"] == "atta"
     assert response.json()["toolResults"][0]["success"] is True
-    assert provider.calls == 2
+    assert response.json()["message"] == "Atta mil gaya."
+    assert provider.calls == 3
 
 
 def test_chat_fails_after_failed_repair(

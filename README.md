@@ -38,6 +38,14 @@ Implemented:
   `app/prompts/fallback.py`)
 - **Authenticated** `POST /api/v1/chat` with LLM text, validated `toolCalls`, and
   **auto-executed READ** `toolResults` via retailer HTTP (forwarded user JWT)
+- **Second LLM synthesis turn** after tools: `message` is grounded in live
+  `toolResults` (RAG docs stay in the system prompt); skipped when there were
+  no tool calls; capped by `AI_CHAT_SYNTHESIS_MAX_TOKENS` (default `512`);
+  synthesis output passes through `OutputGuard`
+- **In-memory session memory** keyed by `sessionId` + `userId` + `storeId`
+  (sliding TTL, max turns + token budget); cross-user/store reuse → `403`
+  `SESSION_FORBIDDEN`; prior turns (+ compact tool context) load into the next
+  generation. Process-local until Redis (B1)
 - Tool-call JSON Schema validation with one repair retry
 - Docker runtime and unit tests
 
@@ -45,9 +53,8 @@ Not implemented yet:
 
 - Claude / Gemini / DeepSeek adapters
 - Write / sensitive tools (idempotency + confirmation)
-- Second LLM turn to ground `message` in `toolResults`
 - `/voice`, `/image`, or `/document` APIs
-- Conversation persistence, Redis rate limiting, queues, STT, TTS
+- Redis-backed sessions / rate limiting, durable Postgres history, queues, STT, TTS
 
 The service does not access DragBizz databases directly. Tool handlers call
 approved business-service APIs with caller identity and store scope preserved.
@@ -81,6 +88,7 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_OPENAI_BASE_URL` | Default `https://api.openai.com/v1` |
 | `AI_OPENAI_MODEL` | e.g. `gpt-4o-mini` |
 | `AI_CHAT_MAX_TOKENS` | Default `1024` |
+| `AI_CHAT_SYNTHESIS_MAX_TOKENS` | Second-turn grounded answer cap (default `512`) |
 | `AI_CHAT_TEMPERATURE` | Default `0.2` |
 | `AI_PROVIDER_TIMEOUT_SECONDS` | Default `30` |
 | `AI_RETAILER_SERVICE_URL` | Retailer base URL for tool HTTP |
@@ -92,17 +100,35 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_RAG_TOP_K` | Max retrieved chunks per question (default `5`) |
 | `AI_RAG_SCORE_THRESHOLD` | Min cosine score; lower-scoring chunks dropped (default `0.3`) |
 | `AI_RAG_CONTEXT_MAX_TOKENS` | Token budget for the docs block in the prompt (default `2000`) |
-| `AI_INPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` |
+| `AI_INPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
+| `AI_OUTPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
+| `AI_SESSION_TTL_SECONDS` | Sliding session TTL (default `1800`) |
+| `AI_SESSION_MAX_TURNS` | Max stored user/assistant pairs (default `10`) |
+| `AI_SESSION_HISTORY_MAX_TOKENS` | History token budget for LLM context (default `2000`) |
 
-Production requires HTTPS for JWKS and the OpenAI base URL. Never commit API keys.
+Production requires HTTPS for JWKS and the OpenAI base URL, and **both**
+guard modes set to `enforce` (boot fails otherwise). Never commit API keys.
 
-## Chat API (Phase 3)
+### Guard enforce rollout
+
+1. Keep `log` in local/staging while watching false-positive warnings.
+2. Tune `app/guards/*` if real store questions are blocked.
+3. Set both modes to `enforce` before production traffic.
+
+Details: [docs/features/GUARDS.md](./docs/features/GUARDS.md).
+
+## Chat API (Phase 3.5)
 
 `POST /api/v1/chat` validates JWT + `storeId`, calls the active provider, validates
 allowlisted tool calls, **executes READ tools** against retailer with the same
 Bearer token and `?store=<storeId>`, and returns `toolCalls` + `toolResults`.
 
-There is **no second LLM synthesis turn** yet — `message` is the first model reply.
+When tools ran, a **second LLM synthesis turn** (no new tool calls) grounds
+`message` in those results. With no tool calls, `message` is the first reply.
+
+Prior turns for the same `sessionId` + user + store are loaded into the next
+generation (in-memory TTL). Reusing another user's or store's `sessionId`
+returns `403` `SESSION_FORBIDDEN`.
 
 | Tool | Retailer |
 |---|---|
@@ -128,7 +154,7 @@ Example `200` body:
 
 ```json
 {
-  "message": "Main aaj ki sale nikaal sakta hoon.",
+  "message": "Aaj ki sale ₹500 hai.",
   "sessionId": "session-abc",
   "requestId": "demo-req-1",
   "userId": "<jwt-sub>",
@@ -145,15 +171,16 @@ Example `200` body:
     {
       "tool": "today_sale",
       "success": true,
-      "data": { "revenue": 0, "profit": 0, "sales": 0 }
+      "data": { "revenue": 500, "profit": 100, "sales": 3 }
     }
   ]
 }
 ```
 
-Error codes: `401` `AUTH_*` / `TOOL_UNAUTHORIZED`, `400` `STORE_ID_*` /
-`TOOL_NOT_ALLOWED` / `TOOL_ARGS_INVALID`, `422` `VALIDATION_ERROR`,
-`502` `AI_PROVIDER_ERROR`, `503` `AI_PROVIDER_NOT_CONFIGURED`.
+Error codes: `401` `AUTH_*` / `TOOL_UNAUTHORIZED`, `403` `SESSION_FORBIDDEN`,
+`400` `STORE_ID_*` / `TOOL_NOT_ALLOWED` / `TOOL_ARGS_INVALID`,
+`422` `VALIDATION_ERROR`, `502` `AI_PROVIDER_ERROR`,
+`503` `AI_PROVIDER_NOT_CONFIGURED`.
 
 Per-tool failures (`403`/`404`/`429`/5xx) return `toolResults[].success=false`
 with `data.code` of `TOOL_FORBIDDEN` / `TOOL_NOT_FOUND` / `TOOL_RATE_LIMITED` /

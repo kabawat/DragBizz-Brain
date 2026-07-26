@@ -18,7 +18,7 @@ Each step: **Objective → Sub-steps → Touches → Depends → DoD**.
 
 ## Phase A — Harden the current chat spine
 
-### A1 — Second LLM synthesis turn
+### A1 — Second LLM synthesis turn ✅
 
 **Objective:** Ground `message` in `toolResults` so users see numbers from tools, not invented text.
 
@@ -32,7 +32,7 @@ Each step: **Objective → Sub-steps → Touches → Depends → DoD**.
 
 **Depends:** current chat.
 
-**DoD:** “Aaj ki sale?” returns message that matches `toolResults` revenue; eval case in `tests/eval/`.
+**DoD:** “Aaj ki sale?” returns message that matches `toolResults` revenue; covered by `tests/unit/test_chat_synthesis.py`.
 
 ---
 

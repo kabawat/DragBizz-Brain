@@ -15,6 +15,7 @@ from app.providers.openai_compatible import OpenAICompatibleProvider
 from app.rag.embedding_service import EmbeddingService
 from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStore
+from app.sessions import InMemorySessionStore
 from app.tools.definitions import READ_TOOL_DEFINITIONS
 from app.tools.handlers.read_tools import READ_TOOL_HANDLERS
 from app.tools.registry import ToolRegistry
@@ -69,6 +70,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.tool_registry = tool_registry
     app.state.retailer_client = retailer
     app.state.tool_executor = tool_executor
+    session_store = InMemorySessionStore(
+        ttl_seconds=settings.session_ttl_seconds,
+        max_turns=settings.session_max_turns,
+        history_max_tokens=settings.session_history_max_tokens,
+    )
+    app.state.session_store = session_store
     retriever = Retriever(
         settings, EmbeddingService(settings, http_client), vector_store
     )
@@ -79,6 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings=settings,
         tool_executor=tool_executor,
         retriever=retriever,
+        session_store=session_store,
     )
 
     logger.info("AI service started")

@@ -4,7 +4,7 @@ Product flows from `dragbizz-ai-service/DATA_FLOW.md`, re-routed through **ChatS
 
 ---
 
-## Flow 1 — In-app chat (current → target)
+## Flow 1 — In-app chat (current)
 
 ```mermaid
 sequenceDiagram
@@ -25,12 +25,13 @@ sequenceDiagram
     CS->>TE: execute_reads
     TE->>RET: GET with user JWT
     RET-->>TE: data
-    Note over CS: TARGET: second LLM turn with toolResults
+    CS->>LLM: synthesize (toolResults, no tools)
+    LLM-->>CS: grounded message
     CS->>CS: OutputGuard
     CS-->>U: ChatResponse
 ```
 
-**Implement:** Phase A1 in master plan.
+**Status:** Phase A1 synthesis shipped (`AI_CHAT_SYNTHESIS_MAX_TOKENS`; skip when no tools).
 
 ---
 

@@ -161,8 +161,8 @@ def _service(content: str, mode: str) -> ChatService:
     )
 
 
-def _handle(service: ChatService) -> str:
-    response = asyncio.run(
+def _handle(service: ChatService):
+    return asyncio.run(
         service.handle(
             ChatRequest(
                 text="aaj ki sale?",
@@ -176,21 +176,33 @@ def _handle(service: ChatService) -> str:
             access_token="token",
         )
     )
-    return response.message
+
+
+def _handle_message(service: ChatService) -> str:
+    return _handle(service).message
 
 
 def test_enforce_mode_scrubs_secret_but_keeps_answer() -> None:
-    message = _handle(
+    response = _handle(
         _service("Key hai sk-abc123def456ghi789jkl, sambhal ke.", "enforce")
     )
-    assert "sk-abc123def456ghi789jkl" not in message
-    assert "[REDACTED]" in message
-    assert "sambhal ke" in message
+    assert "sk-abc123def456ghi789jkl" not in response.message
+    assert "[REDACTED]" in response.message
+    assert "sambhal ke" in response.message
+    assert response.session_id == "s1"
+    assert response.request_id == "r1"
+    assert response.provider == "static"
 
 
 def test_enforce_mode_replaces_invented_numbers_with_fallback() -> None:
-    message = _handle(_service("Aaj ki sale ₹5000 hui.", "enforce"))
-    assert message == get_fallback_message("hi-IN")
+    response = _handle(_service("Aaj ki sale ₹5000 hui.", "enforce"))
+    assert response.message == get_fallback_message("hi-IN")
+    payload = response.model_dump(by_alias=True)
+    assert payload["message"] == get_fallback_message("hi-IN")
+    assert payload["sessionId"] == "s1"
+    assert payload["requestId"] == "r1"
+    assert payload["toolCalls"] == []
+    assert payload["toolResults"] == []
 
 
 def test_log_mode_flags_but_returns_original(
@@ -198,7 +210,7 @@ def test_log_mode_flags_but_returns_original(
 ) -> None:
     content = "Aaj ki sale ₹5000 hui."
     with caplog.at_level(logging.WARNING):
-        message = _handle(_service(content, "log"))
+        message = _handle_message(_service(content, "log"))
     assert message == content
     assert any(
         "Output guard flagged response" in record.message
@@ -211,12 +223,12 @@ def test_log_mode_flags_but_returns_original(
 
 def test_off_mode_skips_evaluation() -> None:
     content = "Key: sk-abc123def456ghi789jkl"
-    assert _handle(_service(content, "off")) == content
+    assert _handle_message(_service(content, "off")) == content
 
 
 def test_clean_response_passes_in_enforce_mode() -> None:
     content = "POS kholen aur bill banayen."
-    assert _handle(_service(content, "enforce")) == content
+    assert _handle_message(_service(content, "enforce")) == content
 
 
 # ------------------------------------------------------------ fallback copy

@@ -30,8 +30,8 @@ Legend: **Done** · **Partial** · **Missing**
 | Provider-agnostic router | Partial | OpenAI-compatible only |
 | READ tools auto-execute | Done | 4 tools |
 | WRITE / SENSITIVE tools + confirmation | Missing | Enum exists; executor refuses non-READ |
-| Second LLM turn (ground message in toolResults) | Missing | Explicit in README |
-| Conversation history persistence | Missing | `sessionId` accepted, not stored |
+| Second LLM turn (ground message in toolResults) | Done | After READ tools; skip when no tools |
+| Conversation history persistence | Partial | In-memory TTL by sessionId+user+store; Redis/Postgres later |
 | Streaming chat (WS/SSE) | Missing | |
 | Input / output guards | Done | log/enforce modes |
 | RAG docs + citations | Done | Qdrant + knowledge/ |

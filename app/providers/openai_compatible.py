@@ -8,7 +8,7 @@ import httpx
 from app.config import Settings
 from app.core.exceptions import AppError
 from app.providers.base import ModelProvider
-from app.schemas.chat import GenerationRequest, GenerationResponse
+from app.schemas.chat import ChatMessage, GenerationRequest, GenerationResponse
 from app.schemas.tool import ToolCall, ToolDefinition
 
 
@@ -32,8 +32,7 @@ class OpenAICompatibleProvider(ModelProvider):
         payload: dict[str, Any] = {
             "model": self._settings.openai_model,
             "messages": [
-                {"role": message.role, "content": message.content}
-                for message in request.messages
+                _to_openai_message(message) for message in request.messages
             ],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
@@ -83,6 +82,33 @@ class OpenAICompatibleProvider(ModelProvider):
             ) from exc
 
         return _parse_completion(body, provider_name=self.name)
+
+
+def _to_openai_message(message: ChatMessage) -> dict[str, Any]:
+    if message.role == "tool":
+        return {
+            "role": "tool",
+            "tool_call_id": message.tool_call_id,
+            "content": message.content,
+        }
+
+    payload: dict[str, Any] = {
+        "role": message.role,
+        "content": message.content,
+    }
+    if message.role == "assistant" and message.tool_calls:
+        payload["tool_calls"] = [
+            {
+                "id": call.id,
+                "type": "function",
+                "function": {
+                    "name": call.name,
+                    "arguments": json.dumps(call.arguments, ensure_ascii=False),
+                },
+            }
+            for call in message.tool_calls
+        ]
+    return payload
 
 
 def _to_openai_tool(tool: ToolDefinition) -> dict[str, Any]:

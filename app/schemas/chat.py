@@ -1,7 +1,7 @@
 import re
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.tool import ToolCall, ToolDefinition, ToolResult
 
@@ -9,8 +9,23 @@ OBJECT_ID_PATTERN = re.compile(r"^[a-fA-F0-9]{24}$")
 
 
 class ChatMessage(BaseModel):
-    role: Literal["system", "user", "assistant"]
+    """Provider-agnostic chat turn, including OpenAI-style tool protocol."""
+
+    role: Literal["system", "user", "assistant", "tool"]
     content: str = Field(default="", max_length=20_000)
+    tool_calls: list[ToolCall] = Field(default_factory=list)
+    tool_call_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_role_fields(self) -> Self:
+        if self.role == "tool":
+            if not self.tool_call_id:
+                raise ValueError("tool messages require tool_call_id")
+        elif self.tool_call_id is not None:
+            raise ValueError("tool_call_id is only allowed on tool messages")
+        if self.tool_calls and self.role != "assistant":
+            raise ValueError("tool_calls are only allowed on assistant messages")
+        return self
 
 
 class GenerationRequest(BaseModel):

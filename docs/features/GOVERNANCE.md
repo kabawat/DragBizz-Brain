@@ -24,9 +24,13 @@ Production controls from ai-service Steps 19–20.
 ## Rollout
 
 - `AI_ROLLOUT_MODE` / agency allowlist for canary
+- **Guards:** `AI_INPUT_GUARD_MODE` / `AI_OUTPUT_GUARD_MODE` must be `enforce`
+  when `AI_ENVIRONMENT=production` (validated at settings load). Staging should
+  stay on `log` until false positives are tuned — see [GUARDS.md](./GUARDS.md).
 
 ## DoD
 
 - Prod refuses boot without critical env (optional strict mode).
+- Prod refuses boot unless both guards are `enforce` (done).
 - Budget denial path tested.
 - Dashboards/runbooks linked from README.

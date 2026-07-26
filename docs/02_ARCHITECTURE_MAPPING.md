@@ -8,7 +8,8 @@ How `dragbizz-ai-service` concepts map onto **this** codebase.
 dragbizz-ai-service                    dragbizz-ai (implement here)
 ─────────────────────                  ────────────────────────────
 LangGraph agent state machine    →     ChatService + explicit confirm state
-                                       (session store when multi-turn needed)
+                                       (app/sessions InMemorySessionStore;
+                                        Redis later)
 app/agents/tools/*               →     app/tools/definitions.py
                                        app/tools/handlers/*
                                        app/tools/registry.py
@@ -34,11 +35,14 @@ Client
   → deps: JWT + storeId
   → ChatService.handle
         → InputGuard
+        → load session history (sessionId + userId + storeId)
         → Retriever (Qdrant) → docs block
         → AiGateway.generate (tools schema)
         → ToolCallValidator
         → ToolExecutor.execute_reads (RetailerClient + user JWT)
+        → (if tools) synthesis turn: second LLM call with toolResults → grounded message
         → OutputGuard
+        → append turn to session store
   → ChatResponse { message, toolCalls, toolResults }
 ```
 
@@ -47,7 +51,7 @@ Client
 ```text
 ChatService.handle (extended)
   → InputGuard
-  → (optional) load session history from Redis/Postgres
+  → load session history (in-memory; Redis/Postgres later)
   → Retriever
   → AiGateway.generate
   → ToolCallValidator
@@ -55,9 +59,9 @@ ChatService.handle (extended)
         → READ  → auto execute (today)
         → WRITE → create draft via retailer; return confirmation payload
         → SENSITIVE → never auto; require explicit confirm API/turn
-  → (new) synthesis turn: second LLM call with toolResults → grounded message
+  → synthesis turn (done for READ): second LLM call with toolResults → grounded message
   → OutputGuard
-  → persist messages + token usage
+  → persist turn to session store (+ durable store later)
 ```
 
 ## Auth modes
@@ -76,7 +80,8 @@ ChatService.handle (extended)
 | Need | Store | Why |
 |---|---|---|
 | Help/docs RAG | **Qdrant** (existing) | Already wired; rebuildable from `knowledge/` |
-| Chat history, jobs, alerts, forecasts, usage | **Postgres** | Relational + audit; add Alembic when first feature needs it |
+| Short-lived chat session | **In-memory** (now) → **Redis** | Process-local until B1 |
+| Chat history, jobs, alerts, forecasts, usage | **Postgres** | Relational + audit; add Alembic when durable history needed |
 | Rate limit, idempotency, short session, broker | **Redis** | Matches DragBizz ops; unlocks workers |
 | Domain events | **RabbitMQ** | Same bus as retailer when proactive features land |
 

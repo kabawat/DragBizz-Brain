@@ -142,6 +142,23 @@ def test_enforce_mode_refuses_without_llm_call() -> None:
     assert response.tool_results == []
     assert response.session_id == "s1"
     assert response.user_id == "u1"
+    assert response.request_id == "r1"
+
+    # Same public chat schema clients already consume (camelCase aliases).
+    payload = response.model_dump(by_alias=True)
+    assert set(payload) >= {
+        "message",
+        "sessionId",
+        "requestId",
+        "userId",
+        "provider",
+        "model",
+        "toolCalls",
+        "toolResults",
+    }
+    assert payload["provider"] == "input_guard"
+    assert payload["toolCalls"] == []
+    assert payload["toolResults"] == []
 
 
 def test_log_mode_flags_but_does_not_block(

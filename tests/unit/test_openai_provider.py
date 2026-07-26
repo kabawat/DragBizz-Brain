@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import httpx
@@ -10,7 +11,7 @@ from app.config import Settings
 from app.core.exceptions import AppError
 from app.providers.openai_compatible import OpenAICompatibleProvider
 from app.schemas.chat import ChatMessage, GenerationRequest
-from app.schemas.tool import ToolDefinition, ToolRisk
+from app.schemas.tool import ToolCall, ToolDefinition, ToolRisk
 
 
 def _settings(**overrides: object) -> Settings:
@@ -23,6 +24,68 @@ def _settings(**overrides: object) -> Settings:
     }
     data.update(overrides)
     return Settings(**data)
+
+
+def test_openai_provider_serializes_tool_protocol() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            json={
+                "model": "gpt-4o-mini",
+                "choices": [{"message": {"content": "Aaj ₹500."}}],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 5},
+            },
+        )
+
+    async def run() -> None:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as client:
+            provider = OpenAICompatibleProvider(_settings(), client)
+            result = await provider.generate(
+                GenerationRequest(
+                    messages=[
+                        ChatMessage(role="system", content="rules"),
+                        ChatMessage(role="user", content="sale?"),
+                        ChatMessage(
+                            role="assistant",
+                            content="",
+                            tool_calls=[
+                                ToolCall(
+                                    id="call_1",
+                                    name="today_sale",
+                                    arguments={
+                                        "storeId": "507f1f77bcf86cd799439011"
+                                    },
+                                )
+                            ],
+                        ),
+                        ChatMessage(
+                            role="tool",
+                            tool_call_id="call_1",
+                            content='{"success":true,"data":{"revenue":500}}',
+                        ),
+                        ChatMessage(role="user", content="Answer from tools."),
+                    ],
+                    max_tokens=256,
+                    tool_choice="none",
+                )
+            )
+
+        assert result.content == "Aaj ₹500."
+        body = captured["body"]
+        assert "tools" not in body
+        assert body["max_tokens"] == 256
+        assert body["messages"][2]["tool_calls"][0]["id"] == "call_1"
+        assert body["messages"][3] == {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": '{"success":true,"data":{"revenue":500}}',
+        }
+
+    asyncio.run(run())
 
 
 def test_openai_provider_normalizes_tool_calls() -> None:

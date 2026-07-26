@@ -17,10 +17,11 @@ dragbizz-ai/
 │   │   ├── alerts.py          # NEW
 │   │   └── webhooks.py        # NEW
 │   ├── orchestrator/
-│   │   ├── chat_service.py    # extend: history, synthesis, confirm
+│   │   ├── chat_service.py    # history, synthesis, confirm
 │   │   ├── ai_gateway.py
 │   │   ├── model_router.py
 │   │   └── tool_call_validator.py
+│   ├── sessions/              # InMemorySessionStore (Redis later)
 │   ├── tools/
 │   │   ├── definitions.py     # READ + WRITE + SENSITIVE
 │   │   ├── registry.py

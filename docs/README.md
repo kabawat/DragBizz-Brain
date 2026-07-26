@@ -49,8 +49,9 @@ These docs translate that product into **how we build it here**.
 - JWKS auth (Bearer / cookie)
 - OpenAI-compatible provider + `ModelRouter`
 - Qdrant RAG (`knowledge/` → indexer → retriever → chat prompt)
-- Input / output guards
+- Input / output guards (`log` default; production requires `enforce`)
 - `POST /api/v1/chat` with allowlisted **READ** tools executed via retailer + user JWT
+- Second LLM synthesis + in-memory session memory
 - Tool risk enum already has `read` | `write` | `sensitive` (write path not wired yet)
 
 Port: **4004** locally (compose). Auth/retailer via gateway URLs.
