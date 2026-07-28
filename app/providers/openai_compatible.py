@@ -63,9 +63,11 @@ class OpenAICompatibleProvider(ModelProvider):
                 status_code=502,
             ) from exc
         except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            # Status only — never log response body (may contain provider details).
             raise AppError(
                 code="AI_PROVIDER_ERROR",
-                message="AI provider request failed",
+                message=f"AI provider request failed (HTTP {status})",
                 status_code=502,
             ) from exc
         except httpx.HTTPError as exc:

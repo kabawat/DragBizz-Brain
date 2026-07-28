@@ -39,7 +39,7 @@ Client
         → Retriever (Qdrant) → docs block
         → AiGateway.generate (tools schema)
         → ToolCallValidator
-        → ToolExecutor.execute_reads (RetailerClient + user JWT)
+        → ToolExecutor.execute_reads / execute_writes (RetailerClient + user JWT)
         → (if tools) synthesis turn: second LLM call with toolResults → grounded message
         → OutputGuard
         → append turn to session store

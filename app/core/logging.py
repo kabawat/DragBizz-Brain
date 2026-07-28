@@ -21,6 +21,10 @@ class JsonFormatter(logging.Formatter):
         if isinstance(metrics, dict):
             payload["metrics"] = metrics
 
+        audit = getattr(record, "audit", None)
+        if isinstance(audit, dict):
+            payload["audit"] = audit
+
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
 

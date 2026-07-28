@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = Field(default=1_800, ge=60, le=86_400)
     session_max_turns: int = Field(default=10, ge=1, le=50)
     session_history_max_tokens: int = Field(default=2_000, ge=200, le=16_000)
+    # Write-tool duplicate protection (in-process until Redis).
+    idempotency_ttl_seconds: int = Field(default=86_400, ge=60, le=604_800)
     # Chat pricing for per-request cost metrics (defaults: gpt-4o-mini).
     chat_input_usd_per_million_tokens: float = Field(default=0.15, ge=0)
     chat_output_usd_per_million_tokens: float = Field(default=0.60, ge=0)

@@ -9,5 +9,8 @@ def build_synthesis_instruction(*, language: str) -> str:
         "prompt for how-to or feature context. "
         "Never invent IDs, amounts, stock, or customer data. "
         "If a tool failed, say so briefly without guessing numbers. "
+        "If a successful write tool result includes openPath, include it as "
+        "a Markdown link (e.g. [Open customer](/dashboard/customers/…)) — "
+        "use that path exactly. "
         f"Respond in language tag: {language}."
     )

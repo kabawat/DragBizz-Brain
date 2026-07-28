@@ -16,7 +16,7 @@ Customers are managed from `/dashboard/customers`: add customers one by one, imp
 ## Workflow
 
 1. **Add a customer** — Customers → **Add Customer** (side drawer). Fill Name (required) and Phone or Email (at least one required). Optionally add company details (Company Name, GSTIN with verify), and billing/shipping addresses. You can also add a customer on the fly from the invoice create page ("Add New Customer" in the customer dropdown).
-2. **Search & filter** — search by name/phone/email; filter by Status (Active/Inactive), Source (Manual, POS, Invoice, Bulk Import, Online, In Store, WhatsApp, Phone, QR Catalog), **Balance** (Due / Advance / Both), and date range.
+2. **Search & filter** — search by name/phone/email; filter by Status (Active/Inactive), Source (Manual, POS, Invoice, Bulk Import, Online, In Store, WhatsApp, Phone, QR Catalog, Voice AI), **Balance** (Due / Advance / Both), and date range.
 3. **Bulk upload** — Import → **Bulk Upload**. Download the template (Excel/CSV/JSON), fill rows, upload (max 5MB, up to 1000 rows). Columns: name, phone, email, company_name, gstin, gst_detail, and optional opening dues (total_due / opening_due / udhari). Results show Created / Skipped / Failed with row-level errors and an errors CSV download.
 4. **Edit** — from the row menu or customer view; same form as add.
 5. **Delete** — row menu → Delete with confirmation. Deletion is permanent.

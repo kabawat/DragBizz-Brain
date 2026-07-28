@@ -27,7 +27,7 @@ from app.schemas.chat import (
     GenerationRequest,
     GenerationResponse,
 )
-from app.schemas.tool import ToolCall, ToolDefinition, ToolResult
+from app.schemas.tool import ToolCall, ToolDefinition, ToolResult, ToolRisk
 from app.sessions import (
     InMemorySessionStore,
     SessionStore,
@@ -135,11 +135,31 @@ class ChatService:
                 generation.tool_calls, store_id=store_id
             )
 
+        read_calls, write_calls = _partition_tool_calls(
+            tool_calls, registry=self._registry
+        )
         tool_results = await self._executor.execute_reads(
-            tool_calls,
+            read_calls,
             access_token=access_token,
             store_id=store_id,
         )
+        write_results = await self._executor.execute_writes(
+            write_calls,
+            access_token=access_token,
+            store_id=store_id,
+            session_id=body.session_id,
+            user_id=user_id,
+        )
+        # Preserve original tool_calls order for synthesis pairing.
+        results_by_id = {
+            call.id: result
+            for call, result in zip(
+                [*read_calls, *write_calls],
+                [*tool_results, *write_results],
+                strict=True,
+            )
+        }
+        tool_results = [results_by_id[call.id] for call in tool_calls]
 
         synthesis: GenerationResponse | None = None
         if tool_calls:
@@ -438,6 +458,28 @@ class ChatService:
             )
         )
         return await self._generate(repair_messages, tools)
+
+
+def _partition_tool_calls(
+    tool_calls: list[ToolCall],
+    *,
+    registry: ToolRegistry,
+) -> tuple[list[ToolCall], list[ToolCall]]:
+    reads: list[ToolCall] = []
+    writes: list[ToolCall] = []
+    for call in tool_calls:
+        risk = registry.get_definition(call.name).risk
+        if risk == ToolRisk.READ:
+            reads.append(call)
+        elif risk == ToolRisk.WRITE:
+            writes.append(call)
+        else:
+            raise AppError(
+                code="TOOL_NOT_EXECUTABLE",
+                message=f"Tool '{call.name}' requires confirmation",
+                status_code=400,
+            )
+    return reads, writes
 
 
 def _sum_optional_tokens(*values: int | None) -> int | None:

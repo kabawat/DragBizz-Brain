@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from app.config import get_settings
 from app.executors.tool_executor import ToolExecutor
+from app.idempotency import InMemoryIdempotencyStore
 from app.integrations.retailer_client import RetailerClient
 from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.chat_service import ChatService
@@ -16,8 +17,9 @@ from app.rag.embedding_service import EmbeddingService
 from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStore
 from app.sessions import InMemorySessionStore
-from app.tools.definitions import READ_TOOL_DEFINITIONS
+from app.tools.definitions import READ_TOOL_DEFINITIONS, WRITE_TOOL_DEFINITIONS
 from app.tools.handlers.read_tools import READ_TOOL_HANDLERS
+from app.tools.handlers.write_tools import WRITE_TOOL_HANDLERS
 from app.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -47,8 +49,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     for definition in READ_TOOL_DEFINITIONS:
         handler = READ_TOOL_HANDLERS[definition.name]
         tool_registry.register(definition, handler)
+    for definition in WRITE_TOOL_DEFINITIONS:
+        handler = WRITE_TOOL_HANDLERS[definition.name]
+        tool_registry.register(definition, handler)
 
-    tool_executor = ToolExecutor(registry=tool_registry, retailer=retailer)
+    idempotency_store = InMemoryIdempotencyStore(
+        ttl_seconds=settings.idempotency_ttl_seconds
+    )
+    tool_executor = ToolExecutor(
+        registry=tool_registry,
+        retailer=retailer,
+        idempotency_store=idempotency_store,
+    )
 
     model_router = ModelRouter()
     if settings.openai_api_key:
@@ -70,6 +82,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.tool_registry = tool_registry
     app.state.retailer_client = retailer
     app.state.tool_executor = tool_executor
+    app.state.idempotency_store = idempotency_store
     session_store = InMemorySessionStore(
         ttl_seconds=settings.session_ttl_seconds,
         max_turns=settings.session_max_turns,

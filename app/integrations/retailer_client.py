@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
 from app.core.exceptions import AppError
+
+HttpMethod = Literal["GET", "POST", "PUT"]
 
 
 @dataclass(frozen=True)
@@ -35,7 +37,8 @@ class RetailerClient:
         query: str,
         limit: int = 20,
     ) -> RetailerResponse:
-        return await self._get(
+        return await self._request(
+            "GET",
             "/product",
             access_token=access_token,
             store_id=store_id,
@@ -45,7 +48,8 @@ class RetailerClient:
     async def get_revenue(
         self, *, access_token: str, store_id: str
     ) -> RetailerResponse:
-        return await self._get(
+        return await self._request(
+            "GET",
             "/analytics/revenue",
             access_token=access_token,
             store_id=store_id,
@@ -54,7 +58,8 @@ class RetailerClient:
     async def get_stock(
         self, *, access_token: str, store_id: str
     ) -> RetailerResponse:
-        return await self._get(
+        return await self._request(
+            "GET",
             "/analytics/stock",
             access_token=access_token,
             store_id=store_id,
@@ -67,27 +72,137 @@ class RetailerClient:
         store_id: str,
         limit: int = 20,
     ) -> RetailerResponse:
-        return await self._get(
+        return await self._request(
+            "GET",
             "/customer-account/payments",
             access_token=access_token,
             store_id=store_id,
             params={"limit": limit},
         )
 
-    async def _get(
+    async def create_customer(
         self,
+        *,
+        access_token: str,
+        store_id: str,
+        name: str,
+        phone: str | None = None,
+        email: str | None = None,
+        source: str = "VOICE_AI",
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {
+            "store": store_id,
+            "name": name,
+            "source": source,
+        }
+        if phone is not None:
+            body["phone"] = phone
+        if email is not None:
+            body["email"] = email
+        return await self._request(
+            "POST",
+            "/customer",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def update_customer(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str,
+        name: str,
+        phone: str | None = None,
+        email: str | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {"store": store_id, "name": name}
+        if phone is not None:
+            body["phone"] = phone
+        if email is not None:
+            body["email"] = email
+        return await self._request(
+            "PUT",
+            f"/customer/{customer_id}",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def create_invoice_draft(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        items: list[dict[str, Any]],
+        customer_id: str | None = None,
+        is_walkin: bool = False,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {"items": items, "isWalkin": is_walkin}
+        if customer_id is not None:
+            body["customer"] = customer_id
+        return await self._request(
+            "POST",
+            "/invoices",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def create_ledger_transaction(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str,
+        transaction_type: Literal["PAYMENT", "DEBIT"],
+        amount: float,
+        idempotency_key: str,
+        payment_mode: str | None = None,
+        notes: str | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {
+            "customer": customer_id,
+            "type": transaction_type,
+            "amount": amount,
+            "idempotencyKey": idempotency_key,
+            "source": "MANUAL",
+        }
+        if payment_mode is not None:
+            body["paymentMode"] = payment_mode
+        if notes is not None:
+            body["notes"] = notes
+        return await self._request(
+            "POST",
+            "/customer-account/transactions",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def _request(
+        self,
+        method: HttpMethod,
         path: str,
         *,
         access_token: str,
         store_id: str,
         params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
     ) -> RetailerResponse:
         query = {"store": store_id, **(params or {})}
         headers = {"Authorization": f"Bearer {access_token}"}
         url = f"{self._base_url}{path}"
 
         try:
-            response = await self._http.get(url, headers=headers, params=query)
+            response = await self._http.request(
+                method,
+                url,
+                headers=headers,
+                params=query,
+                json=json_body,
+            )
         except httpx.TimeoutException as exc:
             raise RetailerHttpError(
                 status_code=504,
@@ -131,6 +246,8 @@ def _map_status_code(status_code: int) -> str:
         return "TOOL_FORBIDDEN"
     if status_code == 404:
         return "TOOL_NOT_FOUND"
+    if status_code == 409:
+        return "TOOL_CONFLICT"
     if status_code == 429:
         return "TOOL_RATE_LIMITED"
     return "RETAILER_ERROR"

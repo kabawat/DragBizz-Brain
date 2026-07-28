@@ -37,7 +37,12 @@ Implemented:
   unverified numbers replaced by the safe fallback in
   `app/prompts/fallback.py`)
 - **Authenticated** `POST /api/v1/chat` with LLM text, validated `toolCalls`, and
-  **auto-executed READ** `toolResults` via retailer HTTP (forwarded user JWT)
+  **auto-executed READ + WRITE** `toolResults` via retailer HTTP (forwarded user JWT)
+- **Write tools:** `create_customer`, `update_customer`, `create_invoice_draft`
+  (draft only — no release), `ledger_credit` → retailer `PAYMENT`,
+  `ledger_debit` → `DEBIT`. In-memory idempotency cache
+  (`AI_IDEMPOTENCY_TTL_SECONDS`); ledger always sends `idempotencyKey`.
+  AI-side audit log (no PII)
 - **Second LLM synthesis turn** after tools: `message` is grounded in live
   `toolResults` (RAG docs stay in the system prompt); skipped when there were
   no tool calls; capped by `AI_CHAT_SYNTHESIS_MAX_TOKENS` (default `512`);
@@ -52,7 +57,7 @@ Implemented:
 Not implemented yet:
 
 - Claude / Gemini / DeepSeek adapters
-- Write / sensitive tools (idempotency + confirmation)
+- Sensitive tools + confirmation UX (invoice release, etc.)
 - `/voice`, `/image`, or `/document` APIs
 - Redis-backed sessions / rate limiting, durable Postgres history, queues, STT, TTS
 
@@ -105,6 +110,7 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_SESSION_TTL_SECONDS` | Sliding session TTL (default `1800`) |
 | `AI_SESSION_MAX_TURNS` | Max stored user/assistant pairs (default `10`) |
 | `AI_SESSION_HISTORY_MAX_TOKENS` | History token budget for LLM context (default `2000`) |
+| `AI_IDEMPOTENCY_TTL_SECONDS` | Write-tool result cache TTL (default `86400`) |
 
 Production requires HTTPS for JWKS and the OpenAI base URL, and **both**
 guard modes set to `enforce` (boot fails otherwise). Never commit API keys.
@@ -136,6 +142,11 @@ returns `403` `SESSION_FORBIDDEN`.
 | `today_sale` | `GET /analytics/revenue?store=` → `data.today` |
 | `stock_summary` | `GET /analytics/stock?store=` → `data.totals` |
 | `payment_history` | `GET /customer-account/payments?store=&limit=20` |
+| `create_customer` | `POST /customer` |
+| `update_customer` | `PUT /customer/:id` |
+| `create_invoice_draft` | `POST /invoices` (always DRAFT; never release) |
+| `ledger_credit` | `POST /customer-account/transactions` `type=PAYMENT` |
+| `ledger_debit` | `POST /customer-account/transactions` `type=DEBIT` |
 
 ```bash
 curl -sS -X POST "http://localhost:4004/api/v1/chat" \
@@ -182,9 +193,9 @@ Error codes: `401` `AUTH_*` / `TOOL_UNAUTHORIZED`, `403` `SESSION_FORBIDDEN`,
 `422` `VALIDATION_ERROR`, `502` `AI_PROVIDER_ERROR`,
 `503` `AI_PROVIDER_NOT_CONFIGURED`.
 
-Per-tool failures (`403`/`404`/`429`/5xx) return `toolResults[].success=false`
-with `data.code` of `TOOL_FORBIDDEN` / `TOOL_NOT_FOUND` / `TOOL_RATE_LIMITED` /
-`RETAILER_ERROR`.
+Per-tool failures (`403`/`404`/`409`/`429`/5xx) return `toolResults[].success=false`
+with `data.code` of `TOOL_FORBIDDEN` / `TOOL_NOT_FOUND` / `TOOL_CONFLICT` /
+`TOOL_RATE_LIMITED` / `RETAILER_ERROR`.
 
 ## Local setup
 

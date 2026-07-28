@@ -34,6 +34,17 @@ def test_system_prompt_without_documentation_has_no_placeholder() -> None:
     assert "Documentation" not in prompt
 
 
+def test_system_prompt_refuses_invented_write_inputs() -> None:
+    prompt = build_chat_system_prompt(
+        language="en", store_id=STORE_ID, tools=[], documentation=""
+    )
+    assert "Never invent, guess, or 'pick for them'" in prompt
+    assert "do NOT call the write tool" in prompt
+    assert "as you wish" in prompt
+    assert "openPath" in prompt
+    assert "[Open customer](/dashboard/customers/<id>)" in prompt
+
+
 def test_system_prompt_with_documentation_adds_block_and_rule() -> None:
     docs = build_documentation_block(
         [_chunk(0.9, "POS needs a paid plan.", "invoice/pos.md")], max_tokens=2000
