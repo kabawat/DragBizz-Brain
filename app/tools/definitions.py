@@ -69,6 +69,30 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         },
     ),
     ToolDefinition(
+        name="search_customer",
+        description=(
+            "Search existing customers in the active store by name, phone, or "
+            "email (returns real customer ObjectIds). Always use this before "
+            "creating a customer or making a bill/khata entry for an existing "
+            "customer."
+        ),
+        risk=ToolRisk.READ,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Customer name, phone, or email search text",
+                },
+            },
+            "required": ["storeId", "query"],
+        },
+    ),
+    ToolDefinition(
         name="payment_history",
         description=(
             "Get recent live customer payment records for the active store"
@@ -187,6 +211,52 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         },
     ),
     ToolDefinition(
+        name="update_invoice_draft",
+        description=(
+            "Update an existing DRAFT invoice — link a customer (from "
+            "search_customer/create_customer) and/or replace items. Use this "
+            "when the user gives customer details AFTER the draft was made; "
+            "never create a second draft for the same bill."
+        ),
+        risk=ToolRisk.WRITE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "invoiceId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Existing DRAFT invoice ObjectId",
+                },
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Real customer ObjectId to link",
+                },
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "product": {
+                                **_OBJECT_ID_PROP,
+                                "description": "Product ObjectId from search",
+                            },
+                            "quantity": {
+                                "type": "number",
+                                "minimum": 1,
+                            },
+                        },
+                        "required": ["product", "quantity"],
+                    },
+                },
+            },
+            "required": ["storeId", "invoiceId"],
+        },
+    ),
+    ToolDefinition(
         name="ledger_credit",
         description=(
             "Record a customer PAYMENT (credit on khata: customer paid us). "
@@ -243,6 +313,30 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 },
             },
             "required": ["storeId", "customerId", "amount"],
+        },
+    ),
+)
+
+SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
+    ToolDefinition(
+        name="release_invoice",
+        description=(
+            "Propose releasing a DRAFT invoice (deducts stock). Never auto-runs — "
+            "the server stages a confirmation for the user to approve. "
+            "Requires a real draft invoice ObjectId from create_invoice_draft."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "invoiceId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Draft invoice ObjectId to release",
+                },
+            },
+            "required": ["storeId", "invoiceId"],
         },
     ),
 )

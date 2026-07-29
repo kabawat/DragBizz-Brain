@@ -1,5 +1,5 @@
 import re
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -54,6 +54,28 @@ class ChatRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class PendingConfirmation(BaseModel):
+    confirmation_id: str = Field(alias="confirmationId", min_length=1, max_length=128)
+    type: str = Field(min_length=1, max_length=64)
+    draft_id: str = Field(alias="draftId", min_length=1, max_length=64)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    expires_at: str = Field(alias="expiresAt", min_length=1, max_length=64)
+
+    model_config = {"populate_by_name": True}
+
+
+class ConfirmRequest(BaseModel):
+    session_id: str = Field(alias="sessionId", min_length=1, max_length=128)
+    store_id: str = Field(alias="storeId", min_length=1, max_length=64)
+    confirmation_id: str = Field(
+        alias="confirmationId", min_length=1, max_length=128
+    )
+    draft_id: str = Field(alias="draftId", min_length=1, max_length=64)
+    action: Literal["approve", "reject"]
+
+    model_config = {"populate_by_name": True}
+
+
 class ChatResponse(BaseModel):
     message: str
     session_id: str = Field(serialization_alias="sessionId")
@@ -66,6 +88,9 @@ class ChatResponse(BaseModel):
     )
     tool_results: list[ToolResult] = Field(
         default_factory=list, serialization_alias="toolResults"
+    )
+    pending_confirmation: PendingConfirmation | None = Field(
+        default=None, serialization_alias="pendingConfirmation"
     )
 
     model_config = {"populate_by_name": True}

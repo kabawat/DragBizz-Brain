@@ -20,16 +20,17 @@ The voice assistant is a floating pill available on every dashboard page. Press 
 3. The assistant replies with an answer; when it used store data it lists the lookups it ran with a done/failed marker.
 4. Clear resets the conversation.
 
-## What it can answer today (read-only)
+## What it can answer today
 
 - **Today's sale** — "Aaj ki sale kitni hai?" → today's revenue/sales from analytics.
 - **Stock summary** — "Stock ka summary do" → stock totals (SKUs, quantities, low stock).
 - **Product search** — "Sugar 1kg hai kya?" → product lookup by name.
 - **Payment history** — "Recent customer payments dikhao" → latest customer payments.
+- **Draft invoice / customer / khata writes** — create draft bills and customers; **releasing** an invoice (stock deduct) always asks you to **Confirm** or **Cancel** in the chat panel first.
 
 ## Business rules
 
-- Voice queries are **read-only** today. Creating customers/invoices, recording khata entries, or any money/stock action by voice is **not available yet** (planned with a confirmation step).
+- **Invoice release** is never automatic from a single voice/text turn — Confirm in the app first. Cancel leaves the draft unchanged.
 - Language follows the app setting: Hindi/Hinglish → Hindi speech recognition, Gujarati → Gujarati, otherwise Indian English.
 - The microphone needs a secure context (HTTPS or localhost) and permission; without a mic you can still **type** questions.
 - A store must be selected; answers are scoped to that store and to your own permissions (staff see only what their role allows).

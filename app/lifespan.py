@@ -6,6 +6,7 @@ import httpx
 from fastapi import FastAPI
 
 from app.config import get_settings
+from app.confirmations import InMemoryConfirmationStore
 from app.executors.tool_executor import ToolExecutor
 from app.idempotency import InMemoryIdempotencyStore
 from app.integrations.retailer_client import RetailerClient
@@ -17,7 +18,12 @@ from app.rag.embedding_service import EmbeddingService
 from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStore
 from app.sessions import InMemorySessionStore
-from app.tools.definitions import READ_TOOL_DEFINITIONS, WRITE_TOOL_DEFINITIONS
+from app.tools.definitions import (
+    READ_TOOL_DEFINITIONS,
+    SENSITIVE_TOOL_DEFINITIONS,
+    WRITE_TOOL_DEFINITIONS,
+)
+from app.tools.handlers.confirm_tools import SENSITIVE_TOOL_HANDLERS
 from app.tools.handlers.read_tools import READ_TOOL_HANDLERS
 from app.tools.handlers.write_tools import WRITE_TOOL_HANDLERS
 from app.tools.registry import ToolRegistry
@@ -52,9 +58,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     for definition in WRITE_TOOL_DEFINITIONS:
         handler = WRITE_TOOL_HANDLERS[definition.name]
         tool_registry.register(definition, handler)
+    for definition in SENSITIVE_TOOL_DEFINITIONS:
+        handler = SENSITIVE_TOOL_HANDLERS[definition.name]
+        tool_registry.register(definition, handler)
 
     idempotency_store = InMemoryIdempotencyStore(
         ttl_seconds=settings.idempotency_ttl_seconds
+    )
+    confirmation_store = InMemoryConfirmationStore(
+        ttl_seconds=settings.confirmation_ttl_seconds
     )
     tool_executor = ToolExecutor(
         registry=tool_registry,
@@ -83,6 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.retailer_client = retailer
     app.state.tool_executor = tool_executor
     app.state.idempotency_store = idempotency_store
+    app.state.confirmation_store = confirmation_store
     session_store = InMemorySessionStore(
         ttl_seconds=settings.session_ttl_seconds,
         max_turns=settings.session_max_turns,
@@ -100,6 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         tool_executor=tool_executor,
         retriever=retriever,
         session_store=session_store,
+        confirmation_store=confirmation_store,
     )
 
     logger.info("AI service started")

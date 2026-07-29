@@ -29,7 +29,7 @@ Legend: **Done** · **Partial** · **Missing**
 | `POST /api/v1/chat` | Done | Auth + storeId |
 | Provider-agnostic router | Partial | OpenAI-compatible only |
 | READ tools auto-execute | Done | 4 tools |
-| WRITE / SENSITIVE tools + confirmation | Partial | WRITE auto-exec (5 tools + idempotency); SENSITIVE/confirm Phase 5 |
+| WRITE / SENSITIVE tools + confirmation | Done (Phase 5) | WRITE auto-exec; `release_invoice` SENSITIVE + `POST /chat/confirm` |
 | Second LLM turn (ground message in toolResults) | Done | After tools; skip when no tools |
 | Conversation history persistence | Partial | In-memory TTL by sessionId+user+store; Redis/Postgres later |
 | Streaming chat (WS/SSE) | Missing | |
@@ -46,7 +46,7 @@ Legend: **Done** · **Partial** · **Missing**
 | payment_history | Done |
 | get_top_sellers / Pareto | Missing |
 | get_customer_dues / low_stock detail | Missing |
-| create_invoice_draft / release | Partial (draft WRITE done; release Phase 5) |
+| create_invoice_draft / release | Done (draft WRITE + release confirm) |
 | create_po_draft | Missing |
 | send_reengagement / discount suggest | Missing |
 | ledger_credit / ledger_debit | Done (`PAYMENT` / `DEBIT`) |

@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     chat_max_tokens: int = Field(default=1024, ge=1, le=8192)
     # Second-turn grounded answer after tools (cost/latency cap).
     chat_synthesis_max_tokens: int = Field(default=512, ge=1, le=4096)
+    # Max tool-call rounds per user message, so multi-step requests
+    # (search customer + product -> draft) finish in ONE turn.
+    chat_max_tool_rounds: int = Field(default=3, ge=1, le=6)
     chat_temperature: float = Field(default=0.2, ge=0, le=2)
     provider_timeout_seconds: float = Field(default=30.0, gt=0, le=60)
     qdrant_url: str = "http://localhost:6333"
@@ -57,6 +60,8 @@ class Settings(BaseSettings):
     session_history_max_tokens: int = Field(default=2_000, ge=200, le=16_000)
     # Write-tool duplicate protection (in-process until Redis).
     idempotency_ttl_seconds: int = Field(default=86_400, ge=60, le=604_800)
+    # Pending confirmation tokens for SENSITIVE actions (short TTL).
+    confirmation_ttl_seconds: int = Field(default=300, ge=30, le=3_600)
     # Chat pricing for per-request cost metrics (defaults: gpt-4o-mini).
     chat_input_usd_per_million_tokens: float = Field(default=0.15, ge=0)
     chat_output_usd_per_million_tokens: float = Field(default=0.60, ge=0)

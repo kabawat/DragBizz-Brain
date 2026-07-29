@@ -80,6 +80,22 @@ class RetailerClient:
             params={"limit": limit},
         )
 
+    async def get_customers(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        query: str,
+        limit: int = 10,
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/customer",
+            access_token=access_token,
+            store_id=store_id,
+            params={"search": query, "limit": limit},
+        )
+
     async def create_customer(
         self,
         *,
@@ -145,6 +161,53 @@ class RetailerClient:
         return await self._request(
             "POST",
             "/invoices",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def update_invoice_draft(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        invoice_id: str,
+        customer_id: str | None = None,
+        items: list[dict[str, Any]] | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {}
+        if customer_id is not None:
+            body["customer"] = customer_id
+        if items is not None:
+            body["items"] = items
+        return await self._request(
+            "PUT",
+            f"/invoices/{invoice_id}",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def release_invoice(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        invoice_id: str,
+        payment_status: str | None = None,
+        paid_amount: float | None = None,
+        payment_mode: str | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {"id": invoice_id}
+        if payment_status is not None:
+            body["paymentStatus"] = payment_status
+        if paid_amount is not None:
+            body["paidAmount"] = paid_amount
+        if payment_mode is not None:
+            body["paymentMode"] = payment_mode
+        return await self._request(
+            "POST",
+            "/invoices/release",
             access_token=access_token,
             store_id=store_id,
             json_body=body,

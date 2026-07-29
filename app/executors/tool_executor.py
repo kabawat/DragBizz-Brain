@@ -48,7 +48,11 @@ class ToolExecutor:
         store_id: str,
         session_id: str,
         user_id: str,
+        prior_successful_drafts: int = 0,
     ) -> list[ToolResult]:
+        """prior_successful_drafts: drafts already created earlier in this
+        same user turn (multi-round tool loop) so the one-draft-per-turn
+        guard spans rounds."""
         return await self._execute(
             tool_calls,
             access_token=access_token,
@@ -56,7 +60,85 @@ class ToolExecutor:
             allowed_risk=ToolRisk.WRITE,
             session_id=session_id,
             user_id=user_id,
+            prior_draft_calls=prior_successful_drafts,
         )
+
+    async def execute_confirmations(
+        self,
+        tool_calls: list[ToolCall],
+        *,
+        access_token: str,
+        store_id: str,
+        session_id: str,
+        user_id: str,
+        confirmation_id: str,
+    ) -> list[ToolResult]:
+        """Run SENSITIVE tools only after an approved confirmation token."""
+        if not tool_calls:
+            return []
+
+        context = ToolContext(
+            access_token=access_token,
+            store_id=store_id,
+            retailer=self._retailer,
+        )
+        results: list[ToolResult] = []
+        for call in tool_calls:
+            definition = self._registry.get_definition(call.name)
+            if definition.risk != ToolRisk.SENSITIVE:
+                raise AppError(
+                    code="TOOL_NOT_EXECUTABLE",
+                    message=(
+                        f"Tool '{call.name}' is not confirmation-executable"
+                    ),
+                    status_code=500,
+                )
+            try:
+                handler = self._registry.get_handler(call.name)
+            except KeyError as exc:
+                raise AppError(
+                    code="TOOL_NOT_EXECUTABLE",
+                    message=f"Tool '{call.name}' has no handler",
+                    status_code=500,
+                ) from exc
+
+            key = build_idempotency_key(
+                session_id=session_id,
+                tool_name=call.name,
+                arguments={
+                    **call.arguments,
+                    "_confirmationId": confirmation_id,
+                },
+            )
+            cached = self._idempotency.get(key)
+            if cached is not None:
+                self._audit(
+                    session_id=session_id,
+                    user_id=user_id,
+                    store_id=store_id,
+                    tool=call.name,
+                    success=cached.success,
+                    error_code=_error_code(cached),
+                    idempotency_key=key,
+                    cache_hit=True,
+                )
+                results.append(cached)
+                continue
+
+            result = await handler(call.arguments, context)
+            self._idempotency.put(key, result)
+            self._audit(
+                session_id=session_id,
+                user_id=user_id,
+                store_id=store_id,
+                tool=call.name,
+                success=result.success,
+                error_code=_error_code(result),
+                idempotency_key=key,
+                cache_hit=False,
+            )
+            results.append(result)
+        return results
 
     async def _execute(
         self,
@@ -67,6 +149,7 @@ class ToolExecutor:
         allowed_risk: ToolRisk,
         session_id: str | None,
         user_id: str | None,
+        prior_draft_calls: int = 0,
     ) -> list[ToolResult]:
         if not tool_calls:
             return []
@@ -77,6 +160,7 @@ class ToolExecutor:
             retailer=self._retailer,
         )
         results: list[ToolResult] = []
+        draft_calls_seen = prior_draft_calls
         for call in tool_calls:
             definition = self._registry.get_definition(call.name)
             if definition.risk != allowed_risk:
@@ -94,6 +178,26 @@ class ToolExecutor:
                     message=f"Tool '{call.name}' requires confirmation",
                     status_code=500,
                 )
+            # Policy: at most one invoice draft per turn — LLMs sometimes emit
+            # duplicate draft calls with slightly different args, which the
+            # args-hash idempotency cache cannot catch.
+            if call.name == "create_invoice_draft":
+                draft_calls_seen += 1
+                if draft_calls_seen > 1:
+                    results.append(
+                        ToolResult(
+                            tool=call.name,
+                            success=False,
+                            data={
+                                "code": "DUPLICATE_DRAFT_CALL",
+                                "message": (
+                                    "Only one invoice draft can be created "
+                                    "per message; extra draft call skipped"
+                                ),
+                            },
+                        )
+                    )
+                    continue
             try:
                 handler = self._registry.get_handler(call.name)
             except KeyError as exc:

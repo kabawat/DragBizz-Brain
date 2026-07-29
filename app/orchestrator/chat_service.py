@@ -2,19 +2,29 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
 from app.config import Settings
+from app.confirmations import InMemoryConfirmationStore
 from app.core.exceptions import AppError
 from app.executors.tool_executor import ToolExecutor
 from app.guards.input_guard import InputGuard
 from app.guards.output_guard import OutputGuard
 from app.orchestrator.ai_gateway import AiGateway
+from app.orchestrator.confirmation import (
+    pending_to_schema,
+    stage_from_draft_result,
+    stage_from_sensitive_calls,
+)
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.prompts.fallback import get_fallback_message
 from app.prompts.refusal import get_refusal_message
-from app.prompts.synthesis import build_synthesis_instruction
+from app.prompts.synthesis import (
+    build_continuation_instruction,
+    build_synthesis_instruction,
+)
 from app.prompts.system.chat import (
     build_chat_system_prompt,
     build_documentation_block,
@@ -24,8 +34,10 @@ from app.schemas.chat import (
     ChatMessage,
     ChatRequest,
     ChatResponse,
+    ConfirmRequest,
     GenerationRequest,
     GenerationResponse,
+    PendingConfirmation,
 )
 from app.schemas.tool import ToolCall, ToolDefinition, ToolResult, ToolRisk
 from app.sessions import (
@@ -52,6 +64,7 @@ class ChatService:
         input_guard: InputGuard | None = None,
         output_guard: OutputGuard | None = None,
         session_store: SessionStore | None = None,
+        confirmation_store: InMemoryConfirmationStore | None = None,
     ) -> None:
         self._gateway = gateway
         self._registry = tool_registry
@@ -65,6 +78,9 @@ class ChatService:
             ttl_seconds=settings.session_ttl_seconds,
             max_turns=settings.session_max_turns,
             history_max_tokens=settings.session_history_max_tokens,
+        )
+        self._confirmations = confirmation_store or InMemoryConfirmationStore(
+            ttl_seconds=settings.confirmation_ttl_seconds
         )
 
     async def handle(
@@ -117,65 +133,185 @@ class ChatService:
         generation = await self._generate_with_optional_parse_repair(
             messages, tools, store_id=store_id
         )
-        try:
-            tool_calls = self._validator.validate(
-                generation.tool_calls, store_id=store_id
+        generations = [generation]
+
+        # Bounded multi-round tool loop: after each round's results the LLM
+        # may call the next tools (search -> draft) so multi-step requests
+        # finish in ONE user turn instead of asking permission per step.
+        conversation = list(messages)
+        all_calls: list[ToolCall] = []
+        all_results: list[ToolResult] = []
+        all_write_results: list[ToolResult] = []
+        staged_sensitive = None
+        successful_drafts = 0
+        executed_signatures: set[tuple[str, str]] = set()
+        max_rounds = self._settings.chat_max_tool_rounds
+
+        for round_index in range(max_rounds):
+            try:
+                tool_calls = self._validator.validate(
+                    generation.tool_calls, store_id=store_id
+                )
+            except AppError as exc:
+                if exc.code not in {"TOOL_ARGS_INVALID", "TOOL_NOT_ALLOWED"}:
+                    raise
+                generation = await self._repair(
+                    messages=conversation,
+                    tools=tools,
+                    previous=generation,
+                    store_id=store_id,
+                    detail=exc.message,
+                )
+                generations.append(generation)
+                tool_calls = self._validator.validate(
+                    generation.tool_calls, store_id=store_id
+                )
+
+            if not tool_calls:
+                break
+
+            # Guard: never re-execute a (tool, args) pair already run this
+            # turn — a looping model must answer instead of burning rounds.
+            tool_calls = [
+                call
+                for call in tool_calls
+                if _call_signature(call) not in executed_signatures
+            ]
+            if not tool_calls:
+                generation = await self._continue_turn(
+                    conversation=conversation,
+                    tools=tools,
+                    language=body.language,
+                    allow_tools=False,
+                )
+                generations.append(generation)
+                break
+            executed_signatures.update(
+                _call_signature(call) for call in tool_calls
             )
-        except AppError as exc:
-            if exc.code not in {"TOOL_ARGS_INVALID", "TOOL_NOT_ALLOWED"}:
-                raise
-            generation = await self._repair(
-                messages=messages,
-                tools=tools,
-                previous=generation,
+
+            read_calls, write_calls, sensitive_calls = _partition_tool_calls(
+                tool_calls, registry=self._registry
+            )
+            read_results = await self._executor.execute_reads(
+                read_calls,
+                access_token=access_token,
                 store_id=store_id,
-                detail=exc.message,
             )
-            tool_calls = self._validator.validate(
-                generation.tool_calls, store_id=store_id
+            write_results = await self._executor.execute_writes(
+                write_calls,
+                access_token=access_token,
+                store_id=store_id,
+                session_id=body.session_id,
+                user_id=user_id,
+                prior_successful_drafts=successful_drafts,
             )
+            successful_drafts += sum(
+                1
+                for result in write_results
+                if result.tool == "create_invoice_draft" and result.success
+            )
+            # Sensitive calls are staged (not executed) — placeholder results.
+            staged_sensitive = stage_from_sensitive_calls(
+                self._confirmations,
+                user_id=user_id,
+                store_id=store_id,
+                session_id=body.session_id,
+                sensitive_calls=sensitive_calls,
+            )
+            sensitive_placeholders = [
+                ToolResult(
+                    tool=call.name,
+                    success=True,
+                    data={
+                        "status": "pending_confirmation",
+                        "confirmationId": (
+                            staged_sensitive.confirmation_id
+                            if staged_sensitive is not None
+                            else None
+                        ),
+                        "draftId": (
+                            staged_sensitive.draft_id
+                            if staged_sensitive is not None
+                            else call.arguments.get("invoiceId")
+                        ),
+                    },
+                )
+                for call in sensitive_calls
+            ]
+            # Preserve original tool_calls order for pairing.
+            results_by_id = {
+                call.id: result
+                for call, result in zip(
+                    [*read_calls, *write_calls, *sensitive_calls],
+                    [*read_results, *write_results, *sensitive_placeholders],
+                    strict=True,
+                )
+            }
+            round_results = [results_by_id[call.id] for call in tool_calls]
 
-        read_calls, write_calls = _partition_tool_calls(
-            tool_calls, registry=self._registry
-        )
-        tool_results = await self._executor.execute_reads(
-            read_calls,
-            access_token=access_token,
-            store_id=store_id,
-        )
-        write_results = await self._executor.execute_writes(
-            write_calls,
-            access_token=access_token,
-            store_id=store_id,
-            session_id=body.session_id,
-            user_id=user_id,
-        )
-        # Preserve original tool_calls order for synthesis pairing.
-        results_by_id = {
-            call.id: result
-            for call, result in zip(
-                [*read_calls, *write_calls],
-                [*tool_results, *write_results],
-                strict=True,
-            )
-        }
-        tool_results = [results_by_id[call.id] for call in tool_calls]
+            all_calls.extend(tool_calls)
+            all_results.extend(round_results)
+            all_write_results.extend(write_results)
 
-        synthesis: GenerationResponse | None = None
-        if tool_calls:
-            synthesis = await self._synthesize(
-                messages=messages,
-                tool_calls=tool_calls,
-                tool_results=tool_results,
+            conversation.append(
+                ChatMessage(role="assistant", content="", tool_calls=tool_calls)
+            )
+            for call, result in zip(tool_calls, round_results, strict=True):
+                conversation.append(
+                    ChatMessage(
+                        role="tool",
+                        tool_call_id=call.id,
+                        content=json.dumps(
+                            {
+                                "tool": result.tool,
+                                "success": result.success,
+                                "data": result.data,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    )
+                )
+
+            # Once a confirmation is staged, or on the last round, force a
+            # final grounded answer instead of allowing more tool calls.
+            allow_more_tools = (
+                staged_sensitive is None and round_index < max_rounds - 1
+            )
+            generation = await self._continue_turn(
+                conversation=conversation,
+                tools=tools,
                 language=body.language,
+                allow_tools=allow_more_tools,
             )
-            reply = synthesis.content
-            reply_provider = synthesis.provider
-            reply_model = synthesis.model
+            generations.append(generation)
+            if not allow_more_tools:
+                break
+
+        tool_calls = all_calls
+        tool_results = all_results
+
+        pending: PendingConfirmation | None = None
+        if staged_sensitive is not None:
+            pending = pending_to_schema(staged_sensitive)
         else:
-            reply = generation.content or ""
-            reply_provider = generation.provider
-            reply_model = generation.model
+            # Latest draft write wins — an update in a later round carries
+            # fresher totals than the create before it.
+            for result in reversed(all_write_results):
+                staged_draft = stage_from_draft_result(
+                    self._confirmations,
+                    user_id=user_id,
+                    store_id=store_id,
+                    session_id=body.session_id,
+                    result=result,
+                )
+                if staged_draft is not None:
+                    pending = pending_to_schema(staged_draft)
+                    break
+
+        reply = _normalize_dashboard_links(generation.content or "")
+        reply_provider = generation.provider
+        reply_model = generation.model
 
         message = self._guard_output(
             reply,
@@ -196,8 +332,7 @@ class ChatService:
 
         self._log_request_metrics(
             request_id=request_id,
-            generation=generation,
-            synthesis=synthesis,
+            generations=generations,
             retrieved=retrieved,
             tool_calls=tool_calls,
             history_turns=len(prior_turns),
@@ -212,6 +347,131 @@ class ChatService:
             provider=reply_provider,
             model=reply_model,
             tool_calls=tool_calls,
+            tool_results=tool_results,
+            pending_confirmation=pending,
+        )
+
+    async def confirm(
+        self,
+        body: ConfirmRequest,
+        *,
+        user: dict[str, Any],
+        request_id: str,
+        store_id: str,
+        access_token: str,
+    ) -> ChatResponse:
+        user_id = str(user["sub"])
+        if body.action == "reject":
+            record = self._confirmations.reject(
+                body.confirmation_id,
+                user_id=user_id,
+                store_id=store_id,
+                session_id=body.session_id,
+                draft_id=body.draft_id,
+            )
+            message = (
+                "Release cancelled. The invoice draft is unchanged — "
+                "no stock was deducted. "
+                f"[Open invoice](/dashboard/invoices/{record.draft_id})"
+            )
+            await self._sessions.append_turn(
+                session_id=body.session_id,
+                user_id=user_id,
+                store_id=store_id,
+                turn=SessionTurn(
+                    user_text="[confirm:reject]",
+                    assistant_text=message,
+                    tool_context=None,
+                ),
+            )
+            return ChatResponse(
+                message=message,
+                session_id=body.session_id,
+                request_id=request_id,
+                user_id=user_id,
+                provider="confirmation",
+                model="",
+            )
+
+        record = self._confirmations.consume(
+            body.confirmation_id,
+            user_id=user_id,
+            store_id=store_id,
+            session_id=body.session_id,
+            draft_id=body.draft_id,
+        )
+        tool_call = ToolCall(
+            id=f"confirm_{record.confirmation_id[:12]}",
+            name=record.tool_name,
+            arguments=dict(record.arguments),
+        )
+        tool_results = await self._executor.execute_confirmations(
+            [tool_call],
+            access_token=access_token,
+            store_id=store_id,
+            session_id=body.session_id,
+            user_id=user_id,
+            confirmation_id=record.confirmation_id,
+        )
+        result = tool_results[0] if tool_results else None
+        if result is not None and result.success:
+            open_path = None
+            if isinstance(result.data, dict):
+                open_path = result.data.get("openPath")
+            if not isinstance(open_path, str) or not open_path.strip():
+                open_path = f"/dashboard/invoices/{record.draft_id}"
+            already = (
+                isinstance(result.data, dict)
+                and result.data.get("alreadyReleased") is True
+            )
+            if already:
+                message = (
+                    "Invoice was already released. "
+                    f"[Open invoice]({open_path})"
+                )
+            else:
+                total = None
+                if isinstance(record.summary.get("total"), (int, float)):
+                    total = record.summary["total"]
+                total_bit = f" Total ₹{total}." if total is not None else ""
+                message = (
+                    f"Invoice released successfully.{total_bit} "
+                    f"[Open invoice]({open_path})"
+                )
+        else:
+            err = ""
+            if result is not None and isinstance(result.data, dict):
+                err = str(result.data.get("message") or result.data.get("code") or "")
+            message = (
+                "Could not release the invoice"
+                + (f": {err}" if err else ".")
+                + " Please try again from Invoices."
+            )
+
+        message = self._guard_output(
+            message,
+            tool_results=tool_results,
+            language="hi-IN",
+        )
+
+        await self._sessions.append_turn(
+            session_id=body.session_id,
+            user_id=user_id,
+            store_id=store_id,
+            turn=SessionTurn(
+                user_text="[confirm:approve]",
+                assistant_text=message,
+                tool_context=self._sessions.compact_tool_context(tool_results),
+            ),
+        )
+        return ChatResponse(
+            message=message,
+            session_id=body.session_id,
+            request_id=request_id,
+            user_id=user_id,
+            provider="confirmation",
+            model="",
+            tool_calls=[tool_call],
             tool_results=tool_results,
         )
 
@@ -260,50 +520,32 @@ class ChatService:
             return decision.sanitized_text
         return get_fallback_message(language)
 
-    async def _synthesize(
+    async def _continue_turn(
         self,
         *,
-        messages: list[ChatMessage],
-        tool_calls: list[ToolCall],
-        tool_results: list[ToolResult],
+        conversation: list[ChatMessage],
+        tools: list[ToolDefinition],
         language: str,
+        allow_tools: bool,
     ) -> GenerationResponse:
-        synthesis_messages = list(messages)
-        synthesis_messages.append(
-            ChatMessage(
-                role="assistant",
-                content="",
-                tool_calls=tool_calls,
-            )
+        """Post-tool-round generation: either chain further tool calls
+        (allow_tools) or force the final grounded answer."""
+        instruction = (
+            build_continuation_instruction(language=language)
+            if allow_tools
+            else build_synthesis_instruction(language=language)
         )
-        for call, result in zip(tool_calls, tool_results, strict=True):
-            synthesis_messages.append(
-                ChatMessage(
-                    role="tool",
-                    tool_call_id=call.id,
-                    content=json.dumps(
-                        {
-                            "tool": result.tool,
-                            "success": result.success,
-                            "data": result.data,
-                        },
-                        ensure_ascii=False,
-                    ),
-                )
-            )
-        synthesis_messages.append(
-            ChatMessage(
-                role="user",
-                content=build_synthesis_instruction(language=language),
-            )
-        )
+        request_messages = [
+            *conversation,
+            ChatMessage(role="user", content=instruction),
+        ]
         return await self._gateway.generate(
             GenerationRequest(
-                messages=synthesis_messages,
+                messages=request_messages,
                 temperature=self._settings.chat_temperature,
                 max_tokens=self._settings.chat_synthesis_max_tokens,
-                tools=None,
-                tool_choice="none",
+                tools=tools if allow_tools else None,
+                tool_choice="auto" if allow_tools else "none",
             )
         )
 
@@ -323,8 +565,7 @@ class ChatService:
         self,
         *,
         request_id: str,
-        generation: GenerationResponse,
-        synthesis: GenerationResponse | None,
+        generations: list[GenerationResponse],
         retrieved: list[RetrievedChunk],
         tool_calls: list[Any],
         history_turns: int,
@@ -332,13 +573,13 @@ class ChatService:
     ) -> None:
         # Doc IDs/scores, tokens, latency, cost — never question or answer
         # text, never user data (rule.md #19).
+        generation = generations[0]
+        final = generations[-1]
         input_tokens = _sum_optional_tokens(
-            generation.input_tokens,
-            synthesis.input_tokens if synthesis else None,
+            *(item.input_tokens for item in generations)
         )
         output_tokens = _sum_optional_tokens(
-            generation.output_tokens,
-            synthesis.output_tokens if synthesis else None,
+            *(item.output_tokens for item in generations)
         )
         cost_usd: float | None = None
         if input_tokens is not None and output_tokens is not None:
@@ -357,20 +598,19 @@ class ChatService:
                 "request_id": request_id,
                 "metrics": {
                     "latency_ms": round((time.perf_counter() - started) * 1000, 1),
-                    "provider": (
-                        synthesis.provider if synthesis else generation.provider
-                    ),
-                    "model": synthesis.model if synthesis else generation.model,
+                    "provider": final.provider,
+                    "model": final.model,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "tool_turn_input_tokens": generation.input_tokens,
                     "tool_turn_output_tokens": generation.output_tokens,
                     "synthesis_input_tokens": (
-                        synthesis.input_tokens if synthesis else None
+                        final.input_tokens if len(generations) > 1 else None
                     ),
                     "synthesis_output_tokens": (
-                        synthesis.output_tokens if synthesis else None
+                        final.output_tokens if len(generations) > 1 else None
                     ),
+                    "llm_calls": len(generations),
                     "est_cost_usd": cost_usd,
                     "history_turns": history_turns,
                     "retrieved_docs": [
@@ -464,22 +704,45 @@ def _partition_tool_calls(
     tool_calls: list[ToolCall],
     *,
     registry: ToolRegistry,
-) -> tuple[list[ToolCall], list[ToolCall]]:
+) -> tuple[list[ToolCall], list[ToolCall], list[ToolCall]]:
     reads: list[ToolCall] = []
     writes: list[ToolCall] = []
+    sensitive: list[ToolCall] = []
     for call in tool_calls:
         risk = registry.get_definition(call.name).risk
         if risk == ToolRisk.READ:
             reads.append(call)
         elif risk == ToolRisk.WRITE:
             writes.append(call)
+        elif risk == ToolRisk.SENSITIVE:
+            sensitive.append(call)
         else:
             raise AppError(
                 code="TOOL_NOT_EXECUTABLE",
-                message=f"Tool '{call.name}' requires confirmation",
+                message=f"Tool '{call.name}' has unsupported risk",
                 status_code=400,
             )
-    return reads, writes
+    return reads, writes, sensitive
+
+
+# openPath values are relative in-app paths; models sometimes "complete"
+# them with an invented domain (https://yourappurl.com/dashboard/...),
+# which breaks the in-app link. Strip any host in front of /dashboard/.
+_DASHBOARD_LINK_RE = re.compile(
+    r"(?:https?://)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?::\d+)?"
+    r"(/dashboard/[^\s)\]\"']*)"
+)
+
+
+def _normalize_dashboard_links(text: str) -> str:
+    return _DASHBOARD_LINK_RE.sub(r"\1", text)
+
+
+def _call_signature(call: ToolCall) -> tuple[str, str]:
+    return (
+        call.name,
+        json.dumps(call.arguments, sort_keys=True, ensure_ascii=False),
+    )
 
 
 def _sum_optional_tokens(*values: int | None) -> int | None:
