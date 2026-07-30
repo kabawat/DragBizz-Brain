@@ -20,9 +20,10 @@ RAG / LlamaIndex + pgvector      →     app/rag/* + Qdrant (keep)
 clients/retailer (internal)      →     app/integrations/retailer_client.py
                                        (+ optional internal-secret mode)
 clients/utility                  →     app/integrations/utility_client.py (new)
-Celery workers                   →     app/workers/* + Redis broker (new when needed)
-RabbitMQ consumers               →     app/events/* (new)
+Celery workers                   →     app/runtime/workers/* + Redis broker (new when needed)
+RabbitMQ consumers               →     app/runtime/events/* (new)
 Postgres models                  →     app/db/* only when persistence required
+                                       (grouping: see docs/05_MODULE_LAYOUT.md Package policy)
 api/rest/v1/*.py under /ai       →     app/api/v1/*.py under /api/v1
 ```
 

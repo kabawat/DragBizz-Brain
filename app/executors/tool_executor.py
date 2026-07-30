@@ -1,3 +1,5 @@
+"""Execute allowlisted tool calls with READ/WRITE/SENSITIVE policy."""
+
 from __future__ import annotations
 
 import logging

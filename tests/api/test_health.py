@@ -1,3 +1,5 @@
+"""API-level tests for /api/v1/health and /api/v1/ready."""
+
 import pytest
 from fastapi.testclient import TestClient
 

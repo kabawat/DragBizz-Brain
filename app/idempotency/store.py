@@ -1,4 +1,8 @@
-"""In-process write idempotency cache (AI-only; Redis later)."""
+"""In-process write idempotency cache (AI-only; Redis later).
+
+Own package so ToolExecutor and lifespan share one store API; Redis backend
+replaces InMemory without relocating the module under tools/.
+"""
 
 from __future__ import annotations
 

@@ -218,6 +218,9 @@ with `data.code` of `TOOL_FORBIDDEN` / `TOOL_NOT_FOUND` / `TOOL_CONFLICT` /
 
 ## Local setup
 
+Dependencies are declared only in [`pyproject.toml`](./pyproject.toml).
+`./setup.sh` creates `.venv` and runs `pip install -e ".[dev]"`.
+
 ```bash
 ./setup.sh
 ./run.sh                 # Docker Compose (qdrant + AI)
@@ -240,9 +243,14 @@ Service endpoints:
 
 ```bash
 source .venv/bin/activate
-pytest
+pytest                   # unit + api + eval
+pytest tests/api/        # HTTP contracts (chat / health / auth / admin)
+pytest tests/unit/       # module-level unit tests
 ruff check .
 ```
+
+Layout: `tests/api/` for FastAPI `TestClient` route contracts; `tests/unit/` for
+pure module tests; `tests/eval/` for routing cases.
 
 ## Docker
 

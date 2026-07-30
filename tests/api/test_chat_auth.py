@@ -1,3 +1,5 @@
+"""API-level auth + chat contract tests for POST /api/v1/chat."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -5,7 +7,6 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
-from app.integrations.auth_jwks import normalize_access_claims
 from app.main import create_app
 from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.chat_service import ChatService
@@ -43,15 +44,6 @@ def _install_fake_provider(app: Any) -> None:
         settings=get_settings(),
         tool_executor=app.state.tool_executor,
     )
-
-
-def test_normalize_access_claims() -> None:
-    claims = normalize_access_claims(
-        {"sub": 99, "agencyId": 12, "tenant": " Demo "}
-    )
-    assert claims["sub"] == "99"
-    assert claims["agencyId"] == "12"
-    assert claims["tenant"] == "demo"
 
 
 def test_chat_requires_bearer_token(

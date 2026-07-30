@@ -1,3 +1,5 @@
+"""API-level tests for POST /api/v1/chat (tools + provider wiring)."""
+
 from __future__ import annotations
 
 from typing import Any

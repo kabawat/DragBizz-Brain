@@ -13,7 +13,7 @@ Read-only sales intelligence from `dragbizz-ai-service` Phase 1 — without bloc
 
 ## How to implement here
 
-1. `app/analytics/` pure functions over retailer payloads (or cached snapshots).
+1. `app/intelligence/analytics/` pure functions over retailer payloads (or cached snapshots).
 2. `RetailerClient` methods for analytics/inventory/batch reads.
 3. REST: `/api/v1/insights/*`, `/api/v1/dashboard/summary`.
 4. Mirror key insights as **READ tools** so chat can answer the same questions.

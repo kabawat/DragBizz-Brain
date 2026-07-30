@@ -90,7 +90,7 @@ sequenceDiagram
 ## Flow 5 — Proactive low-stock / expiry (target)
 
 1. Retailer emits domain event → RabbitMQ.
-2. `app/events` consumer updates feature cache / triggers scan.
+2. `app/runtime/events` consumer updates feature cache / triggers scan.
 3. Alert dedupe hash in Postgres; notify via utility FCM/WhatsApp.
 4. Optional: generate discount suggestion or PO draft (WRITE tool / API).
 

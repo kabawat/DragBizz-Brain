@@ -1,4 +1,8 @@
-"""Short-lived chat session memory (AI-only; not business data)."""
+"""Short-lived chat session memory (AI-only; not business data).
+
+Package lives under app/sessions/ so Redis short-cache and Postgres durable
+history can land as peer backends without moving orchestrator imports.
+"""
 
 from __future__ import annotations
 
