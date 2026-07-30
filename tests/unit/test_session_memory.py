@@ -194,6 +194,68 @@ def test_session_trims_to_max_turns() -> None:
     asyncio.run(run())
 
 
+def test_session_trims_by_history_max_tokens() -> None:
+    store = InMemorySessionStore(
+        ttl_seconds=60, max_turns=10, history_max_tokens=40
+    )
+
+    async def run() -> None:
+        await store.append_turn(
+            session_id="s1",
+            user_id="u1",
+            store_id=STORE_ID,
+            turn=SessionTurn(
+                user_text="old question " + ("x" * 80),
+                assistant_text="old answer " + ("y" * 80),
+            ),
+        )
+        await store.append_turn(
+            session_id="s1",
+            user_id="u1",
+            store_id=STORE_ID,
+            turn=SessionTurn(user_text="new q", assistant_text="new a"),
+        )
+        history = await store.load_history(
+            session_id="s1", user_id="u1", store_id=STORE_ID
+        )
+        assert [turn.user_text for turn in history] == ["new q"]
+
+    asyncio.run(run())
+
+
+def test_session_drops_tool_context_on_older_turns() -> None:
+    store = InMemorySessionStore(ttl_seconds=60, max_turns=5)
+
+    async def run() -> None:
+        await store.append_turn(
+            session_id="s1",
+            user_id="u1",
+            store_id=STORE_ID,
+            turn=SessionTurn(
+                user_text="sale?",
+                assistant_text="₹500",
+                tool_context='[{"tool":"today_sale"}]',
+            ),
+        )
+        await store.append_turn(
+            session_id="s1",
+            user_id="u1",
+            store_id=STORE_ID,
+            turn=SessionTurn(
+                user_text="again?",
+                assistant_text="ok",
+                tool_context='[{"tool":"stock_summary"}]',
+            ),
+        )
+        history = await store.load_history(
+            session_id="s1", user_id="u1", store_id=STORE_ID
+        )
+        assert history[0].tool_context is None
+        assert history[1].tool_context == '[{"tool":"stock_summary"}]'
+
+    asyncio.run(run())
+
+
 def test_turns_to_messages_includes_tool_context() -> None:
     messages = turns_to_messages(
         [

@@ -6,8 +6,9 @@ import uuid
 
 from pydantic import BaseModel
 
-CHUNK_MAX_TOKENS = 700
-CHUNK_OVERLAP_TOKENS = 85
+# Tighter units for FAQ retrieval (~2–3 focused chunks per hit).
+CHUNK_MAX_TOKENS = 450
+CHUNK_OVERLAP_TOKENS = 80
 
 _FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
 _HEADING_RE = re.compile(r"^(#{1,2})\s+(.*)$", re.MULTILINE)

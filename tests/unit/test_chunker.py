@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.rag.chunker import (
     CHUNK_MAX_TOKENS,
+    CHUNK_OVERLAP_TOKENS,
     chunk_markdown,
     estimate_tokens,
 )
@@ -61,6 +62,11 @@ def test_chunker_splits_oversized_sections_with_overlap() -> None:
     first_paragraphs = set(chunks[0].content.split("\n\n"))
     second_paragraphs = set(chunks[1].content.split("\n\n"))
     assert first_paragraphs & second_paragraphs, "expected overlap between chunks"
+
+
+def test_chunker_max_tokens_is_tight_for_faq_retrieval() -> None:
+    assert CHUNK_MAX_TOKENS <= 450
+    assert CHUNK_OVERLAP_TOKENS <= CHUNK_MAX_TOKENS // 4
 
 
 def test_chunker_ids_are_deterministic_and_content_sensitive() -> None:

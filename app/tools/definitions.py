@@ -20,10 +20,7 @@ _PHONE_PROP = {
 READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="search_product",
-        description=(
-            "Search live products in the active store by name or SKU "
-            "(current price, stock, status)"
-        ),
+        description="Search live products by name/SKU (price, stock, status).",
         risk=ToolRisk.READ,
         parameters={
             "type": "object",
@@ -42,10 +39,7 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="today_sale",
-        description=(
-            "Get today's live sales numbers (revenue, profit, bill count) "
-            "for the active store"
-        ),
+        description="Today's live sales: revenue, profit, bill count.",
         risk=ToolRisk.READ,
         parameters={
             "type": "object",
@@ -56,10 +50,7 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="stock_summary",
-        description=(
-            "Get current stock totals (SKUs, quantities, low/out of stock) "
-            "for the active store"
-        ),
+        description="Live stock totals (SKUs, qty, low/out of stock).",
         risk=ToolRisk.READ,
         parameters={
             "type": "object",
@@ -71,10 +62,8 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="search_customer",
         description=(
-            "Search existing customers in the active store by name, phone, or "
-            "email (returns real customer ObjectIds). Always use this before "
-            "creating a customer or making a bill/khata entry for an existing "
-            "customer."
+            "Search customers by name/phone/email; returns real ObjectIds. "
+            "Use before create, bill, or khata."
         ),
         risk=ToolRisk.READ,
         parameters={
@@ -94,9 +83,7 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="payment_history",
-        description=(
-            "Get recent live customer payment records for the active store"
-        ),
+        description="Recent live customer payment records.",
         risk=ToolRisk.READ,
         parameters={
             "type": "object",
@@ -111,9 +98,8 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="create_customer",
         description=(
-            "Create a customer in the active store. Requires name and at least "
-            "one of phone or email supplied by the user — never invent or "
-            "suggest name/phone/email. Never invent customer IDs."
+            "Create customer (name + phone or email from user). "
+            "Never invent name/phone/email/ids."
         ),
         risk=ToolRisk.WRITE,
         parameters={
@@ -140,8 +126,7 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="update_customer",
         description=(
-            "Update an existing customer by ObjectId. Requires name and at "
-            "least one of phone or email. Use a real customer id — never invent."
+            "Update customer by real ObjectId (name + phone or email)."
         ),
         risk=ToolRisk.WRITE,
         parameters={
@@ -172,9 +157,8 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="create_invoice_draft",
         description=(
-            "Create a DRAFT invoice only (does not release or deduct stock). "
-            "Each item needs a real product ObjectId from search_product and "
-            "quantity >= 1. Optional customer ObjectId; walk-in if omitted."
+            "Create DRAFT invoice only (no stock deduct). Items need real "
+            "product ObjectIds + qty>=1; optional customerId (else walk-in)."
         ),
         risk=ToolRisk.WRITE,
         parameters={
@@ -213,10 +197,8 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="update_invoice_draft",
         description=(
-            "Update an existing DRAFT invoice — link a customer (from "
-            "search_customer/create_customer) and/or replace items. Use this "
-            "when the user gives customer details AFTER the draft was made; "
-            "never create a second draft for the same bill."
+            "Update existing DRAFT: link customer and/or replace items. "
+            "Prefer this over a second draft for the same bill."
         ),
         risk=ToolRisk.WRITE,
         parameters={
@@ -258,10 +240,7 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="ledger_credit",
-        description=(
-            "Record a customer PAYMENT (credit on khata: customer paid us). "
-            "Requires real customer ObjectId and amount > 0."
-        ),
+        description="Record customer PAYMENT (khata credit). Real customerId + amount>0.",
         risk=ToolRisk.WRITE,
         parameters={
             "type": "object",
@@ -288,9 +267,8 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="ledger_debit",
         description=(
-            "Record a customer DEBIT (increases amount due on khata). "
-            "Requires real customer ObjectId and amount > 0. "
-            "Not an invoice release."
+            "Record customer DEBIT on khata (increases due). "
+            "Real customerId + amount>0. Not invoice release."
         ),
         risk=ToolRisk.WRITE,
         parameters={
@@ -321,9 +299,8 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="release_invoice",
         description=(
-            "Propose releasing a DRAFT invoice (deducts stock). Never auto-runs — "
-            "the server stages a confirmation for the user to approve. "
-            "Requires a real draft invoice ObjectId from create_invoice_draft."
+            "Stage DRAFT release (stock deduct); needs user confirm. "
+            "Real draft invoice ObjectId only."
         ),
         risk=ToolRisk.SENSITIVE,
         parameters={

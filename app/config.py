@@ -60,8 +60,9 @@ class Settings(BaseSettings):
     output_guard_mode: Literal["off", "log", "enforce"] = "log"
     # Short-lived multi-turn memory (in-process until Redis).
     session_ttl_seconds: int = Field(default=1_800, ge=60, le=86_400)
-    session_max_turns: int = Field(default=10, ge=1, le=50)
-    session_history_max_tokens: int = Field(default=2_000, ge=200, le=16_000)
+    # Keep the last few turns only (token-opt: ~3–5).
+    session_max_turns: int = Field(default=5, ge=1, le=50)
+    session_history_max_tokens: int = Field(default=1_200, ge=200, le=16_000)
     # Write-tool duplicate protection (in-process until Redis).
     idempotency_ttl_seconds: int = Field(default=86_400, ge=60, le=604_800)
     # Pending confirmation tokens for SENSITIVE actions (short TTL).

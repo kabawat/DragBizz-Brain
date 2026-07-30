@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 Clock = Callable[[], float]
 _KEY_PREFIX = "ai:session"
+# Keep tool snapshots only on the newest turn — older JSON is bulky and
+# rarely needed once the conversation has moved on.
+_TOOL_CONTEXT_RECENT_TURNS = 1
 
 
 @dataclass(frozen=True)
@@ -63,9 +66,9 @@ class InMemorySessionStore:
         self,
         *,
         ttl_seconds: int = 1_800,
-        max_turns: int = 10,
-        history_max_tokens: int = 2_000,
-        tool_context_max_chars: int = 1_500,
+        max_turns: int = 5,
+        history_max_tokens: int = 1_200,
+        tool_context_max_chars: int = 800,
         clock: Clock | None = None,
     ) -> None:
         self._ttl_seconds = ttl_seconds
@@ -153,9 +156,9 @@ class RedisSessionStore:
         redis_client,
         *,
         ttl_seconds: int = 1_800,
-        max_turns: int = 10,
-        history_max_tokens: int = 2_000,
-        tool_context_max_chars: int = 1_500,
+        max_turns: int = 5,
+        history_max_tokens: int = 1_200,
+        tool_context_max_chars: int = 800,
     ) -> None:
         self._redis = redis_client
         self._ttl_seconds = ttl_seconds
@@ -298,6 +301,20 @@ def _trim_turns(
     history_max_tokens: int,
 ) -> list[SessionTurn]:
     trimmed = list(turns[-max_turns:]) if max_turns > 0 else []
+    if len(trimmed) > _TOOL_CONTEXT_RECENT_TURNS:
+        cutoff = len(trimmed) - _TOOL_CONTEXT_RECENT_TURNS
+        trimmed = [
+            (
+                turn
+                if index >= cutoff or not turn.tool_context
+                else SessionTurn(
+                    user_text=turn.user_text,
+                    assistant_text=turn.assistant_text,
+                    tool_context=None,
+                )
+            )
+            for index, turn in enumerate(trimmed)
+        ]
     while len(trimmed) > 1 and _turns_tokens(trimmed) > history_max_tokens:
         trimmed.pop(0)
     return trimmed

@@ -14,8 +14,9 @@ Implemented:
 - **OpenAI-compatible provider** + model router wiring from env
 - **Qdrant vector DB** foundation (`VectorStore`, collection bootstrap, `/ready` status)
 - **RAG chunking + embeddings** (`app/rag/chunker.py` markdown-aware chunks with
-  frontmatter metadata + deterministic IDs; `app/rag/embedding_service.py` batched
-  OpenAI `/embeddings`)
+  frontmatter metadata + deterministic IDs; max ~450 tokens + ~80 overlap for
+  tighter FAQ retrieval; `app/rag/embedding_service.py` batched OpenAI
+  `/embeddings`)
 - **RAG indexer** (`python -m app.rag.indexer`): incremental `knowledge/` → Qdrant sync
 - **RAG retriever** (`app/rag/retriever.py`): question → top-k chunks with score
   threshold; Qdrant outage degrades to empty context (never fails chat)
@@ -134,8 +135,8 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_INPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
 | `AI_OUTPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
 | `AI_SESSION_TTL_SECONDS` | Sliding session TTL (default `1800`) |
-| `AI_SESSION_MAX_TURNS` | Max stored user/assistant pairs (default `10`) |
-| `AI_SESSION_HISTORY_MAX_TOKENS` | History token budget for LLM context (default `2000`) |
+| `AI_SESSION_MAX_TURNS` | Max stored user/assistant pairs (default `5`) |
+| `AI_SESSION_HISTORY_MAX_TOKENS` | History token budget for LLM context (default `1200`) |
 | `AI_IDEMPOTENCY_TTL_SECONDS` | Write-tool result cache TTL (default `86400`) |
 | `AI_REDIS_URL` | Persists model selection, usage, sessions, idempotency, confirmations (empty = in-process) |
 | `AI_OPENAI_ALLOWED_MODELS` | Extra models admins may activate (default model always allowed) |
