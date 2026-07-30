@@ -5,7 +5,8 @@ The indexer is a CLI entrypoint (`python -m app.rag.indexer`), imported directly
 
 from app.rag.chunker import DocumentChunk, chunk_markdown
 from app.rag.embedding_service import EmbeddingService
-from app.rag.retriever import RetrievedChunk, Retriever
+from app.rag.models import RetrievedChunk
+from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStore
 
 __all__ = [

@@ -42,6 +42,11 @@ Implemented:
   rules kept; formatting fluff and long examples removed
 - **FAQ RAG budget**: docs/how-to/both use `AI_RAG_CONTEXT_MAX_TOKENS` (default
   `1000`); budget selected from routing via `rag_docs_budget_for_routing`
+- **FAQ RAG cache**: short-TTL cache for retrieved chunks + documentation
+  prompt fragments (`retrieval_cache.py`; Redis or in-process)
+- **Per-component prompt tokens** in chat metrics:
+  `prompt_system_tokens` / `prompt_tools_tokens` / `prompt_rag_tokens` /
+  `prompt_history_tokens` / `prompt_user_tokens` (+ `rag_cache_hit`)
 - **Output guard** (`app/guards/output_guard.py`): last check before the
   response leaves — secret/token/credential scrub and "currency amounts must
   come from tool results" validation. Modes via `AI_OUTPUT_GUARD_MODE`: `off`,
@@ -132,6 +137,7 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_RAG_SCORE_THRESHOLD` | Min cosine score; lower-scoring chunks dropped (default `0.3`) |
 | `AI_RAG_CONTEXT_MAX_TOKENS` | FAQ / how-to / both docs-block budget (default `1000`) |
 | `AI_RAG_CONTEXT_MAX_TOKENS_ACTION` | Smaller docs budget for pure action/live turns (default `512`) |
+| `AI_RAG_CACHE_TTL_SECONDS` | FAQ retrieval + docs-block cache TTL; `0` off (default `1800`; Redis when `AI_REDIS_URL` set) |
 | `AI_INPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
 | `AI_OUTPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
 | `AI_SESSION_TTL_SECONDS` | Sliding session TTL (default `1800`) |

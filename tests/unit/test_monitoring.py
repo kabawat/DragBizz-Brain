@@ -131,6 +131,12 @@ def test_chat_logs_structured_metrics(
         {"id": "p1", "source": "invoice-pos.md", "score": 0.9123}
     ]
     assert metrics["tools_called"] == []
+    assert metrics["rag_cache_hit"] is False
+    assert metrics["prompt_system_tokens"] > 0
+    assert metrics["prompt_user_tokens"] > 0
+    assert "prompt_tools_tokens" in metrics
+    assert "prompt_rag_tokens" in metrics
+    assert "prompt_history_tokens" in metrics
 
 
 def test_metrics_never_contain_question_or_answer_text(

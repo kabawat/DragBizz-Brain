@@ -50,6 +50,9 @@ Conversational Co-Partner for store questions and confirmed sensitive actions, u
 - Session history defaults: last **5** turns / **1200** history tokens; older
   turns drop `tool_context` (newest turn keeps it).
 - Tool descriptions kept short; schemas still dominate when tools are offered.
+- FAQ RAG cache (chunks + docs-block fragments) via `AI_RAG_CACHE_TTL_SECONDS`
+  (Redis when `AI_REDIS_URL` is set). Chat metrics include
+  `prompt_*_tokens` breakdown and `rag_cache_hit`.
 - Reply links are normalized: any invented domain in front of a
   `/dashboard/...` openPath is stripped so links stay relative/in-app
 - RAG + input/output guards + synthesis + session history

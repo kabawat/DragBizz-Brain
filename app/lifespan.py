@@ -20,6 +20,7 @@ from app.orchestrator.model_config import (
 from app.orchestrator.model_router import ModelRouter
 from app.providers.openai_compatible import OpenAICompatibleProvider
 from app.rag.embedding_service import EmbeddingService
+from app.rag.retrieval_cache import build_rag_cache
 from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStore
 from app.sessions import InMemorySessionStore, RedisSessionStore
@@ -66,8 +67,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     elif settings.environment == "production":
         logger.warning(
             "AI_REDIS_URL is not set; model selection, usage counters, "
-            "sessions, idempotency, and confirmations will not survive "
-            "restarts or multi-instance deploys"
+            "sessions, idempotency, confirmations, and FAQ RAG cache will "
+            "not survive restarts or multi-instance deploys"
         )
     app.state.redis = redis_client
 
@@ -174,8 +175,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     )
     app.state.session_store = session_store
+    rag_cache = build_rag_cache(
+        redis_client, ttl_seconds=settings.rag_cache_ttl_seconds
+    )
+    app.state.rag_cache = rag_cache
     retriever = Retriever(
-        settings, EmbeddingService(settings, http_client), vector_store
+        settings,
+        EmbeddingService(settings, http_client),
+        vector_store,
+        cache=rag_cache,
     )
     app.state.retriever = retriever
     app.state.chat_service = ChatService(
@@ -184,6 +192,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings=settings,
         tool_executor=tool_executor,
         retriever=retriever,
+        rag_cache=rag_cache,
         session_store=session_store,
         confirmation_store=confirmation_store,
         usage_store=usage_store,

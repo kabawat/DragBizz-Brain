@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.config import Settings
+from app.rag.retrieval_cache import InMemoryRagCache
 from app.rag.retriever import Retriever
 
 
@@ -31,6 +32,8 @@ def _point(score: float, text: str, **metadata: str) -> SimpleNamespace:
 def _retriever(
     points: list[SimpleNamespace] | Exception,
     settings: Settings | None = None,
+    *,
+    cache: InMemoryRagCache | None = None,
 ) -> tuple[Retriever, MagicMock, MagicMock]:
     embeddings = MagicMock()
     embeddings.embed_one = AsyncMock(return_value=[0.1, 0.2])
@@ -39,7 +42,13 @@ def _retriever(
         store.search = AsyncMock(side_effect=points)
     else:
         store.search = AsyncMock(return_value=points)
-    return Retriever(settings or _settings(), embeddings, store), embeddings, store
+    return (
+        Retriever(
+            settings or _settings(), embeddings, store, cache=cache
+        ),
+        embeddings,
+        store,
+    )
 
 
 def test_retrieve_preserves_ranking_and_maps_payload() -> None:
@@ -101,3 +110,16 @@ def test_retrieve_propagates_embedding_errors() -> None:
     with pytest.raises(RuntimeError):
         asyncio.run(retriever.retrieve("q"))
     store.search.assert_not_awaited()
+
+
+def test_retrieve_uses_cache_on_second_call() -> None:
+    points = [_point(0.9, "cached doc", source="faq.md")]
+    cache = InMemoryRagCache(ttl_seconds=60)
+    retriever, embeddings, store = _retriever(points, cache=cache)
+
+    first = asyncio.run(retriever.retrieve("POS kaise?"))
+    second = asyncio.run(retriever.retrieve("pos kaise?"))
+
+    assert first[0].text == second[0].text == "cached doc"
+    embeddings.embed_one.assert_awaited_once()
+    store.search.assert_awaited_once()

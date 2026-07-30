@@ -1,5 +1,5 @@
 from app.rag.chunker import estimate_tokens
-from app.rag.retriever import RetrievedChunk
+from app.rag.models import RetrievedChunk
 from app.schemas.tool import ToolDefinition, ToolRisk
 
 _INVOICE_CHAIN_TOOLS = frozenset(

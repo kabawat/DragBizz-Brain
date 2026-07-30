@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # Smaller docs budget for pure action/live turns (usually unused when
     # retrieval is skipped for tools routing).
     rag_context_max_tokens_action: int = Field(default=512, ge=50, le=8000)
+    # FAQ retrieval + docs-block cache TTL. 0 disables. Uses Redis when
+    # AI_REDIS_URL is set, else in-process.
+    rag_cache_ttl_seconds: int = Field(default=1_800, ge=0, le=86_400)
     input_guard_mode: Literal["off", "log", "enforce"] = "log"
     output_guard_mode: Literal["off", "log", "enforce"] = "log"
     # Short-lived multi-turn memory (in-process until Redis).

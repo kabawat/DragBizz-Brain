@@ -19,12 +19,15 @@ from app.orchestrator.confirmation import (
     pending_to_schema,
     stage_from_draft_result,
 )
+from app.orchestrator.prompt_tokens import PromptTokenBreakdown
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.orchestrator.tool_loop import run_tool_loop
 from app.orchestrator.tool_selector import resolve_turn_intent
 from app.prompts.fallback import get_fallback_message
 from app.prompts.refusal import get_refusal_message
-from app.rag.retriever import RetrievedChunk, Retriever
+from app.rag.models import RetrievedChunk
+from app.rag.retrieval_cache import NoOpRagCache, RagCache
+from app.rag.retriever import Retriever
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
@@ -53,6 +56,7 @@ class ChatService:
         tool_executor: ToolExecutor,
         validator: ToolCallValidator | None = None,
         retriever: Retriever | None = None,
+        rag_cache: RagCache | None = None,
         input_guard: InputGuard | None = None,
         output_guard: OutputGuard | None = None,
         session_store: SessionStore | None = None,
@@ -66,6 +70,7 @@ class ChatService:
         self._executor = tool_executor
         self._validator = validator or ToolCallValidator(tool_registry)
         self._retriever = retriever
+        self._rag_cache: RagCache = rag_cache or NoOpRagCache()
         self._input_guard = input_guard or InputGuard()
         self._output_guard = output_guard or OutputGuard()
         self._sessions = session_store or InMemorySessionStore(
@@ -116,6 +121,7 @@ class ChatService:
             store_id=store_id,
             tools=tools,
             routing=intent.routing,
+            rag_cache=self._rag_cache,
         )
 
         def _describe_errors(tool_calls: list, sid: str) -> list[str]:
@@ -215,6 +221,8 @@ class ChatService:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost_usd=cost_usd,
+            token_breakdown=context.token_breakdown,
+            rag_cache_hit=context.rag_cache_hit,
         )
 
         return ChatResponse(
@@ -346,6 +354,8 @@ class ChatService:
         input_tokens: int | None,
         output_tokens: int | None,
         cost_usd: float | None,
+        token_breakdown: PromptTokenBreakdown,
+        rag_cache_hit: bool,
     ) -> None:
         # Doc IDs/scores, tokens, latency, cost — never question or answer
         # text, never user data (rule.md #19).
@@ -372,6 +382,8 @@ class ChatService:
                     "llm_calls": len(generations),
                     "est_cost_usd": cost_usd,
                     "history_turns": history_turns,
+                    "rag_cache_hit": rag_cache_hit,
+                    **token_breakdown.as_metrics(),
                     "retrieved_docs": [
                         {
                             "id": chunk.id,

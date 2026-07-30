@@ -2,25 +2,21 @@ from __future__ import annotations
 
 import logging
 
-from pydantic import BaseModel
-
 from app.config import Settings
 from app.rag.embedding_service import EmbeddingService
+from app.rag.models import RetrievedChunk
+from app.rag.retrieval_cache import NoOpRagCache, RagCache
 from app.rag.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
-
-class RetrievedChunk(BaseModel):
-    id: str = ""
-    text: str
-    metadata: dict[str, str]
-    score: float
+__all__ = ["RetrievedChunk", "Retriever"]
 
 
 class Retriever:
     """Question → embedding → top-k relevant chunks from Qdrant.
 
+    Optional short-TTL cache skips embed + search for repeated FAQ questions.
     Single seam for later reranking; Qdrant outage degrades to no context.
     """
 
@@ -29,18 +25,28 @@ class Retriever:
         settings: Settings,
         embedding_service: EmbeddingService,
         vector_store: VectorStore,
+        cache: RagCache | None = None,
     ) -> None:
         self._settings = settings
         self._embedding_service = embedding_service
         self._vector_store = vector_store
+        self._cache: RagCache = cache or NoOpRagCache()
 
     async def retrieve(self, question: str) -> list[RetrievedChunk]:
+        top_k = self._settings.rag_top_k
+        score_threshold = self._settings.rag_score_threshold
+        cached = await self._cache.get_chunks(
+            question, top_k=top_k, score_threshold=score_threshold
+        )
+        if cached is not None:
+            return cached
+
         vector = await self._embedding_service.embed_one(question)
         try:
             points = await self._vector_store.search(
                 vector,
-                limit=self._settings.rag_top_k,
-                score_threshold=self._settings.rag_score_threshold,
+                limit=top_k,
+                score_threshold=score_threshold,
             )
         except Exception:
             logger.warning(
@@ -64,4 +70,10 @@ class Retriever:
                     score=point.score,
                 )
             )
+        await self._cache.set_chunks(
+            question,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            chunks=chunks,
+        )
         return chunks

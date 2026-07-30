@@ -67,6 +67,7 @@ dragbizz-ai/
 │   │   ├── chat_context.py    # session history + RAG + message assembly
 │   │   ├── rag_budget.py      # routing → FAQ vs action docs token budget
 │   │   ├── tool_selector.py   # resolve_turn_intent → routing + tool subset
+│   │   ├── prompt_tokens.py   # per-component prompt token estimates
 │   │   ├── tool_loop.py       # bounded multi-round tool loop
 │   │   ├── confirm_flow.py    # approve / reject confirmation path
 │   │   ├── confirmation.py    # stage pending invoice confirmations
@@ -91,7 +92,7 @@ dragbizz-ai/
 │   │   └── tool_executor.py   # keep — risk policy + execute_* 
 │   ├── providers/             # openai_compatible + gemini + …
 │   ├── guards/
-│   ├── rag/
+│   ├── rag/                   # chunker, retriever, retrieval_cache, indexer
 │   ├── integrations/
 │   │   ├── auth_jwks.py
 │   │   ├── retailer_client.py
