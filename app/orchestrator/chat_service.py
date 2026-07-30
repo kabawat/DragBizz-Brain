@@ -12,6 +12,7 @@ from app.core.exceptions import AppError
 from app.executors.tool_executor import ToolExecutor
 from app.guards.input_guard import InputGuard
 from app.guards.output_guard import OutputGuard
+from app.observability.metrics import MetricsRegistry
 from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.confirmation import (
     pending_to_schema,
@@ -47,6 +48,7 @@ from app.sessions import (
     turns_to_messages,
 )
 from app.tools.registry import ToolRegistry
+from app.usage import InMemoryUsageStore, UsageStore
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,8 @@ class ChatService:
         output_guard: OutputGuard | None = None,
         session_store: SessionStore | None = None,
         confirmation_store: InMemoryConfirmationStore | None = None,
+        usage_store: UsageStore | None = None,
+        metrics: MetricsRegistry | None = None,
     ) -> None:
         self._gateway = gateway
         self._registry = tool_registry
@@ -82,6 +86,8 @@ class ChatService:
         self._confirmations = confirmation_store or InMemoryConfirmationStore(
             ttl_seconds=settings.confirmation_ttl_seconds
         )
+        self._usage = usage_store or InMemoryUsageStore()
+        self._metrics = metrics
 
     async def handle(
         self,
@@ -94,6 +100,7 @@ class ChatService:
     ) -> ChatResponse:
         started = time.perf_counter()
         user_id = str(user["sub"])
+        await self._enforce_usage_cap(store_id)
         refusal = self._guard_input(body)
         if refusal is not None:
             return ChatResponse(
@@ -197,6 +204,8 @@ class ChatService:
                 read_calls,
                 access_token=access_token,
                 store_id=store_id,
+                session_id=body.session_id,
+                user_id=user_id,
             )
             write_results = await self._executor.execute_writes(
                 write_calls,
@@ -330,13 +339,34 @@ class ChatService:
             ),
         )
 
+        input_tokens = _sum_optional_tokens(
+            *(item.input_tokens for item in generations)
+        )
+        output_tokens = _sum_optional_tokens(
+            *(item.output_tokens for item in generations)
+        )
+        cost_usd = self._estimate_cost_usd(input_tokens, output_tokens)
+        latency_ms = round((time.perf_counter() - started) * 1000, 1)
+
+        await self._usage.record(
+            store_id,
+            input_tokens=input_tokens or 0,
+            output_tokens=output_tokens or 0,
+            cost_usd=cost_usd or 0.0,
+        )
+        if self._metrics is not None:
+            self._metrics.record_chat(latency_ms)
+
         self._log_request_metrics(
             request_id=request_id,
             generations=generations,
             retrieved=retrieved,
             tool_calls=tool_calls,
             history_turns=len(prior_turns),
-            started=started,
+            latency_ms=latency_ms,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
         )
 
         return ChatResponse(
@@ -561,6 +591,45 @@ class ChatService:
             )
             return []
 
+    async def _enforce_usage_cap(self, store_id: str) -> None:
+        token_cap = self._settings.tenant_daily_token_cap
+        cost_cap = self._settings.tenant_daily_cost_cap_usd
+        if not token_cap and not cost_cap:
+            return
+        usage = await self._usage.get_today(store_id)
+        over_tokens = bool(token_cap) and usage.total_tokens >= token_cap
+        over_cost = bool(cost_cap) and usage.cost_usd >= cost_cap
+        if not over_tokens and not over_cost:
+            return
+        if self._metrics is not None:
+            self._metrics.record_cap_block()
+        logger.warning(
+            "Usage cap reached: storeId=%s tokens=%d cost_usd=%.4f",
+            store_id,
+            usage.total_tokens,
+            usage.cost_usd,
+        )
+        raise AppError(
+            code="AI_USAGE_CAP_EXCEEDED",
+            message="Daily AI usage limit reached for this store",
+            status_code=429,
+        )
+
+    def _estimate_cost_usd(
+        self, input_tokens: int | None, output_tokens: int | None
+    ) -> float | None:
+        if input_tokens is None or output_tokens is None:
+            return None
+        return round(
+            input_tokens
+            * self._settings.chat_input_usd_per_million_tokens
+            / 1_000_000
+            + output_tokens
+            * self._settings.chat_output_usd_per_million_tokens
+            / 1_000_000,
+            8,
+        )
+
     def _log_request_metrics(
         self,
         *,
@@ -569,35 +638,21 @@ class ChatService:
         retrieved: list[RetrievedChunk],
         tool_calls: list[Any],
         history_turns: int,
-        started: float,
+        latency_ms: float,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        cost_usd: float | None,
     ) -> None:
         # Doc IDs/scores, tokens, latency, cost — never question or answer
         # text, never user data (rule.md #19).
         generation = generations[0]
         final = generations[-1]
-        input_tokens = _sum_optional_tokens(
-            *(item.input_tokens for item in generations)
-        )
-        output_tokens = _sum_optional_tokens(
-            *(item.output_tokens for item in generations)
-        )
-        cost_usd: float | None = None
-        if input_tokens is not None and output_tokens is not None:
-            cost_usd = round(
-                input_tokens
-                * self._settings.chat_input_usd_per_million_tokens
-                / 1_000_000
-                + output_tokens
-                * self._settings.chat_output_usd_per_million_tokens
-                / 1_000_000,
-                8,
-            )
         logger.info(
             "Chat request metrics",
             extra={
                 "request_id": request_id,
                 "metrics": {
-                    "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                    "latency_ms": latency_ms,
                     "provider": final.provider,
                     "model": final.model,
                     "input_tokens": input_tokens,

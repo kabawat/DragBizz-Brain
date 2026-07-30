@@ -12,7 +12,12 @@ Auth: JWT unless noted. All store-scoped routes require `storeId` (body/query) m
 |---|---|---|---|
 | GET | `/api/v1/health` | public | liveness |
 | GET | `/api/v1/ready` | public | deps (incl. Qdrant) |
-| POST | `/api/v1/chat` | JWT | READ tools auto-run |
+| POST | `/api/v1/chat` | JWT | READ+WRITE tools auto-run; synthesis; `pendingConfirmation` |
+| POST | `/api/v1/chat/confirm` | JWT | Approve/reject staged SENSITIVE action |
+| GET | `/api/v1/admin/model` | platform admin | Active + allowed provider/model |
+| PUT | `/api/v1/admin/model` | platform admin | Runtime model switch (persisted) |
+| GET | `/api/v1/admin/usage/{storeId}` | platform admin | Daily per-tenant tokens/cost + caps |
+| GET | `/api/v1/admin/metrics` | platform admin | Latency, provider errors, tool success rate |
 
 ---
 

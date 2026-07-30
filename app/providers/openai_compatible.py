@@ -30,7 +30,7 @@ class OpenAICompatibleProvider(ModelProvider):
             )
 
         payload: dict[str, Any] = {
-            "model": self._settings.openai_model,
+            "model": request.model or self._settings.openai_model,
             "messages": [
                 _to_openai_message(message) for message in request.messages
             ],

@@ -65,6 +65,17 @@ class Settings(BaseSettings):
     # Chat pricing for per-request cost metrics (defaults: gpt-4o-mini).
     chat_input_usd_per_million_tokens: float = Field(default=0.15, ge=0)
     chat_output_usd_per_million_tokens: float = Field(default=0.60, ge=0)
+    # Persistence for admin model selection + per-tenant usage counters.
+    # Unset = in-process stores (single instance, lost on restart).
+    redis_url: str | None = None
+    # Models a platform admin may activate (the configured default model
+    # is always allowed). Guards against arbitrary/expensive model strings.
+    openai_allowed_models: list[str] = Field(default_factory=list)
+    # Per-tenant (store) daily hard caps. 0 disables the cap.
+    tenant_daily_token_cap: int = Field(default=0, ge=0)
+    tenant_daily_cost_cap_usd: float = Field(default=0, ge=0)
+    # Immutable append-only audit trail for tool executions. Empty disables.
+    audit_trail_path: str | None = "data/tool_audit.jsonl"
 
     @field_validator(
         "auth_service_url",
@@ -77,7 +88,10 @@ class Settings(BaseSettings):
     def strip_trailing_slash(cls, value: str) -> str:
         return value.rstrip("/")
 
-    @field_validator("openai_api_key", "qdrant_api_key", mode="before")
+    @field_validator(
+        "openai_api_key", "qdrant_api_key", "redis_url", "audit_trail_path",
+        mode="before",
+    )
     @classmethod
     def empty_key_as_none(cls, value: object) -> object:
         if value == "":

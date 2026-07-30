@@ -5,6 +5,7 @@ import logging
 from app.core.exceptions import AppError
 from app.idempotency import InMemoryIdempotencyStore, build_idempotency_key
 from app.integrations.retailer_client import RetailerClient
+from app.observability import AuditTrail, MetricsRegistry
 from app.schemas.tool import ToolCall, ToolResult, ToolRisk
 from app.tools.context import ToolContext
 from app.tools.registry import ToolRegistry
@@ -19,10 +20,14 @@ class ToolExecutor:
         registry: ToolRegistry,
         retailer: RetailerClient,
         idempotency_store: InMemoryIdempotencyStore | None = None,
+        audit_trail: AuditTrail | None = None,
+        metrics: MetricsRegistry | None = None,
     ) -> None:
         self._registry = registry
         self._retailer = retailer
         self._idempotency = idempotency_store or InMemoryIdempotencyStore()
+        self._audit_trail = audit_trail
+        self._metrics = metrics
 
     async def execute_reads(
         self,
@@ -30,14 +35,16 @@ class ToolExecutor:
         *,
         access_token: str,
         store_id: str,
+        session_id: str | None = None,
+        user_id: str | None = None,
     ) -> list[ToolResult]:
         return await self._execute(
             tool_calls,
             access_token=access_token,
             store_id=store_id,
             allowed_risk=ToolRisk.READ,
-            session_id=None,
-            user_id=None,
+            session_id=session_id,
+            user_id=user_id,
         )
 
     async def execute_writes(
@@ -219,6 +226,16 @@ class ToolExecutor:
                 )
             else:
                 result = await handler(call.arguments, context)
+                self._audit(
+                    session_id=session_id,
+                    user_id=user_id,
+                    store_id=store_id,
+                    tool=call.name,
+                    success=result.success,
+                    error_code=_error_code(result),
+                    idempotency_key=None,
+                    cache_hit=None,
+                )
             results.append(result)
         return results
 
@@ -269,35 +286,36 @@ class ToolExecutor:
         )
         return result
 
-    @staticmethod
     def _audit(
+        self,
         *,
-        session_id: str,
-        user_id: str,
+        session_id: str | None,
+        user_id: str | None,
         store_id: str,
         tool: str,
         success: bool,
         error_code: str | None,
-        idempotency_key: str,
-        cache_hit: bool,
+        idempotency_key: str | None,
+        cache_hit: bool | None,
     ) -> None:
         # Never log phones, amounts, or free-text notes (rule.md / PII).
-        key_prefix = idempotency_key[:40]
-        logger.info(
-            "Write tool audit",
-            extra={
-                "audit": {
-                    "sessionId": session_id,
-                    "userId": user_id,
-                    "storeId": store_id,
-                    "tool": tool,
-                    "success": success,
-                    "errorCode": error_code,
-                    "idempotencyKeyPrefix": key_prefix,
-                    "cacheHit": cache_hit,
-                }
-            },
-        )
+        event = {
+            "sessionId": session_id,
+            "userId": user_id,
+            "storeId": store_id,
+            "tool": tool,
+            "success": success,
+            "errorCode": error_code,
+            "idempotencyKeyPrefix": (
+                idempotency_key[:40] if idempotency_key else None
+            ),
+            "cacheHit": cache_hit,
+        }
+        logger.info("Tool execution audit", extra={"audit": event})
+        if self._audit_trail is not None:
+            self._audit_trail.append(event)
+        if self._metrics is not None:
+            self._metrics.record_tool(tool, success=success)
 
 
 def _error_code(result: ToolResult) -> str | None:

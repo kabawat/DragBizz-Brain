@@ -19,6 +19,8 @@ def reset_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("AI_JWT_ISSUER", "DragBizz-auth")
     monkeypatch.setenv("AI_JWT_AUDIENCE", "DRAGBIZZ")
     monkeypatch.setenv("AI_OPENAI_API_KEY", "")
+    monkeypatch.setenv("AI_AUDIT_TRAIL_PATH", "")
+    monkeypatch.setenv("AI_REDIS_URL", "")
     get_settings.cache_clear()
     reset_token_verifier()
     yield
@@ -45,6 +47,7 @@ def make_access_token(
     private_pem: bytes,
     *,
     sub: str = "user-123",
+    role: str = "store_owner",
     expired: bool = False,
     audience: str = "DRAGBIZZ",
     issuer: str = "DragBizz-auth",
@@ -54,7 +57,7 @@ def make_access_token(
         "sub": sub,
         "agencyId": "agency-1",
         "tenant": "demo",
-        "role": "store_owner",
+        "role": role,
         "iat": now - 10,
         "exp": now - 120 if expired else now + 3600,
         "iss": issuer,

@@ -34,6 +34,8 @@ class GenerationRequest(BaseModel):
     max_tokens: int = Field(default=1_024, ge=1, le=8_192)
     tools: list[ToolDefinition] | None = None
     tool_choice: Literal["auto", "none"] = "auto"
+    # Admin-selected model override; None = provider's configured default.
+    model: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class GenerationResponse(BaseModel):

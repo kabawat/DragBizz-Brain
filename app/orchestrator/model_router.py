@@ -26,5 +26,8 @@ class ModelRouter:
             )
         return self._providers[self._active_provider]
 
+    def get(self, provider_name: str) -> ModelProvider | None:
+        return self._providers.get(provider_name)
+
     def available_providers(self) -> tuple[str, ...]:
         return tuple(sorted(self._providers))

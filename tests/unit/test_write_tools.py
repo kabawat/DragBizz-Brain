@@ -532,7 +532,7 @@ def test_write_audit_log_has_no_phone(
 
     asyncio.run(run())
     audit_records = [
-        r for r in caplog.records if r.getMessage() == "Write tool audit"
+        r for r in caplog.records if r.getMessage() == "Tool execution audit"
     ]
     assert audit_records
     record = audit_records[0]

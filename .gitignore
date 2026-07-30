@@ -25,6 +25,8 @@ logs/
 
 # Storage
 storage/
+# Audit trail + local persisted data
+data/
 *.wav
 *.mp3
 *.webm

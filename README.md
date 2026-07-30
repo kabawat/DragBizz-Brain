@@ -52,12 +52,26 @@ Implemented:
   `SESSION_FORBIDDEN`; prior turns (+ compact tool context) load into the next
   generation. Process-local until Redis (B1)
 - Tool-call JSON Schema validation with one repair retry
+- **Admin model switch** (`GET`/`PUT /api/v1/admin/model`, platform admin
+  only): runtime provider/model selection persisted in Redis
+  (`AI_REDIS_URL`), applied per generation call without restart, model
+  allowlist via `AI_OPENAI_ALLOWED_MODELS`
+- **Per-tenant usage counters + hard caps**: daily token/cost counters per
+  store (`GET /api/v1/admin/usage/{storeId}`); `AI_TENANT_DAILY_TOKEN_CAP`
+  / `AI_TENANT_DAILY_COST_CAP_USD` return `429 AI_USAGE_CAP_EXCEEDED`
+  before any LLM spend
+- **Operational metrics** (`GET /api/v1/admin/metrics`): chat/provider
+  latency, provider error count, per-tool success rate
+- **Immutable tool-execution audit trail**: append-only JSONL at
+  `AI_AUDIT_TRAIL_PATH` for every READ/WRITE/SENSITIVE execution (no PII)
 - Docker runtime and unit tests
+
+Details: [docs/features/ADMIN_AND_OBSERVABILITY.md](./docs/features/ADMIN_AND_OBSERVABILITY.md)
+(includes the provider key rotation runbook).
 
 Not implemented yet:
 
 - Claude / Gemini / DeepSeek adapters
-- Sensitive tools + confirmation UX (invoice release, etc.)
 - `/voice`, `/image`, or `/document` APIs
 - Redis-backed sessions / rate limiting, durable Postgres history, queues, STT, TTS
 
@@ -111,6 +125,11 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_SESSION_MAX_TURNS` | Max stored user/assistant pairs (default `10`) |
 | `AI_SESSION_HISTORY_MAX_TOKENS` | History token budget for LLM context (default `2000`) |
 | `AI_IDEMPOTENCY_TTL_SECONDS` | Write-tool result cache TTL (default `86400`) |
+| `AI_REDIS_URL` | Persists admin model selection + usage counters (empty = in-process) |
+| `AI_OPENAI_ALLOWED_MODELS` | Extra models admins may activate (default model always allowed) |
+| `AI_TENANT_DAILY_TOKEN_CAP` | Per-store daily token hard cap (`0` = disabled) |
+| `AI_TENANT_DAILY_COST_CAP_USD` | Per-store daily cost hard cap (`0` = disabled) |
+| `AI_AUDIT_TRAIL_PATH` | Append-only tool audit JSONL (default `data/tool_audit.jsonl`; empty disables) |
 
 Production requires HTTPS for JWKS and the OpenAI base URL, and **both**
 guard modes set to `enforce` (boot fails otherwise). Never commit API keys.
@@ -190,8 +209,8 @@ Example `200` body:
 
 Error codes: `401` `AUTH_*` / `TOOL_UNAUTHORIZED`, `403` `SESSION_FORBIDDEN`,
 `400` `STORE_ID_*` / `TOOL_NOT_ALLOWED` / `TOOL_ARGS_INVALID`,
-`422` `VALIDATION_ERROR`, `502` `AI_PROVIDER_ERROR`,
-`503` `AI_PROVIDER_NOT_CONFIGURED`.
+`422` `VALIDATION_ERROR`, `429` `AI_USAGE_CAP_EXCEEDED`,
+`502` `AI_PROVIDER_ERROR`, `503` `AI_PROVIDER_NOT_CONFIGURED`.
 
 Per-tool failures (`403`/`404`/`409`/`429`/5xx) return `toolResults[].success=false`
 with `data.code` of `TOOL_FORBIDDEN` / `TOOL_NOT_FOUND` / `TOOL_CONFLICT` /
@@ -214,6 +233,8 @@ Service endpoints:
 - Health: `http://localhost:4004/api/v1/health`
 - Readiness: `http://localhost:4004/api/v1/ready`
 - Chat (auth required): `http://localhost:4004/api/v1/chat`
+- Admin (platform admin token): `http://localhost:4004/api/v1/admin/model`,
+  `/api/v1/admin/usage/{storeId}`, `/api/v1/admin/metrics`
 
 ## Tests and lint
 
@@ -229,7 +250,8 @@ ruff check .
 docker compose up --build
 ```
 
-Compose starts **Qdrant** (`localhost:6333`) and the AI service (`localhost:4004`).
+Compose starts **Redis** (model selection + usage counter persistence),
+**Qdrant** (`localhost:6333`), and the AI service (`localhost:4004`).
 The AI container gets `AI_QDRANT_URL=http://qdrant:6333`. For local (non-Docker) runs,
 set `AI_QDRANT_URL=http://localhost:6333` and start Qdrant via compose:
 

@@ -1,4 +1,17 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: dragbizz_ai_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ai_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   qdrant:
     image: qdrant/qdrant:v1.13.2
     container_name: dragbizz_qdrant
@@ -28,9 +41,12 @@ services:
       - .env
     environment:
       AI_QDRANT_URL: http://qdrant:6333
+      AI_REDIS_URL: redis://redis:6379/0
     depends_on:
       qdrant:
         condition: service_started
+      redis:
+        condition: service_healthy
     command:
       [
         "uvicorn",
@@ -45,6 +61,7 @@ services:
       - ./app:/app/app
       - ./knowledge:/app/knowledge:ro
       - ./.env:/app/.env:ro
+      - ./data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "dragbizz.local:host-gateway"
@@ -64,3 +81,4 @@ services:
 
 volumes:
   qdrant_storage:
+  ai_redis_data:

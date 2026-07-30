@@ -10,8 +10,13 @@ from app.confirmations import InMemoryConfirmationStore
 from app.executors.tool_executor import ToolExecutor
 from app.idempotency import InMemoryIdempotencyStore
 from app.integrations.retailer_client import RetailerClient
+from app.observability import AuditTrail, MetricsRegistry
 from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.chat_service import ChatService
+from app.orchestrator.model_config import (
+    InMemoryModelSelectionStore,
+    RedisModelSelectionStore,
+)
 from app.orchestrator.model_router import ModelRouter
 from app.providers.openai_compatible import OpenAICompatibleProvider
 from app.rag.embedding_service import EmbeddingService
@@ -27,6 +32,7 @@ from app.tools.handlers.confirm_tools import SENSITIVE_TOOL_HANDLERS
 from app.tools.handlers.read_tools import READ_TOOL_HANDLERS
 from app.tools.handlers.write_tools import WRITE_TOOL_HANDLERS
 from app.tools.registry import ToolRegistry
+from app.usage import InMemoryUsageStore, RedisUsageStore
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +56,44 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             exc_info=True,
         )
 
+    redis_client = None
+    if settings.redis_url:
+        import redis.asyncio as aioredis
+
+        redis_client = aioredis.from_url(
+            settings.redis_url, decode_responses=True
+        )
+    elif settings.environment == "production":
+        logger.warning(
+            "AI_REDIS_URL is not set; model selection and usage counters "
+            "will not survive restarts"
+        )
+    app.state.redis = redis_client
+
+    metrics = MetricsRegistry()
+    app.state.metrics = metrics
+
+    audit_trail = (
+        AuditTrail(settings.audit_trail_path)
+        if settings.audit_trail_path
+        else None
+    )
+    app.state.audit_trail = audit_trail
+
+    model_selection_store = (
+        RedisModelSelectionStore(redis_client)
+        if redis_client is not None
+        else InMemoryModelSelectionStore()
+    )
+    app.state.model_selection_store = model_selection_store
+
+    usage_store = (
+        RedisUsageStore(redis_client)
+        if redis_client is not None
+        else InMemoryUsageStore()
+    )
+    app.state.usage_store = usage_store
+
     retailer = RetailerClient(http_client, settings.retailer_service_url)
     tool_registry = ToolRegistry()
     for definition in READ_TOOL_DEFINITIONS:
@@ -72,6 +116,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         registry=tool_registry,
         retailer=retailer,
         idempotency_store=idempotency_store,
+        audit_trail=audit_trail,
+        metrics=metrics,
     )
 
     model_router = ModelRouter()
@@ -88,7 +134,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     else:
         logger.warning("AI_OPENAI_API_KEY is not set; chat provider unavailable")
 
-    gateway = AiGateway(model_router)
+    gateway = AiGateway(
+        model_router,
+        selection_store=model_selection_store,
+        metrics=metrics,
+    )
     app.state.model_router = model_router
     app.state.ai_gateway = gateway
     app.state.tool_registry = tool_registry
@@ -114,12 +164,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         retriever=retriever,
         session_store=session_store,
         confirmation_store=confirmation_store,
+        usage_store=usage_store,
+        metrics=metrics,
     )
 
     logger.info("AI service started")
     try:
         yield
     finally:
+        if audit_trail is not None:
+            audit_trail.close()
+        if redis_client is not None:
+            await redis_client.aclose()
         await vector_store.close()
         await http_client.aclose()
         logger.info("AI service stopped")
