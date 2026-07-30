@@ -19,11 +19,36 @@ async def search_product(
     except RetailerHttpError as exc:
         return _failure("search_product", exc)
 
-    body = response.body
-    data: dict[str, Any] = {"items": body.get("data") or []}
-    if body.get("pagination") is not None:
-        data["pagination"] = body["pagination"]
-    return ToolResult(tool="search_product", success=True, data=data)
+    raw_items = response.body.get("data") or []
+    # Compact projection: enough for the LLM to pick a real id and
+    # quote price/stock without dumping full productsSerializer docs.
+    # Contract: GET /product list nests price under pricing; GST rate
+    # at gstInfo.gstRate; unit is pricing.uom.
+    items = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        pricing = item.get("pricing") if isinstance(item.get("pricing"), dict) else {}
+        gst = item.get("gstInfo") if isinstance(item.get("gstInfo"), dict) else {}
+        items.append(
+            {
+                "id": str(item.get("id") or ""),
+                "name": item.get("name"),
+                "sku": item.get("sku"),
+                "sellingPrice": item.get(
+                    "sellingPrice", pricing.get("sellingPrice")
+                ),
+                "stock": item.get("stock"),
+                "taxRate": item.get("taxRate", gst.get("gstRate")),
+                "unit": item.get("unit") or item.get("uom") or pricing.get("uom"),
+                "status": item.get("status"),
+            }
+        )
+    return ToolResult(
+        tool="search_product",
+        success=True,
+        data={"items": items},
+    )
 
 
 async def today_sale(

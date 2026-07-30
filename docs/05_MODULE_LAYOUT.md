@@ -65,6 +65,7 @@ dragbizz-ai/
 │   ├── orchestrator/
 │   │   ├── chat_service.py    # thin coordinator: handle / confirm
 │   │   ├── chat_context.py    # session history + RAG + message assembly
+│   │   ├── rag_budget.py      # action vs how-to docs token budget
 │   │   ├── tool_loop.py       # bounded multi-round tool loop
 │   │   ├── confirm_flow.py    # approve / reject confirmation path
 │   │   ├── confirmation.py    # stage pending invoice confirmations
@@ -72,10 +73,10 @@ dragbizz-ai/
 │   │   ├── model_router.py
 │   │   ├── model_config.py
 │   │   └── tool_call_validator.py
-│   ├── sessions/              # keep — Protocol + InMemory (Redis/Postgres later)
-│   ├── idempotency/           # keep — AI write cache (Redis later)
-│   ├── confirmations/         # keep — pending sensitive actions
-│   ├── usage/                 # keep — tenant caps (Redis path exists)
+│   ├── sessions/              # keep — Protocol + InMemory / Redis
+│   ├── idempotency/           # keep — AI write cache (InMemory / Redis)
+│   ├── confirmations/         # keep — pending sensitive actions (InMemory / Redis)
+│   ├── usage/                 # keep — tenant caps (InMemory / Redis)
 │   ├── observability/         # metrics + audit trail
 │   ├── tools/
 │   │   ├── definitions.py     # READ + WRITE + SENSITIVE

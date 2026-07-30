@@ -113,12 +113,14 @@ def test_update_result_restages_pending_confirmation() -> None:
             "openPath": f"/dashboard/invoices/{INVOICE_ID}",
         },
     )
-    record = stage_from_draft_result(
-        store,
-        user_id="user-1",
-        store_id=STORE_ID,
-        session_id="s1",
-        result=result,
+    record = asyncio.run(
+        stage_from_draft_result(
+            store,
+            user_id="user-1",
+            store_id=STORE_ID,
+            session_id="s1",
+            result=result,
+        )
     )
     assert record is not None
     assert record.draft_id == INVOICE_ID

@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from app.config import Settings
-from app.confirmations import InMemoryConfirmationStore
+from app.confirmations import ConfirmationStore, InMemoryConfirmationStore
 from app.core.exceptions import AppError
 from app.executors.tool_executor import ToolExecutor
 from app.guards.input_guard import InputGuard
@@ -55,7 +55,7 @@ class ChatService:
         input_guard: InputGuard | None = None,
         output_guard: OutputGuard | None = None,
         session_store: SessionStore | None = None,
-        confirmation_store: InMemoryConfirmationStore | None = None,
+        confirmation_store: ConfirmationStore | None = None,
         usage_store: UsageStore | None = None,
         metrics: MetricsRegistry | None = None,
     ) -> None:
@@ -150,7 +150,7 @@ class ChatService:
             # Latest draft write wins — an update in a later round carries
             # fresher totals than the create before it.
             for result in reversed(outcome.all_write_results):
-                staged_draft = stage_from_draft_result(
+                staged_draft = await stage_from_draft_result(
                     self._confirmations,
                     user_id=user_id,
                     store_id=store_id,

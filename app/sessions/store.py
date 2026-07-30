@@ -7,6 +7,7 @@ history can land as peer backends without moving orchestrator imports.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
@@ -16,7 +17,10 @@ from app.rag.chunker import estimate_tokens
 from app.schemas.chat import ChatMessage
 from app.schemas.tool import ToolResult
 
+logger = logging.getLogger(__name__)
+
 Clock = Callable[[], float]
+_KEY_PREFIX = "ai:session"
 
 
 @dataclass(frozen=True)
@@ -53,10 +57,7 @@ class SessionStore(Protocol):
 
 
 class InMemorySessionStore:
-    """Process-local session memory with sliding TTL and ownership binding.
-
-    Suitable until Redis (B1) is available. Not shared across workers.
-    """
+    """Process-local session memory with sliding TTL and ownership binding."""
 
     def __init__(
         self,
@@ -130,6 +131,139 @@ class InMemorySessionStore:
 
     def _touch(self, record: _SessionRecord) -> None:
         record.expires_at = self._clock() + self._ttl_seconds
+
+    @staticmethod
+    def _assert_owner(
+        record: _SessionRecord, *, user_id: str, store_id: str
+    ) -> None:
+        if record.user_id != user_id or record.store_id != store_id:
+            raise AppError(
+                code="SESSION_FORBIDDEN",
+                message="sessionId is not valid for this user and store",
+                status_code=403,
+            )
+
+
+class RedisSessionStore:
+    """Shared session memory. Fail-open on Redis errors so chat stays up
+    (empty history / skipped append) rather than 503."""
+
+    def __init__(
+        self,
+        redis_client,
+        *,
+        ttl_seconds: int = 1_800,
+        max_turns: int = 10,
+        history_max_tokens: int = 2_000,
+        tool_context_max_chars: int = 1_500,
+    ) -> None:
+        self._redis = redis_client
+        self._ttl_seconds = ttl_seconds
+        self._max_turns = max_turns
+        self._history_max_tokens = history_max_tokens
+        self._tool_context_max_chars = tool_context_max_chars
+
+    async def load_history(
+        self, *, session_id: str, user_id: str, store_id: str
+    ) -> list[SessionTurn]:
+        record = await self._load(session_id)
+        if record is None:
+            return []
+        self._assert_owner(record, user_id=user_id, store_id=store_id)
+        await self._touch(session_id)
+        return list(record.turns)
+
+    async def append_turn(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        store_id: str,
+        turn: SessionTurn,
+    ) -> None:
+        record = await self._load(session_id)
+        if record is None:
+            record = _SessionRecord(user_id=user_id, store_id=store_id)
+        else:
+            self._assert_owner(record, user_id=user_id, store_id=store_id)
+        record.turns.append(turn)
+        record.turns = _trim_turns(
+            record.turns,
+            max_turns=self._max_turns,
+            history_max_tokens=self._history_max_tokens,
+        )
+        await self._save(session_id, record)
+
+    def compact_tool_context(self, tool_results: list[ToolResult]) -> str | None:
+        if not tool_results:
+            return None
+        payload: list[dict[str, Any]] = [
+            {"tool": result.tool, "success": result.success, "data": result.data}
+            for result in tool_results
+        ]
+        text = json.dumps(payload, ensure_ascii=False)
+        if len(text) > self._tool_context_max_chars:
+            return text[: self._tool_context_max_chars - 3] + "..."
+        return text
+
+    async def _load(self, session_id: str) -> _SessionRecord | None:
+        try:
+            raw = await self._redis.get(self._key(session_id))
+        except Exception:
+            logger.warning("Session load failed; using empty history", exc_info=True)
+            return None
+        if raw is None:
+            return None
+        try:
+            payload = json.loads(raw)
+            turns = [
+                SessionTurn(
+                    user_text=item["user_text"],
+                    assistant_text=item["assistant_text"],
+                    tool_context=item.get("tool_context"),
+                )
+                for item in payload.get("turns") or []
+            ]
+            return _SessionRecord(
+                user_id=str(payload["user_id"]),
+                store_id=str(payload["store_id"]),
+                turns=turns,
+            )
+        except Exception:
+            logger.warning("Session payload corrupt for %s", session_id, exc_info=True)
+            return None
+
+    async def _save(self, session_id: str, record: _SessionRecord) -> None:
+        payload = {
+            "user_id": record.user_id,
+            "store_id": record.store_id,
+            "turns": [
+                {
+                    "user_text": turn.user_text,
+                    "assistant_text": turn.assistant_text,
+                    "tool_context": turn.tool_context,
+                }
+                for turn in record.turns
+            ],
+        }
+        try:
+            await self._redis.set(
+                self._key(session_id),
+                json.dumps(payload, ensure_ascii=False),
+                ex=self._ttl_seconds,
+            )
+        except Exception:
+            logger.warning("Session append failed; continuing", exc_info=True)
+
+    async def _touch(self, session_id: str) -> None:
+        try:
+            await self._redis.expire(self._key(session_id), self._ttl_seconds)
+        except Exception:
+            logger.warning("Session TTL refresh failed", exc_info=True)
+
+    @staticmethod
+    def _key(session_id: str) -> str:
+        return f"{_KEY_PREFIX}:{session_id}"
 
     @staticmethod
     def _assert_owner(

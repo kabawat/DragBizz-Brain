@@ -6,9 +6,9 @@ import httpx
 from fastapi import FastAPI
 
 from app.config import get_settings
-from app.confirmations import InMemoryConfirmationStore
+from app.confirmations import InMemoryConfirmationStore, RedisConfirmationStore
 from app.executors.tool_executor import ToolExecutor
-from app.idempotency import InMemoryIdempotencyStore
+from app.idempotency import InMemoryIdempotencyStore, RedisIdempotencyStore
 from app.integrations.retailer_client import RetailerClient
 from app.observability import AuditTrail, MetricsRegistry
 from app.orchestrator.ai_gateway import AiGateway
@@ -22,7 +22,7 @@ from app.providers.openai_compatible import OpenAICompatibleProvider
 from app.rag.embedding_service import EmbeddingService
 from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStore
-from app.sessions import InMemorySessionStore
+from app.sessions import InMemorySessionStore, RedisSessionStore
 from app.tools.definitions import (
     READ_TOOL_DEFINITIONS,
     SENSITIVE_TOOL_DEFINITIONS,
@@ -65,8 +65,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     elif settings.environment == "production":
         logger.warning(
-            "AI_REDIS_URL is not set; model selection and usage counters "
-            "will not survive restarts"
+            "AI_REDIS_URL is not set; model selection, usage counters, "
+            "sessions, idempotency, and confirmations will not survive "
+            "restarts or multi-instance deploys"
         )
     app.state.redis = redis_client
 
@@ -106,11 +107,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         handler = SENSITIVE_TOOL_HANDLERS[definition.name]
         tool_registry.register(definition, handler)
 
-    idempotency_store = InMemoryIdempotencyStore(
-        ttl_seconds=settings.idempotency_ttl_seconds
+    idempotency_store = (
+        RedisIdempotencyStore(
+            redis_client, ttl_seconds=settings.idempotency_ttl_seconds
+        )
+        if redis_client is not None
+        else InMemoryIdempotencyStore(
+            ttl_seconds=settings.idempotency_ttl_seconds
+        )
     )
-    confirmation_store = InMemoryConfirmationStore(
-        ttl_seconds=settings.confirmation_ttl_seconds
+    confirmation_store = (
+        RedisConfirmationStore(
+            redis_client, ttl_seconds=settings.confirmation_ttl_seconds
+        )
+        if redis_client is not None
+        else InMemoryConfirmationStore(
+            ttl_seconds=settings.confirmation_ttl_seconds
+        )
     )
     tool_executor = ToolExecutor(
         registry=tool_registry,
@@ -146,10 +159,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.tool_executor = tool_executor
     app.state.idempotency_store = idempotency_store
     app.state.confirmation_store = confirmation_store
-    session_store = InMemorySessionStore(
-        ttl_seconds=settings.session_ttl_seconds,
-        max_turns=settings.session_max_turns,
-        history_max_tokens=settings.session_history_max_tokens,
+    session_store = (
+        RedisSessionStore(
+            redis_client,
+            ttl_seconds=settings.session_ttl_seconds,
+            max_turns=settings.session_max_turns,
+            history_max_tokens=settings.session_history_max_tokens,
+        )
+        if redis_client is not None
+        else InMemorySessionStore(
+            ttl_seconds=settings.session_ttl_seconds,
+            max_turns=settings.session_max_turns,
+            history_max_tokens=settings.session_history_max_tokens,
+        )
     )
     app.state.session_store = session_store
     retriever = Retriever(

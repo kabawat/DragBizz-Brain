@@ -57,94 +57,106 @@ USER_ID = "user-1"
 def test_confirmation_store_ttl_and_consume() -> None:
     clock = {"now": 1_000.0}
     store = InMemoryConfirmationStore(ttl_seconds=10, clock=lambda: clock["now"])
-    record = store.create(
-        user_id=USER_ID,
-        store_id=STORE_ID,
-        session_id=SESSION_ID,
-        type=CONFIRMATION_TYPE_INVOICE_RELEASE,
-        draft_id=INVOICE_ID,
-        summary={"total": 85, "currency": "INR"},
-        tool_name="release_invoice",
-        arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
-    )
-    assert record.confirmation_id
-    public = record.to_public()
-    assert public["type"] == "invoice_release"
-    assert public["draftId"] == INVOICE_ID
-    assert public["expiresAt"].endswith("Z")
 
-    got = store.get(
-        record.confirmation_id,
-        user_id=USER_ID,
-        store_id=STORE_ID,
-        session_id=SESSION_ID,
-    )
-    assert got.draft_id == INVOICE_ID
+    async def run() -> None:
+        record = await store.create(
+            user_id=USER_ID,
+            store_id=STORE_ID,
+            session_id=SESSION_ID,
+            type=CONFIRMATION_TYPE_INVOICE_RELEASE,
+            draft_id=INVOICE_ID,
+            summary={"total": 85, "currency": "INR"},
+            tool_name="release_invoice",
+            arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
+        )
+        assert record.confirmation_id
+        public = record.to_public()
+        assert public["type"] == "invoice_release"
+        assert public["draftId"] == INVOICE_ID
+        assert public["expiresAt"].endswith("Z")
 
-    consumed = store.consume(
-        record.confirmation_id,
-        user_id=USER_ID,
-        store_id=STORE_ID,
-        session_id=SESSION_ID,
-        draft_id=INVOICE_ID,
-    )
-    assert consumed.draft_id == INVOICE_ID
+        got = await store.get(
+            record.confirmation_id,
+            user_id=USER_ID,
+            store_id=STORE_ID,
+            session_id=SESSION_ID,
+        )
+        assert got.draft_id == INVOICE_ID
 
-    with pytest.raises(AppError) as exc:
-        store.consume(
+        consumed = await store.consume(
             record.confirmation_id,
             user_id=USER_ID,
             store_id=STORE_ID,
             session_id=SESSION_ID,
             draft_id=INVOICE_ID,
         )
-    assert exc.value.code == "CONFIRMATION_REQUIRED"
+        assert consumed.draft_id == INVOICE_ID
+
+        with pytest.raises(AppError) as exc:
+            await store.consume(
+                record.confirmation_id,
+                user_id=USER_ID,
+                store_id=STORE_ID,
+                session_id=SESSION_ID,
+                draft_id=INVOICE_ID,
+            )
+        assert exc.value.code == "CONFIRMATION_REQUIRED"
+
+    asyncio.run(run())
 
 
 def test_confirmation_store_expired() -> None:
     clock = {"now": 1_000.0}
     store = InMemoryConfirmationStore(ttl_seconds=5, clock=lambda: clock["now"])
-    record = store.create(
-        user_id=USER_ID,
-        store_id=STORE_ID,
-        session_id=SESSION_ID,
-        type=CONFIRMATION_TYPE_INVOICE_RELEASE,
-        draft_id=INVOICE_ID,
-        summary={},
-        tool_name="release_invoice",
-        arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
-    )
-    clock["now"] = 1_010.0
-    with pytest.raises(AppError) as exc:
-        store.get(
-            record.confirmation_id,
+
+    async def run() -> None:
+        record = await store.create(
             user_id=USER_ID,
             store_id=STORE_ID,
             session_id=SESSION_ID,
+            type=CONFIRMATION_TYPE_INVOICE_RELEASE,
+            draft_id=INVOICE_ID,
+            summary={},
+            tool_name="release_invoice",
+            arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
         )
-    assert exc.value.code == "CONFIRMATION_EXPIRED"
+        clock["now"] = 1_010.0
+        with pytest.raises(AppError) as exc:
+            await store.get(
+                record.confirmation_id,
+                user_id=USER_ID,
+                store_id=STORE_ID,
+                session_id=SESSION_ID,
+            )
+        assert exc.value.code == "CONFIRMATION_EXPIRED"
+
+    asyncio.run(run())
 
 
 def test_confirmation_store_forbidden_owner() -> None:
     store = InMemoryConfirmationStore(ttl_seconds=300)
-    record = store.create(
-        user_id=USER_ID,
-        store_id=STORE_ID,
-        session_id=SESSION_ID,
-        type=CONFIRMATION_TYPE_INVOICE_RELEASE,
-        draft_id=INVOICE_ID,
-        summary={},
-        tool_name="release_invoice",
-        arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
-    )
-    with pytest.raises(AppError) as exc:
-        store.get(
-            record.confirmation_id,
-            user_id="other-user",
+
+    async def run() -> None:
+        record = await store.create(
+            user_id=USER_ID,
             store_id=STORE_ID,
             session_id=SESSION_ID,
+            type=CONFIRMATION_TYPE_INVOICE_RELEASE,
+            draft_id=INVOICE_ID,
+            summary={},
+            tool_name="release_invoice",
+            arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
         )
-    assert exc.value.code == "CONFIRMATION_FORBIDDEN"
+        with pytest.raises(AppError) as exc:
+            await store.get(
+                record.confirmation_id,
+                user_id="other-user",
+                store_id=STORE_ID,
+                session_id=SESSION_ID,
+            )
+        assert exc.value.code == "CONFIRMATION_FORBIDDEN"
+
+    asyncio.run(run())
 
 
 def test_extract_invoice_id_from_nested_payload() -> None:
@@ -162,12 +174,14 @@ def test_stage_from_draft_result() -> None:
             "openPath": f"/dashboard/invoices/{INVOICE_ID}",
         },
     )
-    record = stage_from_draft_result(
-        store,
-        user_id=USER_ID,
-        store_id=STORE_ID,
-        session_id=SESSION_ID,
-        result=result,
+    record = asyncio.run(
+        stage_from_draft_result(
+            store,
+            user_id=USER_ID,
+            store_id=STORE_ID,
+            session_id=SESSION_ID,
+            result=result,
+        )
     )
     assert record is not None
     assert record.type == CONFIRMATION_TYPE_INVOICE_RELEASE
@@ -507,16 +521,6 @@ def test_chat_stages_pending_after_draft_write() -> None:
 
 def test_confirm_approve_releases_and_reject_skips_retailer() -> None:
     confirmations = InMemoryConfirmationStore()
-    record = confirmations.create(
-        user_id=USER_ID,
-        store_id=STORE_ID,
-        session_id=SESSION_ID,
-        type=CONFIRMATION_TYPE_INVOICE_RELEASE,
-        draft_id=INVOICE_ID,
-        summary={"total": 50, "currency": "INR"},
-        tool_name="release_invoice",
-        arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
-    )
     calls = {"n": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -527,6 +531,16 @@ def test_confirm_approve_releases_and_reject_skips_retailer() -> None:
         )
 
     async def run() -> None:
+        record = await confirmations.create(
+            user_id=USER_ID,
+            store_id=STORE_ID,
+            session_id=SESSION_ID,
+            type=CONFIRMATION_TYPE_INVOICE_RELEASE,
+            draft_id=INVOICE_ID,
+            summary={"total": 50, "currency": "INR"},
+            tool_name="release_invoice",
+            arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
+        )
         transport = httpx.MockTransport(handler)
         async with httpx.AsyncClient(
             transport=transport, base_url="http://retailer.test"
@@ -559,7 +573,7 @@ def test_confirm_approve_releases_and_reject_skips_retailer() -> None:
             assert calls["n"] == 1
 
             # Fresh pending for reject path
-            pending = confirmations.create(
+            pending = await confirmations.create(
                 user_id=USER_ID,
                 store_id=STORE_ID,
                 session_id=SESSION_ID,

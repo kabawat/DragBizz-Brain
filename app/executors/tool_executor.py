@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 
 from app.core.exceptions import AppError
-from app.idempotency import InMemoryIdempotencyStore, build_idempotency_key
+from app.idempotency import (
+    IdempotencyStore,
+    InMemoryIdempotencyStore,
+    build_idempotency_key,
+)
 from app.integrations.retailer_client import RetailerClient
 from app.observability import AuditTrail, MetricsRegistry
 from app.schemas.tool import ToolCall, ToolResult, ToolRisk
@@ -21,7 +25,7 @@ class ToolExecutor:
         *,
         registry: ToolRegistry,
         retailer: RetailerClient,
-        idempotency_store: InMemoryIdempotencyStore | None = None,
+        idempotency_store: IdempotencyStore | None = None,
         audit_trail: AuditTrail | None = None,
         metrics: MetricsRegistry | None = None,
     ) -> None:
@@ -119,7 +123,7 @@ class ToolExecutor:
                     "_confirmationId": confirmation_id,
                 },
             )
-            cached = self._idempotency.get(key)
+            cached = await self._idempotency.get(key)
             if cached is not None:
                 self._audit(
                     session_id=session_id,
@@ -135,7 +139,7 @@ class ToolExecutor:
                 continue
 
             result = await handler(call.arguments, context)
-            self._idempotency.put(key, result)
+            await self._idempotency.put(key, result)
             self._audit(
                 session_id=session_id,
                 user_id=user_id,
@@ -256,7 +260,7 @@ class ToolExecutor:
             tool_name=call.name,
             arguments=call.arguments,
         )
-        cached = self._idempotency.get(key)
+        cached = await self._idempotency.get(key)
         if cached is not None:
             self._audit(
                 session_id=session_id,
@@ -275,7 +279,7 @@ class ToolExecutor:
             arguments["idempotencyKey"] = key
 
         result = await handler(arguments, context)
-        self._idempotency.put(key, result)
+        await self._idempotency.put(key, result)
         self._audit(
             session_id=session_id,
             user_id=user_id,

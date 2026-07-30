@@ -16,11 +16,13 @@ from app.prompts.fallback import get_fallback_message
 from app.providers.base import ModelProvider
 from app.schemas.chat import ChatRequest, GenerationRequest, GenerationResponse
 from app.schemas.tool import ToolCall, ToolResult
-from app.tools.definitions import READ_TOOL_DEFINITIONS
+from app.tools.definitions import READ_TOOL_DEFINITIONS, WRITE_TOOL_DEFINITIONS
 from app.tools.handlers.read_tools import READ_TOOL_HANDLERS
+from app.tools.handlers.write_tools import WRITE_TOOL_HANDLERS
 from app.tools.registry import ToolRegistry
 
 STORE_ID = "507f1f77bcf86cd799439011"
+INVOICE_ID = "807f1f77bcf86cd799439011"
 
 
 class CapturingProvider(ModelProvider):
@@ -37,10 +39,13 @@ class CapturingProvider(ModelProvider):
         return self._responses.pop(0)
 
 
-def _registry() -> ToolRegistry:
+def _registry(*, include_writes: bool = False) -> ToolRegistry:
     registry = ToolRegistry()
     for definition in READ_TOOL_DEFINITIONS:
         registry.register(definition, READ_TOOL_HANDLERS[definition.name])
+    if include_writes:
+        for definition in WRITE_TOOL_DEFINITIONS:
+            registry.register(definition, WRITE_TOOL_HANDLERS[definition.name])
     return registry
 
 
@@ -49,11 +54,13 @@ def _service(
     *,
     settings: Settings | None = None,
     tool_results: list[ToolResult] | None = None,
+    write_results: list[ToolResult] | None = None,
+    include_writes: bool = False,
 ) -> ChatService:
     router = ModelRouter()
     router.register(provider)
     router.set_active(provider.name)
-    registry = _registry()
+    registry = _registry(include_writes=include_writes)
 
     executor = MagicMock(spec=ToolExecutor)
     executor.execute_reads = AsyncMock(
@@ -67,6 +74,10 @@ def _service(
             )
         ]
     )
+    executor.execute_writes = AsyncMock(
+        return_value=write_results if write_results is not None else []
+    )
+    executor.execute_confirmations = AsyncMock(return_value=[])
 
     return ChatService(
         gateway=AiGateway(router),
@@ -242,6 +253,70 @@ def test_invented_domain_stripped_from_dashboard_links() -> None:
         == "Draft ready. [here](/dashboard/invoices/abc123) "
         "aur /dashboard/customers/x9"
     )
+
+
+def test_successful_draft_forces_synthesis_without_tools() -> None:
+    """After create_invoice_draft succeeds, the next LLM call must drop
+    tool schemas (allow_tools=False) even when more rounds remain."""
+    provider = CapturingProvider(
+        [
+            GenerationResponse(
+                provider="capturing",
+                model="m",
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="call_1",
+                        name="create_invoice_draft",
+                        arguments={
+                            "storeId": STORE_ID,
+                            "customerId": "607f1f77bcf86cd799439011",
+                            "items": [
+                                {
+                                    "product": "707f1f77bcf86cd799439011",
+                                    "quantity": 1,
+                                }
+                            ],
+                        },
+                    )
+                ],
+            ),
+            GenerationResponse(
+                provider="capturing",
+                model="m",
+                content="Draft ready. Total ₹85. [Open invoice](/dashboard/invoices/x)",
+            ),
+        ]
+    )
+    service = _service(
+        provider,
+        include_writes=True,
+        tool_results=[],
+        write_results=[
+            ToolResult(
+                tool="create_invoice_draft",
+                success=True,
+                data={
+                    "id": INVOICE_ID,
+                    "total": 85,
+                    "openPath": f"/dashboard/invoices/{INVOICE_ID}",
+                },
+            )
+        ],
+        settings=Settings(
+            environment="test",
+            output_guard_mode="off",
+            chat_synthesis_max_tokens=256,
+            chat_max_tool_rounds=3,
+        ),
+    )
+    response = _handle(service)
+
+    assert response.tool_results[0].tool == "create_invoice_draft"
+    assert len(provider.requests) == 2
+    final = provider.requests[-1]
+    assert final.tools is None
+    assert final.tool_choice == "none"
 
 
 def test_repeated_tool_call_not_reexecuted() -> None:

@@ -6,7 +6,7 @@ from typing import Any
 
 from app.confirmations import (
     CONFIRMATION_TYPE_INVOICE_RELEASE,
-    InMemoryConfirmationStore,
+    ConfirmationStore,
     PendingConfirmationRecord,
 )
 from app.core.exceptions import AppError
@@ -67,8 +67,8 @@ def build_invoice_summary(data: dict[str, Any] | None) -> dict[str, Any]:
     return summary
 
 
-def stage_from_draft_result(
-    store: InMemoryConfirmationStore,
+async def stage_from_draft_result(
+    store: ConfirmationStore,
     *,
     user_id: str,
     store_id: str,
@@ -84,7 +84,7 @@ def stage_from_draft_result(
     draft_id = extract_invoice_id(result.data)
     if draft_id is None:
         return None
-    return store.create(
+    return await store.create(
         user_id=user_id,
         store_id=store_id,
         session_id=session_id,
@@ -96,8 +96,8 @@ def stage_from_draft_result(
     )
 
 
-def stage_from_sensitive_calls(
-    store: InMemoryConfirmationStore,
+async def stage_from_sensitive_calls(
+    store: ConfirmationStore,
     *,
     user_id: str,
     store_id: str,
@@ -132,7 +132,7 @@ def stage_from_sensitive_calls(
         "currency": "INR",
         "openPath": f"/dashboard/invoices/{invoice_id}",
     }
-    return store.create(
+    return await store.create(
         user_id=user_id,
         store_id=store_id,
         session_id=session_id,

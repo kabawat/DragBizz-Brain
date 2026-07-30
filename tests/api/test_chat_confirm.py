@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -86,15 +87,17 @@ def test_confirm_reject_happy_path(
         lambda: StaticPemVerifier(rsa_keypair["public_pem"]),
     )
     store = InMemoryConfirmationStore()
-    record = store.create(
-        user_id="user-1",
-        store_id=STORE_ID,
-        session_id=SESSION_ID,
-        type=CONFIRMATION_TYPE_INVOICE_RELEASE,
-        draft_id=INVOICE_ID,
-        summary={"total": 10},
-        tool_name="release_invoice",
-        arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
+    record = asyncio.run(
+        store.create(
+            user_id="user-1",
+            store_id=STORE_ID,
+            session_id=SESSION_ID,
+            type=CONFIRMATION_TYPE_INVOICE_RELEASE,
+            draft_id=INVOICE_ID,
+            summary={"total": 10},
+            tool_name="release_invoice",
+            arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
+        )
     )
     token = make_access_token(rsa_keypair["private_pem"], sub="user-1")
     with TestClient(create_app()) as client:
@@ -125,15 +128,17 @@ def test_confirm_expired(
     )
     clock = {"now": 1_000.0}
     store = InMemoryConfirmationStore(ttl_seconds=1, clock=lambda: clock["now"])
-    record = store.create(
-        user_id="user-1",
-        store_id=STORE_ID,
-        session_id=SESSION_ID,
-        type=CONFIRMATION_TYPE_INVOICE_RELEASE,
-        draft_id=INVOICE_ID,
-        summary={},
-        tool_name="release_invoice",
-        arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
+    record = asyncio.run(
+        store.create(
+            user_id="user-1",
+            store_id=STORE_ID,
+            session_id=SESSION_ID,
+            type=CONFIRMATION_TYPE_INVOICE_RELEASE,
+            draft_id=INVOICE_ID,
+            summary={},
+            tool_name="release_invoice",
+            arguments={"storeId": STORE_ID, "invoiceId": INVOICE_ID},
+        )
     )
     clock["now"] = 1_010.0
     token = make_access_token(rsa_keypair["private_pem"], sub="user-1")

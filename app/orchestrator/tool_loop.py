@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 
 from app.config import Settings
-from app.confirmations import InMemoryConfirmationStore, PendingConfirmationRecord
+from app.confirmations import ConfirmationStore, PendingConfirmationRecord
 from app.core.exceptions import AppError
 from app.executors.tool_executor import ToolExecutor
 from app.orchestrator.ai_gateway import AiGateway
@@ -65,7 +65,7 @@ async def run_tool_loop(
     validator: ToolCallValidator,
     registry: ToolRegistry,
     executor: ToolExecutor,
-    confirmations: InMemoryConfirmationStore,
+    confirmations: ConfirmationStore,
     settings: Settings,
     generation: GenerationResponse,
     messages: list[ChatMessage],
@@ -162,7 +162,7 @@ async def run_tool_loop(
             if result.tool == "create_invoice_draft" and result.success
         )
         # Sensitive calls are staged (not executed) — placeholder results.
-        staged_sensitive = stage_from_sensitive_calls(
+        staged_sensitive = await stage_from_sensitive_calls(
             confirmations,
             user_id=user_id,
             store_id=store_id,
@@ -223,10 +223,19 @@ async def run_tool_loop(
                 )
             )
 
-        # Once a confirmation is staged, or on the last round, force a
-        # final grounded answer instead of allowing more tool calls.
+        # Once a confirmation is staged, a draft write succeeded, or on
+        # the last round, force a final grounded answer (no tool schemas
+        # on that call — ~2.3k tokens saved after invoice drafts).
+        draft_done = any(
+            result.success
+            and result.tool
+            in {"create_invoice_draft", "update_invoice_draft"}
+            for result in write_results
+        )
         allow_more_tools = (
-            staged_sensitive is None and round_index < max_rounds - 1
+            staged_sensitive is None
+            and round_index < max_rounds - 1
+            and not draft_done
         )
         generation = await gateway.continue_or_synthesize(
             conversation,

@@ -47,10 +47,10 @@ Implemented:
   `toolResults` (RAG docs stay in the system prompt); skipped when there were
   no tool calls; capped by `AI_CHAT_SYNTHESIS_MAX_TOKENS` (default `512`);
   synthesis output passes through `OutputGuard`
-- **In-memory session memory** keyed by `sessionId` + `userId` + `storeId`
+- **Session memory** keyed by `sessionId` + `userId` + `storeId`
   (sliding TTL, max turns + token budget); cross-user/store reuse → `403`
   `SESSION_FORBIDDEN`; prior turns (+ compact tool context) load into the next
-  generation. Process-local until Redis (B1)
+  generation. Redis-backed when `AI_REDIS_URL` is set (else in-process)
 - Tool-call JSON Schema validation with one repair retry
 - **Admin model switch** (`GET`/`PUT /api/v1/admin/model`, platform admin
   only): runtime provider/model selection persisted in Redis
@@ -73,7 +73,7 @@ Not implemented yet:
 
 - Claude / Gemini / DeepSeek adapters
 - `/voice`, `/image`, or `/document` APIs
-- Redis-backed sessions / rate limiting, durable Postgres history, queues, STT, TTS
+- Rate limiting, durable Postgres history, queues, STT, TTS
 
 The service does not access DragBizz databases directly. Tool handlers call
 approved business-service APIs with caller identity and store scope preserved.
@@ -119,13 +119,14 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_RAG_TOP_K` | Max retrieved chunks per question (default `5`) |
 | `AI_RAG_SCORE_THRESHOLD` | Min cosine score; lower-scoring chunks dropped (default `0.3`) |
 | `AI_RAG_CONTEXT_MAX_TOKENS` | Token budget for the docs block in the prompt (default `2000`) |
+| `AI_RAG_CONTEXT_MAX_TOKENS_ACTION` | Smaller docs budget for action/live turns (default `512`) |
 | `AI_INPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
 | `AI_OUTPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
 | `AI_SESSION_TTL_SECONDS` | Sliding session TTL (default `1800`) |
 | `AI_SESSION_MAX_TURNS` | Max stored user/assistant pairs (default `10`) |
 | `AI_SESSION_HISTORY_MAX_TOKENS` | History token budget for LLM context (default `2000`) |
 | `AI_IDEMPOTENCY_TTL_SECONDS` | Write-tool result cache TTL (default `86400`) |
-| `AI_REDIS_URL` | Persists admin model selection + usage counters (empty = in-process) |
+| `AI_REDIS_URL` | Persists model selection, usage, sessions, idempotency, confirmations (empty = in-process) |
 | `AI_OPENAI_ALLOWED_MODELS` | Extra models admins may activate (default model always allowed) |
 | `AI_TENANT_DAILY_TOKEN_CAP` | Per-store daily token hard cap (`0` = disabled) |
 | `AI_TENANT_DAILY_COST_CAP_USD` | Per-store daily cost hard cap (`0` = disabled) |
@@ -258,7 +259,7 @@ pure module tests; `tests/eval/` for routing cases.
 docker compose up --build
 ```
 
-Compose starts **Redis** (model selection + usage counter persistence),
+Compose starts **Redis** (model selection, usage, sessions, idempotency, confirmations),
 **Qdrant** (`localhost:6333`), and the AI service (`localhost:4004`).
 The AI container gets `AI_QDRANT_URL=http://qdrant:6333`. For local (non-Docker) runs,
 set `AI_QDRANT_URL=http://localhost:6333` and start Qdrant via compose:

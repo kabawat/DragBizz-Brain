@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from app.config import Settings
 from app.core.exceptions import AppError
+from app.orchestrator.rag_budget import rag_docs_budget_for_question
 from app.prompts.system.chat import (
     build_chat_system_prompt,
     build_documentation_block,
@@ -60,6 +61,11 @@ async def build_chat_context(
         store_id=store_id,
     )
     retrieved = await retrieve_documentation(retriever, question)
+    docs_budget = rag_docs_budget_for_question(
+        question,
+        full_budget=settings.rag_context_max_tokens,
+        action_budget=settings.rag_context_max_tokens_action,
+    )
     messages = [
         ChatMessage(
             role="system",
@@ -69,7 +75,7 @@ async def build_chat_context(
                 tools=tools,
                 documentation=build_documentation_block(
                     retrieved,
-                    max_tokens=settings.rag_context_max_tokens,
+                    max_tokens=docs_budget,
                 ),
             ),
         ),

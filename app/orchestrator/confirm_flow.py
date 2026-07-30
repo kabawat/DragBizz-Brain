@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from app.confirmations import InMemoryConfirmationStore
+from app.confirmations import ConfirmationStore
 from app.executors.tool_executor import ToolExecutor
 from app.schemas.chat import ChatResponse, ConfirmRequest
 from app.schemas.tool import ToolCall
@@ -20,13 +20,13 @@ async def handle_confirm(
     request_id: str,
     store_id: str,
     access_token: str,
-    confirmations: InMemoryConfirmationStore,
+    confirmations: ConfirmationStore,
     sessions: SessionStore,
     executor: ToolExecutor,
     guard_output: GuardOutputFn,
 ) -> ChatResponse:
     if body.action == "reject":
-        record = confirmations.reject(
+        record = await confirmations.reject(
             body.confirmation_id,
             user_id=user_id,
             store_id=store_id,
@@ -57,7 +57,7 @@ async def handle_confirm(
             model="",
         )
 
-    record = confirmations.consume(
+    record = await confirmations.consume(
         body.confirmation_id,
         user_id=user_id,
         store_id=store_id,

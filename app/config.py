@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     rag_top_k: int = Field(default=5, ge=1, le=20)
     rag_score_threshold: float = Field(default=0.3, ge=0, le=1)
     rag_context_max_tokens: int = Field(default=2000, ge=100, le=8000)
+    # Smaller docs budget for action/live turns ("bill banao") that rarely
+    # need the full how-to documentation block.
+    rag_context_max_tokens_action: int = Field(default=512, ge=50, le=8000)
     input_guard_mode: Literal["off", "log", "enforce"] = "log"
     output_guard_mode: Literal["off", "log", "enforce"] = "log"
     # Short-lived multi-turn memory (in-process until Redis).
@@ -65,8 +68,8 @@ class Settings(BaseSettings):
     # Chat pricing for per-request cost metrics (defaults: gpt-4o-mini).
     chat_input_usd_per_million_tokens: float = Field(default=0.15, ge=0)
     chat_output_usd_per_million_tokens: float = Field(default=0.60, ge=0)
-    # Persistence for admin model selection + per-tenant usage counters.
-    # Unset = in-process stores (single instance, lost on restart).
+    # Persistence for model selection, usage, sessions, idempotency,
+    # and confirmations. Unset = in-process stores (single instance).
     redis_url: str | None = None
     # Models a platform admin may activate (the configured default model
     # is always allowed). Guards against arbitrary/expensive model strings.

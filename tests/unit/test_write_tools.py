@@ -553,7 +553,7 @@ def test_idempotency_key_stable() -> None:
         session_id=SESSION_ID, tool_name="create_customer", arguments=args
     )
     assert a == b
-    assert a.startswith(f"ai:{SESSION_ID}:create_customer:")
+    assert a.startswith(f"ai:idempotency:{SESSION_ID}:create_customer:")
 
 
 def test_only_one_invoice_draft_per_turn() -> None:
