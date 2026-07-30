@@ -30,6 +30,17 @@ Implemented:
   Documentation → how-to/features only) + "live/current" tool descriptions.
   Eval set: `tests/eval/routing_cases.json` (20 questions, also the seed for
   manual live-LLM routing evals)
+- **Dynamic tool loading**: cue-based tool subsets on the first LLM call
+  (`tool_selector.py`) — FAQ/docs/small-talk get no tool schemas; sale /
+  stock / product / payment / customer / invoice get a family subset;
+  unknown questions fail open to all registered tools
+- **Intent-based prompt assembly**: `resolve_turn_intent` aligns with
+  `routing_cases.json` (`tools`/`docs`/`both`/`neither`); system rules and
+  RAG retrieval are gated by that label + the offered tool set
+- **Compressed system prompt**: write / sensitive / grounding / invoice-chaining
+  rules kept; formatting fluff and long examples removed
+- **FAQ RAG budget**: docs/how-to/both use `AI_RAG_CONTEXT_MAX_TOKENS` (default
+  `1000`); budget selected from routing via `rag_docs_budget_for_routing`
 - **Output guard** (`app/guards/output_guard.py`): last check before the
   response leaves — secret/token/credential scrub and "currency amounts must
   come from tool results" validation. Modes via `AI_OUTPUT_GUARD_MODE`: `off`,
@@ -118,8 +129,8 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_EMBEDDING_DIMENSIONS` | Vector size for collection create (default `1536`) |
 | `AI_RAG_TOP_K` | Max retrieved chunks per question (default `5`) |
 | `AI_RAG_SCORE_THRESHOLD` | Min cosine score; lower-scoring chunks dropped (default `0.3`) |
-| `AI_RAG_CONTEXT_MAX_TOKENS` | Token budget for the docs block in the prompt (default `2000`) |
-| `AI_RAG_CONTEXT_MAX_TOKENS_ACTION` | Smaller docs budget for action/live turns (default `512`) |
+| `AI_RAG_CONTEXT_MAX_TOKENS` | FAQ / how-to / both docs-block budget (default `1000`) |
+| `AI_RAG_CONTEXT_MAX_TOKENS_ACTION` | Smaller docs budget for pure action/live turns (default `512`) |
 | `AI_INPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
 | `AI_OUTPUT_GUARD_MODE` | `off` / `log` (default) / `enforce` — **must be `enforce` in production** |
 | `AI_SESSION_TTL_SECONDS` | Sliding session TTL (default `1800`) |

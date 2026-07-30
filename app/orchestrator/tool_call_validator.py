@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -19,13 +20,16 @@ class ToolCallValidator:
         tool_calls: list[ToolCall],
         *,
         store_id: str,
+        allowed_names: Collection[str] | None = None,
     ) -> list[ToolCall]:
         if not tool_calls:
             return []
 
         validated: list[ToolCall] = []
         for call in tool_calls:
-            definition = self._require_definition(call.name)
+            definition = self._require_definition(
+                call.name, allowed_names=allowed_names
+            )
             arguments = dict(call.arguments)
             self._validate_schema(definition, arguments)
             self._validate_store_id(arguments, store_id)
@@ -39,16 +43,30 @@ class ToolCallValidator:
         tool_calls: list[ToolCall],
         *,
         store_id: str,
+        allowed_names: Collection[str] | None = None,
     ) -> list[str]:
         errors: list[str] = []
         for call in tool_calls:
             try:
-                self.validate([call], store_id=store_id)
+                self.validate(
+                    [call], store_id=store_id, allowed_names=allowed_names
+                )
             except AppError as exc:
                 errors.append(f"{call.name}: {exc.message}")
         return errors
 
-    def _require_definition(self, name: str) -> ToolDefinition:
+    def _require_definition(
+        self,
+        name: str,
+        *,
+        allowed_names: Collection[str] | None,
+    ) -> ToolDefinition:
+        if allowed_names is not None and name not in allowed_names:
+            raise AppError(
+                code="TOOL_NOT_ALLOWED",
+                message=f"Tool '{name}' is not allowlisted",
+                status_code=400,
+            )
         try:
             return self._registry.get_definition(name)
         except KeyError as exc:

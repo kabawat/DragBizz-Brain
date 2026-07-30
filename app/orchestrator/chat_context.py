@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 from app.config import Settings
 from app.core.exceptions import AppError
-from app.orchestrator.rag_budget import rag_docs_budget_for_question
+from app.orchestrator.rag_budget import rag_docs_budget_for_routing
+from app.orchestrator.tool_selector import RoutingLabel, should_retrieve_docs
 from app.prompts.system.chat import (
     build_chat_system_prompt,
     build_documentation_block,
@@ -54,17 +55,24 @@ async def build_chat_context(
     user_id: str,
     store_id: str,
     tools: list[ToolDefinition],
+    routing: RoutingLabel = "unknown",
 ) -> ChatContext:
     prior_turns = await sessions.load_history(
         session_id=session_id,
         user_id=user_id,
         store_id=store_id,
     )
-    retrieved = await retrieve_documentation(retriever, question)
-    docs_budget = rag_docs_budget_for_question(
-        question,
-        full_budget=settings.rag_context_max_tokens,
+    retrieved: list[RetrievedChunk] = []
+    if should_retrieve_docs(routing):
+        retrieved = await retrieve_documentation(retriever, question)
+    docs_budget = rag_docs_budget_for_routing(
+        routing,
+        faq_budget=settings.rag_context_max_tokens,
         action_budget=settings.rag_context_max_tokens_action,
+    )
+    documentation = build_documentation_block(
+        retrieved,
+        max_tokens=docs_budget,
     )
     messages = [
         ChatMessage(
@@ -73,10 +81,8 @@ async def build_chat_context(
                 language=language,
                 store_id=store_id,
                 tools=tools,
-                documentation=build_documentation_block(
-                    retrieved,
-                    max_tokens=docs_budget,
-                ),
+                documentation=documentation,
+                routing=routing,
             ),
         ),
         *turns_to_messages(prior_turns),

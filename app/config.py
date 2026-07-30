@@ -51,9 +51,10 @@ class Settings(BaseSettings):
     embedding_dimensions: int = Field(default=1536, ge=1, le=4096)
     rag_top_k: int = Field(default=5, ge=1, le=20)
     rag_score_threshold: float = Field(default=0.3, ge=0, le=1)
-    rag_context_max_tokens: int = Field(default=2000, ge=100, le=8000)
-    # Smaller docs budget for action/live turns ("bill banao") that rarely
-    # need the full how-to documentation block.
+    # FAQ / how-to / both docs block budget (~800–1000 target).
+    rag_context_max_tokens: int = Field(default=1000, ge=100, le=8000)
+    # Smaller docs budget for pure action/live turns (usually unused when
+    # retrieval is skipped for tools routing).
     rag_context_max_tokens_action: int = Field(default=512, ge=50, le=8000)
     input_guard_mode: Literal["off", "log", "enforce"] = "log"
     output_guard_mode: Literal["off", "log", "enforce"] = "log"

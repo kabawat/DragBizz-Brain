@@ -65,7 +65,8 @@ dragbizz-ai/
 │   ├── orchestrator/
 │   │   ├── chat_service.py    # thin coordinator: handle / confirm
 │   │   ├── chat_context.py    # session history + RAG + message assembly
-│   │   ├── rag_budget.py      # action vs how-to docs token budget
+│   │   ├── rag_budget.py      # routing → FAQ vs action docs token budget
+│   │   ├── tool_selector.py   # resolve_turn_intent → routing + tool subset
 │   │   ├── tool_loop.py       # bounded multi-round tool loop
 │   │   ├── confirm_flow.py    # approve / reject confirmation path
 │   │   ├── confirmation.py    # stage pending invoice confirmations

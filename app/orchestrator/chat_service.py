@@ -21,6 +21,7 @@ from app.orchestrator.confirmation import (
 )
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.orchestrator.tool_loop import run_tool_loop
+from app.orchestrator.tool_selector import resolve_turn_intent
 from app.prompts.fallback import get_fallback_message
 from app.prompts.refusal import get_refusal_message
 from app.rag.retriever import RetrievedChunk, Retriever
@@ -101,7 +102,9 @@ class ChatService:
                 model="",
             )
 
-        tools = list(self._registry.definitions())
+        available = {definition.name for definition in self._registry.definitions()}
+        intent = resolve_turn_intent(body.text, available=available)
+        tools = list(self._registry.definitions_for(intent.tool_names))
         context = await build_chat_context(
             sessions=self._sessions,
             retriever=self._retriever,
@@ -112,10 +115,13 @@ class ChatService:
             user_id=user_id,
             store_id=store_id,
             tools=tools,
+            routing=intent.routing,
         )
 
         def _describe_errors(tool_calls: list, sid: str) -> list[str]:
-            return self._validator.describe_errors(tool_calls, store_id=sid)
+            return self._validator.describe_errors(
+                tool_calls, store_id=sid, allowed_names=intent.tool_names
+            )
 
         generation = await self._gateway.generate_with_optional_parse_repair(
             context.messages,

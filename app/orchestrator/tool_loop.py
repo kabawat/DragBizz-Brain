@@ -88,14 +88,19 @@ async def run_tool_loop(
     successful_drafts = 0
     executed_signatures: set[tuple[str, str]] = set()
     max_rounds = settings.chat_max_tool_rounds
+    allowed_names = frozenset(tool.name for tool in tools)
 
     def _describe_errors(tool_calls: list[ToolCall], sid: str) -> list[str]:
-        return validator.describe_errors(tool_calls, store_id=sid)
+        return validator.describe_errors(
+            tool_calls, store_id=sid, allowed_names=allowed_names
+        )
 
     for round_index in range(max_rounds):
         try:
             tool_calls = validator.validate(
-                generation.tool_calls, store_id=store_id
+                generation.tool_calls,
+                store_id=store_id,
+                allowed_names=allowed_names,
             )
         except AppError as exc:
             if exc.code not in {"TOOL_ARGS_INVALID", "TOOL_NOT_ALLOWED"}:
@@ -112,7 +117,9 @@ async def run_tool_loop(
             )
             generations.append(generation)
             tool_calls = validator.validate(
-                generation.tool_calls, store_id=store_id
+                generation.tool_calls,
+                store_id=store_id,
+                allowed_names=allowed_names,
             )
 
         if not tool_calls:

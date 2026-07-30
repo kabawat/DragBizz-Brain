@@ -22,7 +22,9 @@ from app.schemas.chat import ChatRequest, GenerationRequest, GenerationResponse
 from app.tools.registry import ToolRegistry
 
 STORE_ID = "507f1f77bcf86cd799439011"
-QUESTION = "aaj ki sale kitni hui?"
+# Live-sale → tools routing (RAG skipped). How-to → docs routing (RAG runs).
+QUESTION_TOOLS = "aaj ki sale kitni hui?"
+QUESTION_DOCS = "POS se bill kaise banau?"
 
 
 # ------------------------------------------------------------ JsonFormatter
@@ -68,7 +70,7 @@ class _StaticProvider(ModelProvider):
         )
 
 
-def _run_chat(retriever) -> None:
+def _run_chat(retriever, *, text: str = QUESTION_DOCS) -> None:
     provider = _StaticProvider()
     router = ModelRouter()
     router.register(provider)
@@ -83,7 +85,7 @@ def _run_chat(retriever) -> None:
     )
     asyncio.run(
         service.handle(
-            ChatRequest(text=QUESTION, sessionId="s1", storeId=STORE_ID),
+            ChatRequest(text=text, sessionId="s1", storeId=STORE_ID),
             user={"sub": "u1"},
             request_id="r1",
             store_id=STORE_ID,
@@ -137,10 +139,10 @@ def test_metrics_never_contain_question_or_answer_text(
     retriever = MagicMock()
     retriever.retrieve = AsyncMock(return_value=[])
     with caplog.at_level(logging.INFO):
-        _run_chat(retriever)
+        _run_chat(retriever, text=QUESTION_TOOLS)
 
     blob = json.dumps(_metrics_record(caplog).metrics)
-    assert QUESTION not in blob
+    assert QUESTION_TOOLS not in blob
     assert "POS kholen" not in blob
     assert "u1" not in blob
 
@@ -170,7 +172,9 @@ def test_metrics_cost_none_when_provider_omits_usage(
     with caplog.at_level(logging.INFO):
         asyncio.run(
             service.handle(
-                ChatRequest(text=QUESTION, sessionId="s1", storeId=STORE_ID),
+                ChatRequest(
+                    text=QUESTION_TOOLS, sessionId="s1", storeId=STORE_ID
+                ),
                 user={"sub": "u1"},
                 request_id="r1",
                 store_id=STORE_ID,

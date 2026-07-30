@@ -40,6 +40,41 @@ def test_validator_rejects_unknown_tool(validator: ToolCallValidator) -> None:
     assert exc_info.value.code == "TOOL_NOT_ALLOWED"
 
 
+def test_validator_rejects_tool_outside_turn_allowlist(
+    validator: ToolCallValidator,
+) -> None:
+    with pytest.raises(AppError) as exc_info:
+        validator.validate(
+            [
+                ToolCall(
+                    id="1",
+                    name="today_sale",
+                    arguments={"storeId": STORE_ID},
+                )
+            ],
+            store_id=STORE_ID,
+            allowed_names=frozenset({"stock_summary"}),
+        )
+    assert exc_info.value.code == "TOOL_NOT_ALLOWED"
+
+
+def test_validator_accepts_tool_in_turn_allowlist(
+    validator: ToolCallValidator,
+) -> None:
+    calls = validator.validate(
+        [
+            ToolCall(
+                id="1",
+                name="today_sale",
+                arguments={"storeId": STORE_ID},
+            )
+        ],
+        store_id=STORE_ID,
+        allowed_names=frozenset({"today_sale"}),
+    )
+    assert calls[0].name == "today_sale"
+
+
 def test_validator_rejects_invalid_args(validator: ToolCallValidator) -> None:
     with pytest.raises(AppError) as exc_info:
         validator.validate(

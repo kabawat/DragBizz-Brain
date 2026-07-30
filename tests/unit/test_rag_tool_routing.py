@@ -4,8 +4,8 @@ Runs every case in ``tests/eval/routing_cases.json`` through ChatService with
 a scripted fake provider. The provider simulates the *expected* routing for
 each case; the assertions verify the deterministic parts of the pipeline:
 
-- the system prompt always carries the tools-vs-docs routing rules,
-- all read tools stay offered to the model even when a docs block is present,
+- intent-based prompt assembly matches tools/docs/both/neither,
+- dynamic tool loading offers only the matched subset (or none for docs/neither),
 - expected tool calls still validate and execute with docs in the prompt
   (the "docs distract the model from tools" regression from the phase doc),
 - docs-only and small-talk answers produce no tool results.
@@ -33,6 +33,7 @@ from app.providers.base import ModelProvider
 from app.rag.retriever import RetrievedChunk
 from app.schemas.chat import ChatRequest, GenerationRequest, GenerationResponse
 from app.schemas.tool import ToolCall, ToolResult
+from app.orchestrator.tool_selector import select_tools_for_question
 from app.tools.definitions import READ_TOOL_DEFINITIONS
 from app.tools.registry import ToolRegistry
 
@@ -155,11 +156,26 @@ def test_routing_case(case: dict[str, Any]) -> None:
     request = provider.requests[0]
     system = request.messages[0].content
 
-    # Routing rules are always in the system prompt.
-    assert "must come from tool calls only" in system
+    routing = case["expected_routing"]
+    if routing in {"tools", "both"}:
+        assert "must come from tool calls only" in system
+    elif routing == "docs":
+        assert "must come from tool calls only" not in system
+        assert "Never invent, guess, or 'pick for them'" not in system
+    else:
+        assert "You may only call these tools" not in system
+        assert "one short warm line" in system
 
-    # All read tools stay offered to the model, docs block or not.
-    assert {t.name for t in (request.tools or [])} == ALL_TOOL_NAMES
+    offered = {t.name for t in (request.tools or [])}
+    expected_offered = select_tools_for_question(
+        case["question"], available=ALL_TOOL_NAMES
+    )
+    assert offered == expected_offered
+    if routing in {"docs", "neither"}:
+        assert offered == set()
+    else:
+        assert set(case["expected_tools"]) <= offered
+        assert offered < ALL_TOOL_NAMES
 
     if case["doc_source"]:
         assert f"source={case['doc_source']}" in system
@@ -168,7 +184,7 @@ def test_routing_case(case: dict[str, Any]) -> None:
         assert "Documentation:" not in system
 
     executed = [r.tool for r in response.tool_results]
-    if case["expected_routing"] in {"tools", "both"}:
+    if routing in {"tools", "both"}:
         # Tool path must survive with docs present — no regression.
         assert executed == case["expected_tools"]
         assert all(r.success for r in response.tool_results)

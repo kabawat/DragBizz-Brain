@@ -31,9 +31,22 @@ Conversational Co-Partner for store questions and confirmed sensitive actions, u
   `update_invoice_draft`, the next LLM call is forced to synthesis
   (`tools` omitted) to skip re-sending tool schemas.
 - `search_product` / `search_customer` return compact projections into the
-  LLM context (not full retailer serializer docs). Action/live questions
-  use a smaller RAG docs budget (`AI_RAG_CONTEXT_MAX_TOKENS_ACTION`,
-  default 512); how-to questions keep `AI_RAG_CONTEXT_MAX_TOKENS`.
+  LLM context (not full retailer serializer docs). FAQ / how-to / both use
+  `AI_RAG_CONTEXT_MAX_TOKENS` (default 1000); pure action/live routing uses
+  `AI_RAG_CONTEXT_MAX_TOKENS_ACTION` (default 512) via
+  `rag_docs_budget_for_routing`.
+- **Dynamic tool loading** (`app/orchestrator/tool_selector.py`): first LLM
+  call gets only the matched tool family (sale / stock / product / payment /
+  customer / invoice), or **no tools** for FAQ/docs/small-talk. Unknown
+  questions fail open to the full registry. The turn allowlist is enforced
+  by `ToolCallValidator` so hallucinated out-of-subset calls cannot execute.
+- **Intent-based prompt assembly**: same cues classify
+  `tools` / `docs` / `both` / `neither` / `unknown`. System prompt includes
+  write / sensitive / invoice-chaining rules only when those tools are
+  offered; docs/neither omit tool machinery. RAG retrieval is skipped for
+  pure `tools` and `neither` turns.
+- **Compressed system prompt**: essential grounding / write / sensitive /
+  invoice-chaining kept; long formatting examples and repeated filler cut.
 - Reply links are normalized: any invented domain in front of a
   `/dashboard/...` openPath is stripped so links stay relative/in-app
 - RAG + input/output guards + synthesis + session history

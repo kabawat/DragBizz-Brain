@@ -92,11 +92,15 @@ def _service(
     )
 
 
-def _handle(service: ChatService) -> Any:
+def _handle(
+    service: ChatService,
+    *,
+    text: str = "Aaj ki sale kitni hai?",
+) -> Any:
     return asyncio.run(
         service.handle(
             ChatRequest(
-                text="Aaj ki sale kitni hai?",
+                text=text,
                 sessionId="s1",
                 storeId=STORE_ID,
                 language="hi-IN",
@@ -204,7 +208,10 @@ def test_multi_round_chain_completes_in_one_turn() -> None:
             [ToolResult(tool="stock_summary", success=True, data={"totals": {}})],
         ]
     )
-    response = _handle(service)
+    response = _handle(
+        service,
+        text="aaj ki sale batao aur stock me kitna maal hai?",
+    )
 
     assert len(provider.requests) == 3
     assert [call.name for call in response.tool_calls] == [
@@ -310,7 +317,10 @@ def test_successful_draft_forces_synthesis_without_tools() -> None:
             chat_max_tool_rounds=3,
         ),
     )
-    response = _handle(service)
+    response = _handle(
+        service,
+        text="Ramesh ke liye atta ka bill banao",
+    )
 
     assert response.tool_results[0].tool == "create_invoice_draft"
     assert len(provider.requests) == 2

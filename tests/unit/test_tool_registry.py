@@ -42,3 +42,24 @@ def test_registry_rejects_unknown_tool() -> None:
 
     with pytest.raises(KeyError, match="not registered"):
         registry.get_handler("delete_everything")
+
+
+def test_definitions_for_returns_sorted_subset() -> None:
+    registry = ToolRegistry()
+    sale = ToolDefinition(
+        name="today_sale",
+        description="Today sales",
+        risk=ToolRisk.READ,
+        parameters={"type": "object", "properties": {}},
+    )
+    stock = ToolDefinition(
+        name="stock_summary",
+        description="Stock summary",
+        risk=ToolRisk.READ,
+        parameters={"type": "object", "properties": {}},
+    )
+    registry.register_definition(sale)
+    registry.register_definition(stock)
+
+    assert registry.definitions_for({"stock_summary", "missing"}) == (stock,)
+    assert registry.definitions_for([]) == ()

@@ -18,6 +18,7 @@ from app.providers.base import ModelProvider
 from app.rag.chunker import estimate_tokens
 from app.rag.retriever import RetrievedChunk
 from app.schemas.chat import ChatRequest, GenerationRequest, GenerationResponse
+from app.tools.definitions import WRITE_TOOL_DEFINITIONS
 from app.tools.registry import ToolRegistry
 
 STORE_ID = "507f1f77bcf86cd799439011"
@@ -36,7 +37,11 @@ def test_system_prompt_without_documentation_has_no_placeholder() -> None:
 
 def test_system_prompt_refuses_invented_write_inputs() -> None:
     prompt = build_chat_system_prompt(
-        language="en", store_id=STORE_ID, tools=[], documentation=""
+        language="en",
+        store_id=STORE_ID,
+        tools=list(WRITE_TOOL_DEFINITIONS),
+        documentation="",
+        routing="tools",
     )
     assert "Never invent, guess, or 'pick for them'" in prompt
     assert "do NOT call the write tool" in prompt
@@ -50,7 +55,11 @@ def test_system_prompt_with_documentation_adds_block_and_rule() -> None:
         [_chunk(0.9, "POS needs a paid plan.", "invoice/pos.md")], max_tokens=2000
     )
     prompt = build_chat_system_prompt(
-        language="hi", store_id=STORE_ID, tools=[], documentation=docs
+        language="hi",
+        store_id=STORE_ID,
+        tools=[],
+        documentation=docs,
+        routing="docs",
     )
     assert "Never answer live numbers from Documentation" in prompt
     assert "Documentation:\n[1] source=invoice/pos.md\nPOS needs a paid plan." in prompt

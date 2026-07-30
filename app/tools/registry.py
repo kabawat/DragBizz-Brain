@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
 from app.schemas.tool import ToolDefinition, ToolResult
@@ -38,3 +38,7 @@ class ToolRegistry:
         return tuple(
             self._definitions[name] for name in sorted(self._definitions)
         )
+
+    def definitions_for(self, names: Iterable[str]) -> tuple[ToolDefinition, ...]:
+        selected = set(names) & self._definitions.keys()
+        return tuple(self._definitions[name] for name in sorted(selected))

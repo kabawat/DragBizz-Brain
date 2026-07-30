@@ -1,72 +1,51 @@
-"""Unit tests for action vs how-to RAG documentation budget."""
+"""Unit tests for routing-based RAG documentation budget."""
 
-from app.orchestrator.rag_budget import rag_docs_budget_for_question
+from app.orchestrator.rag_budget import rag_docs_budget_for_routing
 
-FULL = 2000
+FAQ = 1000
 ACTION = 512
 
 
-def test_howto_keeps_full_budget() -> None:
+def test_docs_routing_uses_faq_budget() -> None:
     assert (
-        rag_docs_budget_for_question(
-            "POS se bill kaise banau?",
-            full_budget=FULL,
-            action_budget=ACTION,
+        rag_docs_budget_for_routing(
+            "docs", faq_budget=FAQ, action_budget=ACTION
         )
-        == FULL
+        == FAQ
     )
 
 
-def test_action_bill_uses_action_budget() -> None:
+def test_both_routing_uses_faq_budget() -> None:
     assert (
-        rag_docs_budget_for_question(
-            "Ramesh ke liye atta ka bill banao",
-            full_budget=FULL,
-            action_budget=ACTION,
+        rag_docs_budget_for_routing(
+            "both", faq_budget=FAQ, action_budget=ACTION
+        )
+        == FAQ
+    )
+
+
+def test_unknown_routing_uses_faq_budget() -> None:
+    assert (
+        rag_docs_budget_for_routing(
+            "unknown", faq_budget=FAQ, action_budget=ACTION
+        )
+        == FAQ
+    )
+
+
+def test_tools_routing_uses_action_budget() -> None:
+    assert (
+        rag_docs_budget_for_routing(
+            "tools", faq_budget=FAQ, action_budget=ACTION
         )
         == ACTION
     )
 
 
-def test_live_sale_uses_action_budget() -> None:
+def test_action_budget_capped_by_faq() -> None:
     assert (
-        rag_docs_budget_for_question(
-            "aaj ki sale kitni hui?",
-            full_budget=FULL,
-            action_budget=ACTION,
-        )
-        == ACTION
-    )
-
-
-def test_howto_wins_when_both_match() -> None:
-    assert (
-        rag_docs_budget_for_question(
-            "invoice kaise banao steps batao",
-            full_budget=FULL,
-            action_budget=ACTION,
-        )
-        == FULL
-    )
-
-
-def test_unknown_defaults_to_full_budget() -> None:
-    assert (
-        rag_docs_budget_for_question(
-            "Namaste, madad chahiye",
-            full_budget=FULL,
-            action_budget=ACTION,
-        )
-        == FULL
-    )
-
-
-def test_action_budget_capped_by_full() -> None:
-    assert (
-        rag_docs_budget_for_question(
-            "bill banao",
-            full_budget=400,
-            action_budget=512,
+        rag_docs_budget_for_routing(
+            "tools", faq_budget=400, action_budget=512
         )
         == 400
     )
