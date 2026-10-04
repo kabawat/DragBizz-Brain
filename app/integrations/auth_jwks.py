@@ -31,9 +31,9 @@ class JwksTokenVerifier:
     ) -> None:
         self._settings = settings or get_settings()
         self._jwks_client = jwks_client or PyJWKClient(
-            self._settings.jwks_url,
+            self._settings.jwt.url,
             cache_keys=True,
-            lifespan=self._settings.jwks_cache_ttl_seconds,
+            lifespan=self._settings.jwt.cache_ttl_seconds,
         )
 
     async def verify(
@@ -46,10 +46,10 @@ class JwksTokenVerifier:
             payload = jwt.decode(
                 token,
                 signing_key.key,
-                algorithms=self._settings.jwt_algorithms,
-                audience=self._settings.jwt_audience,
-                issuer=self._settings.jwt_issuer,
-                leeway=self._settings.jwt_clock_skew_seconds,
+                algorithms=self._settings.jwt.algorithms,
+                audience=self._settings.jwt.audience,
+                issuer=self._settings.jwt.issuer,
+                leeway=self._settings.jwt.clock_skew_seconds,
                 options={"require": ["exp", "iat", "sub"]},
             )
         except jwt.ExpiredSignatureError as exc:
@@ -81,7 +81,7 @@ def get_token_verifier(settings: Settings | None = None) -> JwksTokenVerifier:
     global _verifier, _verifier_created_at
     settings = settings or get_settings()
     now = time.monotonic()
-    ttl = settings.jwks_cache_ttl_seconds
+    ttl = settings.jwt.cache_ttl_seconds
     if _verifier is None or now - _verifier_created_at > ttl:
         _verifier = JwksTokenVerifier(settings)
         _verifier_created_at = now

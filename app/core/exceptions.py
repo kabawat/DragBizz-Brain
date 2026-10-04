@@ -9,11 +9,21 @@ logger = logging.getLogger(__name__)
 
 
 class AppError(Exception):
-    def __init__(self, code: str, message: str, status_code: int = 400) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status_code: int = 400,
+        *,
+        retryable: bool = False,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.status_code = status_code
+        # True when the provider never produced a usable completion
+        # (timeout, connection failure, or overloaded/5xx).
+        self.retryable = retryable
 
 
 def _error_payload(request: Request, code: str, message: str) -> dict:

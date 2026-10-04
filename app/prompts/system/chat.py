@@ -56,8 +56,8 @@ def build_chat_system_prompt(
 ) -> str:
     """Assemble system rules for the turn's routing + offered tools.
 
-    ``routing`` is ``tools`` / ``docs`` / ``both`` / ``neither`` / ``unknown``
-    (see ``tests/eval/routing_cases.json``). Write / sensitive /
+    ``routing`` is ``tools`` / ``docs`` / ``both`` / ``neither`` / ``unknown``.
+    Write / sensitive /
     invoice-chaining rules are included only when those tools are offered.
     """
     tool_names = {tool.name for tool in tools}

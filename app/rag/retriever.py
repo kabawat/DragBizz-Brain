@@ -33,8 +33,8 @@ class Retriever:
         self._cache: RagCache = cache or NoOpRagCache()
 
     async def retrieve(self, question: str) -> list[RetrievedChunk]:
-        top_k = self._settings.rag_top_k
-        score_threshold = self._settings.rag_score_threshold
+        top_k = self._settings.rag.top_k
+        score_threshold = self._settings.rag.score_threshold
         cached = await self._cache.get_chunks(
             question, top_k=top_k, score_threshold=score_threshold
         )

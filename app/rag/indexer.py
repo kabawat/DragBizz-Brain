@@ -89,7 +89,7 @@ async def index_knowledge(
 async def _run_cli(settings: Settings, root: Path) -> IndexSummary:
     vector_store = VectorStore(settings)
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(settings.provider_timeout_seconds)
+        timeout=httpx.Timeout(settings.chat.provider_timeout_seconds)
     ) as http_client:
         try:
             await vector_store.ensure_collection()
@@ -121,10 +121,10 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     settings = get_settings()
 
-    if settings.environment == "production" and not args.yes:
+    if settings.server.environment == "production" and not args.yes:
         logger.error(
             "Refusing to index production collection %s without --yes",
-            settings.qdrant_collection,
+            settings.rag.collection,
         )
         return 1
     if not args.root.is_dir():
@@ -134,8 +134,8 @@ def main(argv: list[str] | None = None) -> int:
     logger.info(
         "Indexing %s -> %s (%s)",
         args.root,
-        settings.qdrant_collection,
-        settings.qdrant_url,
+        settings.rag.collection,
+        settings.rag.qdrant_url,
     )
     started = time.perf_counter()
     try:
@@ -146,13 +146,13 @@ def main(argv: list[str] | None = None) -> int:
         logger.exception(
             "Index run FAILED after %.1fs (collection=%s)",
             time.perf_counter() - started,
-            settings.qdrant_collection,
+            settings.rag.collection,
         )
         return 1
     logger.info(
         "Index run completed in %.1fs (collection=%s)",
         time.perf_counter() - started,
-        settings.qdrant_collection,
+        settings.rag.collection,
     )
     return 0
 

@@ -62,7 +62,10 @@ def _metrics(request: Request) -> MetricsRegistry:
 
 
 def _allowed_models(settings: Settings) -> list[str]:
-    return sorted({settings.openai_model, *settings.openai_allowed_models})
+    models = {settings.openai.model, *settings.openai.allowed_models}
+    if settings.cheaper_inference.api_key and settings.cheaper_inference.model:
+        models.add(settings.cheaper_inference.model)
+    return sorted(models)
 
 
 async def _selection_response(
@@ -82,7 +85,7 @@ async def _selection_response(
         )
     return ModelSelectionResponse(
         provider=model_router.get_active().name,
-        model=settings.openai_model,
+        model=settings.openai.model,
         available_providers=list(model_router.available_providers()),
         allowed_models=_allowed_models(settings),
     )
@@ -175,8 +178,8 @@ async def get_tenant_usage(
         output_tokens=usage.output_tokens,
         total_tokens=usage.total_tokens,
         cost_usd=usage.cost_usd,
-        daily_token_cap=settings.tenant_daily_token_cap,
-        daily_cost_cap_usd=settings.tenant_daily_cost_cap_usd,
+        daily_token_cap=settings.limits.tenant_daily_token_cap,
+        daily_cost_cap_usd=settings.limits.tenant_daily_cost_cap_usd,
     )
 
 

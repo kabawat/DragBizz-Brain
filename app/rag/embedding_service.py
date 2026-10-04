@@ -16,7 +16,7 @@ class EmbeddingService:
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        if not self._settings.openai_api_key:
+        if not self._settings.openai.api_key:
             raise AppError(
                 code="AI_PROVIDER_NOT_CONFIGURED",
                 message="OpenAI API key is not configured",
@@ -33,13 +33,13 @@ class EmbeddingService:
         return (await self.embed([text]))[0]
 
     async def _embed_batch(self, batch: list[str]) -> list[list[float]]:
-        url = f"{self._settings.openai_base_url}/embeddings"
+        url = f"{self._settings.openai.base_url}/embeddings"
         headers = {
-            "Authorization": f"Bearer {self._settings.openai_api_key}",
+            "Authorization": f"Bearer {self._settings.openai.api_key}",
             "Content-Type": "application/json",
         }
         payload = {
-            "model": self._settings.embedding_model,
+            "model": self._settings.rag.embedding_model,
             "input": batch,
         }
 
@@ -48,7 +48,7 @@ class EmbeddingService:
                 url,
                 headers=headers,
                 json=payload,
-                timeout=self._settings.provider_timeout_seconds,
+                timeout=self._settings.chat.provider_timeout_seconds,
             )
             response.raise_for_status()
             body = response.json()

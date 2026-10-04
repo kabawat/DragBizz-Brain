@@ -18,7 +18,11 @@ from app.orchestrator.model_config import (
     RedisModelSelectionStore,
 )
 from app.orchestrator.model_router import ModelRouter
-from app.providers.openai_compatible import OpenAICompatibleProvider
+from app.providers.openai_compatible import (
+    OPENAI_PROVIDER_NAME,
+    OpenAICompatibleProvider,
+    build_cheaper_provider,
+)
 from app.rag.embedding_service import EmbeddingService
 from app.rag.retrieval_cache import build_rag_cache
 from app.rag.retriever import Retriever
@@ -42,7 +46,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     http_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(settings.request_timeout_seconds)
+        timeout=httpx.Timeout(settings.services.request_timeout_seconds)
     )
     app.state.http_client = http_client
 
@@ -53,18 +57,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception:
         logger.warning(
             "Qdrant unavailable at startup (%s); chat continues without RAG",
-            settings.qdrant_url,
+            settings.rag.qdrant_url,
             exc_info=True,
         )
 
     redis_client = None
-    if settings.redis_url:
+    if settings.limits.redis_url:
         import redis.asyncio as aioredis
 
         redis_client = aioredis.from_url(
-            settings.redis_url, decode_responses=True
+            settings.limits.redis_url, decode_responses=True
         )
-    elif settings.environment == "production":
+    elif settings.server.environment == "production":
         logger.warning(
             "AI_REDIS_URL is not set; model selection, usage counters, "
             "sessions, idempotency, confirmations, and FAQ RAG cache will "
@@ -76,8 +80,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.metrics = metrics
 
     audit_trail = (
-        AuditTrail(settings.audit_trail_path)
-        if settings.audit_trail_path
+        AuditTrail(settings.limits.audit_trail_path)
+        if settings.limits.audit_trail_path
         else None
     )
     app.state.audit_trail = audit_trail
@@ -96,7 +100,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.usage_store = usage_store
 
-    retailer = RetailerClient(http_client, settings.retailer_service_url)
+    retailer = RetailerClient(http_client, settings.services.retailer_url)
     tool_registry = ToolRegistry()
     for definition in READ_TOOL_DEFINITIONS:
         handler = READ_TOOL_HANDLERS[definition.name]
@@ -110,20 +114,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     idempotency_store = (
         RedisIdempotencyStore(
-            redis_client, ttl_seconds=settings.idempotency_ttl_seconds
+            redis_client, ttl_seconds=settings.session.idempotency_ttl_seconds
         )
         if redis_client is not None
         else InMemoryIdempotencyStore(
-            ttl_seconds=settings.idempotency_ttl_seconds
+            ttl_seconds=settings.session.idempotency_ttl_seconds
         )
     )
     confirmation_store = (
         RedisConfirmationStore(
-            redis_client, ttl_seconds=settings.confirmation_ttl_seconds
+            redis_client, ttl_seconds=settings.session.confirmation_ttl_seconds
         )
         if redis_client is not None
         else InMemoryConfirmationStore(
-            ttl_seconds=settings.confirmation_ttl_seconds
+            ttl_seconds=settings.session.confirmation_ttl_seconds
         )
     )
     tool_executor = ToolExecutor(
@@ -135,18 +139,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     model_router = ModelRouter()
-    if settings.openai_api_key:
-        provider = OpenAICompatibleProvider(settings, http_client)
-        model_router.register(provider)
-        if settings.active_provider == provider.name:
-            model_router.set_active(provider.name)
-        elif settings.active_provider:
+    if settings.openai.api_key:
+        model_router.register(OpenAICompatibleProvider(settings, http_client))
+    else:
+        logger.warning("AI_OPENAI_API_KEY is not set; OpenAI provider unavailable")
+    cheaper = build_cheaper_provider(settings, http_client)
+    if cheaper is not None:
+        model_router.register(cheaper)
+    if model_router.available_providers():
+        if model_router.get(settings.active_provider) is not None:
+            model_router.set_active(settings.active_provider)
+        elif model_router.get(OPENAI_PROVIDER_NAME) is not None:
+            model_router.set_active(OPENAI_PROVIDER_NAME)
+        else:
+            model_router.set_active(model_router.available_providers()[0])
+        if (
+            settings.active_provider
+            and model_router.get(settings.active_provider) is None
+        ):
             logger.warning(
                 "Active provider '%s' is not registered",
                 settings.active_provider,
             )
     else:
-        logger.warning("AI_OPENAI_API_KEY is not set; chat provider unavailable")
+        logger.warning("No chat provider is configured")
 
     gateway = AiGateway(
         model_router,
@@ -163,20 +179,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     session_store = (
         RedisSessionStore(
             redis_client,
-            ttl_seconds=settings.session_ttl_seconds,
-            max_turns=settings.session_max_turns,
-            history_max_tokens=settings.session_history_max_tokens,
+            ttl_seconds=settings.session.ttl_seconds,
+            max_turns=settings.session.max_turns,
+            history_max_tokens=settings.session.history_max_tokens,
         )
         if redis_client is not None
         else InMemorySessionStore(
-            ttl_seconds=settings.session_ttl_seconds,
-            max_turns=settings.session_max_turns,
-            history_max_tokens=settings.session_history_max_tokens,
+            ttl_seconds=settings.session.ttl_seconds,
+            max_turns=settings.session.max_turns,
+            history_max_tokens=settings.session.history_max_tokens,
         )
     )
     app.state.session_store = session_store
     rag_cache = build_rag_cache(
-        redis_client, ttl_seconds=settings.rag_cache_ttl_seconds
+        redis_client, ttl_seconds=settings.rag.cache_ttl_seconds
     )
     app.state.rag_cache = rag_cache
     retriever = Retriever(

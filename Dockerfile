@@ -15,8 +15,10 @@ COPY knowledge ./knowledge
 
 RUN pip install .
 
-USER dragbizz
+COPY docker-entrypoint.py /docker-entrypoint.py
 
 EXPOSE 4004
 
+# Starts as root so it can fix ./data permissions, then drops to dragbizz.
+ENTRYPOINT ["python", "/docker-entrypoint.py"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4004"]

@@ -12,7 +12,11 @@ from app.executors.tool_executor import ToolExecutor
 from app.guards.input_guard import InputGuard
 from app.guards.output_guard import OutputGuard
 from app.observability.metrics import MetricsRegistry
-from app.orchestrator.ai_gateway import AiGateway
+from app.orchestrator.ai_gateway import (
+    AiGateway,
+    reset_turn_routing,
+    set_turn_routing,
+)
 from app.orchestrator.chat_context import build_chat_context
 from app.orchestrator.confirm_flow import handle_confirm
 from app.orchestrator.confirmation import (
@@ -74,12 +78,12 @@ class ChatService:
         self._input_guard = input_guard or InputGuard()
         self._output_guard = output_guard or OutputGuard()
         self._sessions = session_store or InMemorySessionStore(
-            ttl_seconds=settings.session_ttl_seconds,
-            max_turns=settings.session_max_turns,
-            history_max_tokens=settings.session_history_max_tokens,
+            ttl_seconds=settings.session.ttl_seconds,
+            max_turns=settings.session.max_turns,
+            history_max_tokens=settings.session.history_max_tokens,
         )
         self._confirmations = confirmation_store or InMemoryConfirmationStore(
-            ttl_seconds=settings.confirmation_ttl_seconds
+            ttl_seconds=settings.session.confirmation_ttl_seconds
         )
         self._usage = usage_store or InMemoryUsageStore()
         self._metrics = metrics
@@ -129,31 +133,35 @@ class ChatService:
                 tool_calls, store_id=sid, allowed_names=intent.tool_names
             )
 
-        generation = await self._gateway.generate_with_optional_parse_repair(
-            context.messages,
-            tools,
-            store_id=store_id,
-            temperature=self._settings.chat_temperature,
-            max_tokens=self._settings.chat_max_tokens,
-            describe_errors=_describe_errors,
-        )
+        routing_token = set_turn_routing(intent.routing)
+        try:
+            generation = await self._gateway.generate_with_optional_parse_repair(
+                context.messages,
+                tools,
+                store_id=store_id,
+                temperature=self._settings.chat.temperature,
+                max_tokens=self._settings.chat.max_tokens,
+                describe_errors=_describe_errors,
+            )
 
-        outcome = await run_tool_loop(
-            gateway=self._gateway,
-            validator=self._validator,
-            registry=self._registry,
-            executor=self._executor,
-            confirmations=self._confirmations,
-            settings=self._settings,
-            generation=generation,
-            messages=context.messages,
-            tools=tools,
-            language=body.language,
-            store_id=store_id,
-            access_token=access_token,
-            session_id=body.session_id,
-            user_id=user_id,
-        )
+            outcome = await run_tool_loop(
+                gateway=self._gateway,
+                validator=self._validator,
+                registry=self._registry,
+                executor=self._executor,
+                confirmations=self._confirmations,
+                settings=self._settings,
+                generation=generation,
+                messages=context.messages,
+                tools=tools,
+                language=body.language,
+                store_id=store_id,
+                access_token=access_token,
+                session_id=body.session_id,
+                user_id=user_id,
+            )
+        finally:
+            reset_turn_routing(routing_token)
 
         pending: PendingConfirmation | None = None
         if outcome.staged_sensitive is not None:
@@ -259,7 +267,7 @@ class ChatService:
         )
 
     def _guard_input(self, body: ChatRequest) -> str | None:
-        mode = self._settings.input_guard_mode
+        mode = self._settings.guards.input_mode
         if mode == "off":
             return None
         decision = self._input_guard.evaluate(body.text)
@@ -283,7 +291,7 @@ class ChatService:
         tool_results: list[Any],
         language: str,
     ) -> str:
-        mode = self._settings.output_guard_mode
+        mode = self._settings.guards.output_mode
         if mode == "off" or not message:
             return message
         decision = self._output_guard.evaluate(message, tool_results)
@@ -304,8 +312,8 @@ class ChatService:
         return get_fallback_message(language)
 
     async def _enforce_usage_cap(self, store_id: str) -> None:
-        token_cap = self._settings.tenant_daily_token_cap
-        cost_cap = self._settings.tenant_daily_cost_cap_usd
+        token_cap = self._settings.limits.tenant_daily_token_cap
+        cost_cap = self._settings.limits.tenant_daily_cost_cap_usd
         if not token_cap and not cost_cap:
             return
         usage = await self._usage.get_today(store_id)
@@ -334,10 +342,10 @@ class ChatService:
             return None
         return round(
             input_tokens
-            * self._settings.chat_input_usd_per_million_tokens
+            * self._settings.chat.input_usd_per_million_tokens
             / 1_000_000
             + output_tokens
-            * self._settings.chat_output_usd_per_million_tokens
+            * self._settings.chat.output_usd_per_million_tokens
             / 1_000_000,
             8,
         )

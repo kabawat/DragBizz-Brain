@@ -13,8 +13,8 @@ async def health() -> HealthResponse:
     settings = get_settings()
     return HealthResponse(
         status="ok",
-        service=settings.app_name,
-        environment=settings.environment,
+        service=settings.server.app_name,
+        environment=settings.server.environment,
     )
 
 
@@ -41,7 +41,7 @@ async def readiness(request: Request) -> ReadinessResponse | JSONResponse:
 
     response = ReadinessResponse(
         status="ready" if http_client_ready else "not_ready",
-        service=get_settings().app_name,
+        service=get_settings().server.app_name,
         dependencies=[
             ServiceStatus(
                 name="http_client",

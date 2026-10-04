@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from contextvars import ContextVar, Token
 from typing import Any
 
 from app.core.exceptions import AppError
@@ -13,10 +14,28 @@ from app.prompts.synthesis import (
     build_continuation_instruction,
     build_synthesis_instruction,
 )
+from app.providers.openai_compatible import (
+    CHEAPER_PROVIDER_NAME,
+    OPENAI_PROVIDER_NAME,
+)
 from app.schemas.chat import ChatMessage, GenerationRequest, GenerationResponse
 from app.schemas.tool import ToolCall, ToolDefinition
 
 logger = logging.getLogger(__name__)
+
+_FALLBACK_PROVIDER = {
+    OPENAI_PROVIDER_NAME: CHEAPER_PROVIDER_NAME,
+    CHEAPER_PROVIDER_NAME: OPENAI_PROVIDER_NAME,
+}
+_turn_routing: ContextVar[str | None] = ContextVar("ai_turn_routing", default=None)
+
+
+def set_turn_routing(routing: str | None) -> Token[str | None]:
+    return _turn_routing.set(routing)
+
+
+def reset_turn_routing(token: Token[str | None]) -> None:
+    _turn_routing.reset(token)
 
 DescribeErrorsFn = Callable[[list[ToolCall], str], list[str]]
 
@@ -42,14 +61,20 @@ class AiGateway:
         if model is not None:
             request = request.model_copy(update={"model": model})
 
-        started = time.perf_counter()
         try:
-            response = await provider.generate(request)
-        except Exception:
-            self._record(started, error=True)
-            raise
-        self._record(started, error=False)
-        return response
+            return await self._call(provider, request)
+        except AppError as exc:
+            fallback = self._fallback_for(provider) if exc.retryable else None
+            if fallback is None:
+                raise
+            logger.warning(
+                "Provider %s did not respond; switching to %s",
+                provider.name,
+                fallback.name,
+            )
+            # Drop the primary model name so the fallback uses its own model.
+            fallback_request = request.model_copy(update={"model": None})
+            return await self._call(fallback, fallback_request)
 
     async def generate_chat_turn(
         self,
@@ -175,9 +200,21 @@ class AiGateway:
             )
         )
 
+    async def _call(
+        self, provider: Any, request: GenerationRequest
+    ) -> GenerationResponse:
+        started = time.perf_counter()
+        try:
+            response = await provider.generate(request)
+        except Exception:
+            self._record(started, error=True)
+            raise
+        self._record(started, error=False)
+        return response
+
     async def _resolve(self) -> tuple[Any, str | None]:
-        """Admin selection wins when its provider is registered; otherwise
-        fall back to the env-configured active provider and default model."""
+        """Admin pin wins. Otherwise chat uses Cheaper Inference
+        (deepseek-v4.1-flash). OpenAI is only the fallback."""
         if self._selection_store is not None:
             selection = await self._selection_store.get()
             if selection is not None:
@@ -186,10 +223,23 @@ class AiGateway:
                     return provider, selection.model
                 logger.warning(
                     "Selected provider '%s' is not registered; "
-                    "falling back to active provider",
+                    "using task routing",
                     selection.provider,
                 )
+
+        preferred = self._model_router.get(CHEAPER_PROVIDER_NAME)
+        if preferred is not None:
+            return preferred, None
         return self._model_router.get_active(), None
+
+    def _fallback_for(self, provider: Any) -> Any | None:
+        fallback_name = _FALLBACK_PROVIDER.get(provider.name)
+        if fallback_name is None:
+            return None
+        fallback = self._model_router.get(fallback_name)
+        if fallback is None or fallback.name == provider.name:
+            return None
+        return fallback
 
     def _record(self, started: float, *, error: bool) -> None:
         if self._metrics is None:

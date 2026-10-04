@@ -29,11 +29,6 @@ dev = [
 include = ["app*"]
 namespaces = true
 
-[tool.pytest.ini_options]
-addopts = "-q"
-pythonpath = ["."]
-testpaths = ["tests"]
-
 [tool.ruff]
 line-length = 88
 target-version = "py311"

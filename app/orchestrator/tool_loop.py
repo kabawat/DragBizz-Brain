@@ -87,7 +87,7 @@ async def run_tool_loop(
     staged_sensitive: PendingConfirmationRecord | None = None
     successful_drafts = 0
     executed_signatures: set[tuple[str, str]] = set()
-    max_rounds = settings.chat_max_tool_rounds
+    max_rounds = settings.chat.max_tool_rounds
     allowed_names = frozenset(tool.name for tool in tools)
 
     def _describe_errors(tool_calls: list[ToolCall], sid: str) -> list[str]:
@@ -111,8 +111,8 @@ async def run_tool_loop(
                 previous=generation,
                 store_id=store_id,
                 detail=exc.message,
-                temperature=settings.chat_temperature,
-                max_tokens=settings.chat_max_tokens,
+                temperature=settings.chat.temperature,
+                max_tokens=settings.chat.max_tokens,
                 describe_errors=_describe_errors,
             )
             generations.append(generation)
@@ -138,8 +138,8 @@ async def run_tool_loop(
                 tools,
                 language=language,
                 allow_tools=False,
-                temperature=settings.chat_temperature,
-                max_tokens=settings.chat_synthesis_max_tokens,
+                temperature=settings.chat.temperature,
+                max_tokens=settings.chat.synthesis_max_tokens,
             )
             generations.append(generation)
             break
@@ -249,8 +249,8 @@ async def run_tool_loop(
             tools,
             language=language,
             allow_tools=allow_more_tools,
-            temperature=settings.chat_temperature,
-            max_tokens=settings.chat_synthesis_max_tokens,
+            temperature=settings.chat.temperature,
+            max_tokens=settings.chat.synthesis_max_tokens,
         )
         generations.append(generation)
         if not allow_more_tools:

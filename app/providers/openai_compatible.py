@@ -12,25 +12,45 @@ from app.schemas.chat import ChatMessage, GenerationRequest, GenerationResponse
 from app.schemas.tool import ToolCall, ToolDefinition
 
 
+OPENAI_PROVIDER_NAME = "openai_compatible"
+CHEAPER_PROVIDER_NAME = "cheaper_inference"
+
+# Statuses that mean the provider did not return a usable completion.
+_UNAVAILABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+
+
 class OpenAICompatibleProvider(ModelProvider):
-    def __init__(self, settings: Settings, http_client: httpx.AsyncClient) -> None:
-        self._settings = settings
+    def __init__(
+        self,
+        settings: Settings,
+        http_client: httpx.AsyncClient,
+        *,
+        name: str = OPENAI_PROVIDER_NAME,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        default_model: str | None = None,
+    ) -> None:
+        self._name = name
         self._http = http_client
+        self._api_key = settings.openai.api_key if api_key is None else api_key
+        self._base_url = (base_url or settings.openai.base_url).rstrip("/")
+        self._default_model = default_model or settings.openai.model
+        self._timeout = settings.chat.provider_timeout_seconds
 
     @property
     def name(self) -> str:
-        return "openai_compatible"
+        return self._name
 
     async def generate(self, request: GenerationRequest) -> GenerationResponse:
-        if not self._settings.openai_api_key:
+        if not self._api_key:
             raise AppError(
                 code="AI_PROVIDER_NOT_CONFIGURED",
-                message="OpenAI API key is not configured",
+                message="AI provider API key is not configured",
                 status_code=503,
             )
 
         payload: dict[str, Any] = {
-            "model": request.model or self._settings.openai_model,
+            "model": request.model or self._default_model,
             "messages": [
                 _to_openai_message(message) for message in request.messages
             ],
@@ -41,9 +61,9 @@ class OpenAICompatibleProvider(ModelProvider):
             payload["tools"] = [_to_openai_tool(tool) for tool in request.tools]
             payload["tool_choice"] = request.tool_choice
 
-        url = f"{self._settings.openai_base_url}/chat/completions"
+        url = f"{self._base_url}/chat/completions"
         headers = {
-            "Authorization": f"Bearer {self._settings.openai_api_key}",
+            "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
 
@@ -52,7 +72,7 @@ class OpenAICompatibleProvider(ModelProvider):
                 url,
                 headers=headers,
                 json=payload,
-                timeout=self._settings.provider_timeout_seconds,
+                timeout=self._timeout,
             )
             response.raise_for_status()
             body = response.json()
@@ -61,6 +81,7 @@ class OpenAICompatibleProvider(ModelProvider):
                 code="AI_PROVIDER_ERROR",
                 message="AI provider request timed out",
                 status_code=502,
+                retryable=True,
             ) from exc
         except httpx.HTTPStatusError as exc:
             status = exc.response.status_code if exc.response is not None else None
@@ -69,12 +90,14 @@ class OpenAICompatibleProvider(ModelProvider):
                 code="AI_PROVIDER_ERROR",
                 message=f"AI provider request failed (HTTP {status})",
                 status_code=502,
+                retryable=status in _UNAVAILABLE_STATUS,
             ) from exc
         except httpx.HTTPError as exc:
             raise AppError(
                 code="AI_PROVIDER_ERROR",
                 message="AI provider request failed",
                 status_code=502,
+                retryable=True,
             ) from exc
         except ValueError as exc:
             raise AppError(
@@ -84,6 +107,21 @@ class OpenAICompatibleProvider(ModelProvider):
             ) from exc
 
         return _parse_completion(body, provider_name=self.name)
+
+
+def build_cheaper_provider(
+    settings: Settings, http_client: httpx.AsyncClient
+) -> OpenAICompatibleProvider | None:
+    if not settings.cheaper_inference.api_key:
+        return None
+    return OpenAICompatibleProvider(
+        settings,
+        http_client,
+        name=CHEAPER_PROVIDER_NAME,
+        api_key=settings.cheaper_inference.api_key,
+        base_url=settings.cheaper_inference.base_url,
+        default_model=settings.cheaper_inference.model,
+    )
 
 
 def _to_openai_message(message: ChatMessage) -> dict[str, Any]:

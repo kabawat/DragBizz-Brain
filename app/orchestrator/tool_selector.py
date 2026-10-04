@@ -1,7 +1,7 @@
 """Turn intent: routing label + tool subset for the first LLM call.
 
-Routing labels match ``tests/eval/routing_cases.json``:
-``tools`` / ``docs`` / ``both`` / ``neither``. Unmatched questions are
+Routing labels are ``tools`` / ``docs`` / ``both`` / ``neither``.
+Unmatched questions are
 ``unknown`` (fail open: all tools, full prompt safety rules).
 """
 
@@ -116,7 +116,7 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# Docs/FAQ path when no tool family matched (aligns with routing_cases docs/*).
+# Docs/FAQ path when no tool family matched.
 _HOW_TO_CUES = (
     "kaise",
     "kaisein",
@@ -129,7 +129,7 @@ _HOW_TO_CUES = (
     "guide",
 )
 
-# Whole-message small talk (routing_cases neither/*).
+# Whole-message small talk.
 _NEITHER_RE = re.compile(
     r"^(hi|hello|hey|yo|thanks|thank you(?:\s+bhai)?|theek hai|"
     r"ok|okay|kem cho|namaste|bye|good morning|good evening)\W*$",

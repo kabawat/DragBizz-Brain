@@ -29,14 +29,13 @@ Implemented:
   without spending tokens). Refusal copy: `app/prompts/refusal.py`
 - **RAG vs tool routing**: system-prompt rules (live numbers → tools only;
   Documentation → how-to/features only) + "live/current" tool descriptions.
-  Eval set: `tests/eval/routing_cases.json` (20 questions, also the seed for
-  manual live-LLM routing evals)
+  Live numbers go to tools; how-to and feature questions go to documentation.
 - **Dynamic tool loading**: cue-based tool subsets on the first LLM call
   (`tool_selector.py`) — FAQ/docs/small-talk get no tool schemas; sale /
   stock / product / payment / customer / invoice get a family subset;
   unknown questions fail open to all registered tools
-- **Intent-based prompt assembly**: `resolve_turn_intent` aligns with
-  `routing_cases.json` (`tools`/`docs`/`both`/`neither`); system rules and
+- **Intent-based prompt assembly**: `resolve_turn_intent` uses
+  `tools` / `docs` / `both` / `neither`; system rules and
   RAG retrieval are gated by that label + the offered tool set
 - **Compressed system prompt**: write / sensitive / grounding / invoice-chaining
   rules kept; formatting fluff and long examples removed
@@ -105,7 +104,7 @@ Matches Auth / retailer access tokens:
 | Audience | `DRAGBIZZ` |
 | Algorithm | `RS256` |
 | Clock skew | 60s |
-| JWKS | `{AI_AUTH_SERVICE_URL}/.well-known/jwks.json` |
+| JWKS | `{AI_BASE_URL}/auth/.well-known/jwks.json` |
 | Transport | `Authorization: Bearer <access_token>` **or** HttpOnly cookie `at` / `__Host-at` (web) |
 
 Claims used when present: `sub`, `agencyId`, `tenant`, `role`.
@@ -127,7 +126,7 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_CHAT_SYNTHESIS_MAX_TOKENS` | Second-turn grounded answer cap (default `512`) |
 | `AI_CHAT_TEMPERATURE` | Default `0.2` |
 | `AI_PROVIDER_TIMEOUT_SECONDS` | Default `30` |
-| `AI_RETAILER_SERVICE_URL` | Retailer base URL for tool HTTP |
+| `AI_BASE_URL` | Nginx base (`http://dragbizz.local`). `/retailer`, `/auth`, and `/utility` are appended in code |
 | `AI_QDRANT_URL` | Qdrant HTTP URL (default `http://localhost:6333`) |
 | `AI_QDRANT_API_KEY` | Optional Qdrant API key |
 | `AI_QDRANT_COLLECTION` | Collection name (default `dragbizz_docs`) |
@@ -258,18 +257,12 @@ Service endpoints:
 - Admin (platform admin token): `http://localhost:4004/api/v1/admin/model`,
   `/api/v1/admin/usage/{storeId}`, `/api/v1/admin/metrics`
 
-## Tests and lint
+## Lint
 
 ```bash
 source .venv/bin/activate
-pytest                   # unit + api + eval
-pytest tests/api/        # HTTP contracts (chat / health / auth / admin)
-pytest tests/unit/       # module-level unit tests
 ruff check .
 ```
-
-Layout: `tests/api/` for FastAPI `TestClient` route contracts; `tests/unit/` for
-pure module tests; `tests/eval/` for routing cases.
 
 ## Docker
 
@@ -345,9 +338,9 @@ no-context rather than failing, so reindex failures are non-fatal but should
 be alerted on and retried.
 
 Docker exposes the service on `http://localhost:4004`. Downstream calls go through
-nginx (`http://dragbizz.local`) — e.g. `AI_AUTH_SERVICE_URL=http://dragbizz.local/auth`
-and `AI_RETAILER_SERVICE_URL=http://dragbizz.local/retailer`. The compose file maps
-`dragbizz.local` to the host gateway.
+nginx at `AI_BASE_URL` (`http://dragbizz.local`); `/auth`, `/retailer`, and
+`/utility` are path routes on that host. The compose file maps `dragbizz.local`
+to the host gateway.
 
 ## Configuration
 

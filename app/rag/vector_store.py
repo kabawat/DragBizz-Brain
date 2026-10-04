@@ -26,16 +26,16 @@ class VectorStore:
         self._settings = settings
         self._owns_client = client is None
         self._client = client or AsyncQdrantClient(
-            url=settings.qdrant_url,
-            api_key=settings.qdrant_api_key,
+            url=settings.rag.qdrant_url,
+            api_key=settings.rag.qdrant_api_key,
             prefer_grpc=False,
-            timeout=settings.request_timeout_seconds,
+            timeout=settings.services.request_timeout_seconds,
             check_compatibility=False,
         )
 
     @property
     def collection_name(self) -> str:
-        return self._settings.qdrant_collection
+        return self._settings.rag.collection
 
     async def close(self) -> None:
         if self._owns_client:
@@ -62,14 +62,14 @@ class VectorStore:
         await self._client.create_collection(
             collection_name=name,
             vectors_config=qmodels.VectorParams(
-                size=self._settings.embedding_dimensions,
+                size=self._settings.rag.embedding_dimensions,
                 distance=qmodels.Distance.COSINE,
             ),
         )
         logger.info(
             "Created Qdrant collection %s (dims=%s, distance=cosine)",
             name,
-            self._settings.embedding_dimensions,
+            self._settings.rag.embedding_dimensions,
         )
 
     async def upsert_chunks(

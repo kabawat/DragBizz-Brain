@@ -74,8 +74,8 @@ async def build_chat_context(
     )
     docs_budget = rag_docs_budget_for_routing(
         routing,
-        faq_budget=settings.rag_context_max_tokens,
-        action_budget=settings.rag_context_max_tokens_action,
+        faq_budget=settings.rag.context_max_tokens,
+        action_budget=settings.rag.context_max_tokens_action,
     )
 
     retrieved: list[RetrievedChunk] = []

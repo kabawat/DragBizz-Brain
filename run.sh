@@ -19,10 +19,12 @@ for arg in "$@"; do
       cat <<'EOF'
 Usage: ./run.sh [--normal] [--index] [extra args...]
 
-  (default)     Start with Docker Compose (qdrant + AI)
+  (default)     Start Docker Compose in the background (qdrant + AI)
   --normal      Start locally via .venv + uvicorn --reload
-  --index       Index knowledge/ into Qdrant before/after start
+  --index       Index knowledge/ into Qdrant after start
   -h, --help    Show this help
+
+Logs: ./logs.sh
 
 Examples:
   ./run.sh
@@ -77,8 +79,9 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+docker compose up --build -d "${PASS_ARGS[@]}"
+
 if [ "$DO_INDEX" -eq 1 ]; then
-  docker compose up --build -d "${PASS_ARGS[@]}"
   echo "Waiting for dragbizz-ai..."
   for _ in $(seq 1 60); do
     if docker compose exec -T dragbizz-ai \
@@ -89,7 +92,4 @@ if [ "$DO_INDEX" -eq 1 ]; then
     sleep 1
   done
   run_index_docker
-  exec docker compose logs -f --tail=100
 fi
-
-exec docker compose up --build "${PASS_ARGS[@]}"

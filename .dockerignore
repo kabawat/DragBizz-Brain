@@ -5,6 +5,5 @@ __pycache__
 .ruff_cache
 .coverage
 .env
-tests
 docs
 *.pyc
