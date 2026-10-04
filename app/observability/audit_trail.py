@@ -2,7 +2,7 @@
 
 One JSON line per execution. The service only ever opens the file in
 append mode and exposes no read/update/delete path; retention and
-shipping are ops concerns (see docs/features/ADMIN_AND_OBSERVABILITY.md).
+shipping are ops concerns.
 Events must never contain tool arguments or business payloads (PII).
 """
 

@@ -10,7 +10,8 @@ import hashlib
 import json
 import logging
 import time
-from typing import Callable, Protocol
+from collections.abc import Callable
+from typing import Protocol
 
 from app.rag.models import RetrievedChunk
 

@@ -240,7 +240,9 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="ledger_credit",
-        description="Record customer PAYMENT (khata credit). Real customerId + amount>0.",
+        description=(
+            "Record customer PAYMENT (khata credit). Real customerId and amount."
+        ),
         risk=ToolRisk.WRITE,
         parameters={
             "type": "object",

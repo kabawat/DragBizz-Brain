@@ -385,9 +385,8 @@ class Settings(BaseSettings):
         ):
             raise ValueError("JWKS URL must use HTTPS in production")
 
-        if self.server.environment == "production" and not self.openai.base_url.startswith(
-            "https://"
-        ):
+        openai_https = self.openai.base_url.startswith("https://")
+        if self.server.environment == "production" and not openai_https:
             raise ValueError("OpenAI base URL must use HTTPS in production")
 
         if (

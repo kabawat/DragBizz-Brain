@@ -11,7 +11,6 @@ from app.providers.base import ModelProvider
 from app.schemas.chat import ChatMessage, GenerationRequest, GenerationResponse
 from app.schemas.tool import ToolCall, ToolDefinition
 
-
 OPENAI_PROVIDER_NAME = "openai_compatible"
 CHEAPER_PROVIDER_NAME = "cheaper_inference"
 

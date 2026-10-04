@@ -80,10 +80,7 @@ Implemented:
   latency, provider error count, per-tool success rate
 - **Immutable tool-execution audit trail**: append-only JSONL at
   `AI_AUDIT_TRAIL_PATH` for every READ/WRITE/SENSITIVE execution (no PII)
-- Docker runtime and unit tests
-
-Details: [docs/features/ADMIN_AND_OBSERVABILITY.md](./docs/features/ADMIN_AND_OBSERVABILITY.md)
-(includes the provider key rotation runbook).
+- Docker runtime
 
 Not implemented yet:
 
@@ -112,7 +109,7 @@ Claims used when present: `sub`, `agencyId`, `tenant`, `role`.
 Protected routes require a valid access JWT (Bearer or session cookie).
 `/api/v1/health` and `/api/v1/ready` remain public.
 
-**Rate limiting:** deferred until Redis is available.
+**Rate limiting:** not implemented. Redis is used for sessions, idempotency, confirmations, usage, and model selection.
 
 ## Provider + retailer config
 
@@ -121,7 +118,10 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_ACTIVE_PROVIDER` | `openai_compatible` |
 | `AI_OPENAI_API_KEY` | Required for chat when provider is active |
 | `AI_OPENAI_BASE_URL` | Default `https://api.openai.com/v1` |
-| `AI_OPENAI_MODEL` | e.g. `gpt-4o-mini` |
+| `AI_OPENAI_MODEL` | Fallback chat model (e.g. `gpt-4o-mini`) and embeddings |
+| `CHEAPER_INFERENCE_API_KEY` | Primary chat provider when set |
+| `CHEAPER_INFERENCE_BASE_URL` | Default `https://api.cheaperinference.com/v1` |
+| `CHEAPER_INFERENCE_MODEL` | Primary chat model (`deepseek-v4.1-flash`) |
 | `AI_CHAT_MAX_TOKENS` | Default `1024` |
 | `AI_CHAT_SYNTHESIS_MAX_TOKENS` | Second-turn grounded answer cap (default `512`) |
 | `AI_CHAT_TEMPERATURE` | Default `0.2` |
@@ -149,16 +149,13 @@ Protected routes require a valid access JWT (Bearer or session cookie).
 | `AI_TENANT_DAILY_COST_CAP_USD` | Per-store daily cost hard cap (`0` = disabled) |
 | `AI_AUDIT_TRAIL_PATH` | Append-only tool audit JSONL (default `data/tool_audit.jsonl`; empty disables) |
 
-Production requires HTTPS for JWKS and the OpenAI base URL, and **both**
-guard modes set to `enforce` (boot fails otherwise). Never commit API keys.
+Production requires HTTPS for JWKS, the OpenAI base URL, and the Cheaper Inference base URL when that key is set, and **both** guard modes set to `enforce` (boot fails otherwise). Chat prefers Cheaper Inference; OpenAI is the fallback and still serves embeddings. Never commit API keys.
 
 ### Guard enforce rollout
 
 1. Keep `log` in local/staging while watching false-positive warnings.
 2. Tune `app/guards/*` if real store questions are blocked.
 3. Set both modes to `enforce` before production traffic.
-
-Details: [docs/features/GUARDS.md](./docs/features/GUARDS.md).
 
 ## Chat API (Phase 3.5)
 
@@ -351,12 +348,3 @@ Copy `.env.example` to `.env`. All service settings use the `AI_` prefix.
 2. Register and activate through `ModelRouter` / `AI_ACTIVE_PROVIDER`.
 3. Add write/sensitive tool handlers with idempotency and confirmation.
 4. Require validation, permissions, and confirmation according to each tool's risk.
-
-## Full Co-Partner build docs
-
-All future AI features are implemented **in this repo**, using product context from
-`dragbizz-ai-service` but this codebase’s orchestration flow.
-
-Start here: **[docs/README.md](./docs/README.md)**  
-Hinglish quick guide: **[docs/QUICKSTART_HINGLISH.md](./docs/QUICKSTART_HINGLISH.md)**  
-Master plan: **[docs/03_MASTER_IMPLEMENTATION_PLAN.md](./docs/03_MASTER_IMPLEMENTATION_PLAN.md)**

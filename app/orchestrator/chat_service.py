@@ -12,11 +12,7 @@ from app.executors.tool_executor import ToolExecutor
 from app.guards.input_guard import InputGuard
 from app.guards.output_guard import OutputGuard
 from app.observability.metrics import MetricsRegistry
-from app.orchestrator.ai_gateway import (
-    AiGateway,
-    reset_turn_routing,
-    set_turn_routing,
-)
+from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.chat_context import build_chat_context
 from app.orchestrator.confirm_flow import handle_confirm
 from app.orchestrator.confirmation import (
@@ -133,35 +129,31 @@ class ChatService:
                 tool_calls, store_id=sid, allowed_names=intent.tool_names
             )
 
-        routing_token = set_turn_routing(intent.routing)
-        try:
-            generation = await self._gateway.generate_with_optional_parse_repair(
-                context.messages,
-                tools,
-                store_id=store_id,
-                temperature=self._settings.chat.temperature,
-                max_tokens=self._settings.chat.max_tokens,
-                describe_errors=_describe_errors,
-            )
+        generation = await self._gateway.generate_with_optional_parse_repair(
+            context.messages,
+            tools,
+            store_id=store_id,
+            temperature=self._settings.chat.temperature,
+            max_tokens=self._settings.chat.max_tokens,
+            describe_errors=_describe_errors,
+        )
 
-            outcome = await run_tool_loop(
-                gateway=self._gateway,
-                validator=self._validator,
-                registry=self._registry,
-                executor=self._executor,
-                confirmations=self._confirmations,
-                settings=self._settings,
-                generation=generation,
-                messages=context.messages,
-                tools=tools,
-                language=body.language,
-                store_id=store_id,
-                access_token=access_token,
-                session_id=body.session_id,
-                user_id=user_id,
-            )
-        finally:
-            reset_turn_routing(routing_token)
+        outcome = await run_tool_loop(
+            gateway=self._gateway,
+            validator=self._validator,
+            registry=self._registry,
+            executor=self._executor,
+            confirmations=self._confirmations,
+            settings=self._settings,
+            generation=generation,
+            messages=context.messages,
+            tools=tools,
+            language=body.language,
+            store_id=store_id,
+            access_token=access_token,
+            session_id=body.session_id,
+            user_id=user_id,
+        )
 
         pending: PendingConfirmation | None = None
         if outcome.staged_sensitive is not None:

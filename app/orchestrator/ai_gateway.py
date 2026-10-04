@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from contextvars import ContextVar, Token
 from typing import Any
 
 from app.core.exceptions import AppError
@@ -27,15 +26,6 @@ _FALLBACK_PROVIDER = {
     OPENAI_PROVIDER_NAME: CHEAPER_PROVIDER_NAME,
     CHEAPER_PROVIDER_NAME: OPENAI_PROVIDER_NAME,
 }
-_turn_routing: ContextVar[str | None] = ContextVar("ai_turn_routing", default=None)
-
-
-def set_turn_routing(routing: str | None) -> Token[str | None]:
-    return _turn_routing.set(routing)
-
-
-def reset_turn_routing(token: Token[str | None]) -> None:
-    _turn_routing.reset(token)
 
 DescribeErrorsFn = Callable[[list[ToolCall], str], list[str]]
 
@@ -223,7 +213,7 @@ class AiGateway:
                     return provider, selection.model
                 logger.warning(
                     "Selected provider '%s' is not registered; "
-                    "using task routing",
+                    "using cheaper inference",
                     selection.provider,
                 )
 
