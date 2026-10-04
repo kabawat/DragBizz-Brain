@@ -1,5 +1,7 @@
 from app.confirmations.store import (
     CONFIRMATION_TYPE_INVOICE_RELEASE,
+    CONFIRMATION_TYPE_LEDGER_CREDIT,
+    CONFIRMATION_TYPE_LEDGER_DEBIT,
     ConfirmationStore,
     InMemoryConfirmationStore,
     PendingConfirmationRecord,
@@ -8,6 +10,8 @@ from app.confirmations.store import (
 
 __all__ = [
     "CONFIRMATION_TYPE_INVOICE_RELEASE",
+    "CONFIRMATION_TYPE_LEDGER_CREDIT",
+    "CONFIRMATION_TYPE_LEDGER_DEBIT",
     "ConfirmationStore",
     "InMemoryConfirmationStore",
     "PendingConfirmationRecord",

@@ -10,7 +10,14 @@ from app.confirmations import InMemoryConfirmationStore, RedisConfirmationStore
 from app.executors.tool_executor import ToolExecutor
 from app.idempotency import InMemoryIdempotencyStore, RedisIdempotencyStore
 from app.integrations.retailer_client import RetailerClient
-from app.observability import AuditTrail, MetricsRegistry
+from app.limits import (
+    CircuitBreaker,
+    ConcurrencyGate,
+    InMemoryConcurrencyGate,
+    InMemoryRateLimiter,
+    RateLimiter,
+)
+from app.observability import AuditTrail, MetricsRegistry, pricing_from_settings
 from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.chat_service import ChatService
 from app.orchestrator.model_config import (
@@ -68,12 +75,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         redis_client = aioredis.from_url(
             settings.limits.redis_url, decode_responses=True
         )
+        try:
+            await redis_client.ping()
+        except Exception as exc:
+            await redis_client.aclose()
+            raise RuntimeError(
+                "AI_REDIS_URL is set but Redis is unreachable; "
+                "refusing to start without shared safety controls"
+            ) from exc
     elif settings.server.environment == "production":
-        logger.warning(
-            "AI_REDIS_URL is not set; model selection, usage counters, "
-            "sessions, idempotency, confirmations, and FAQ RAG cache will "
-            "not survive restarts or multi-instance deploys"
-        )
+        # Settings validator should already catch this; belt-and-suspenders.
+        raise RuntimeError("AI_REDIS_URL is required in production")
     app.state.redis = redis_client
 
     metrics = MetricsRegistry()
@@ -85,6 +97,42 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         else None
     )
     app.state.audit_trail = audit_trail
+
+    limits = settings.limits
+    if redis_client is not None:
+        rate_limiter: RateLimiter | InMemoryRateLimiter = RateLimiter(
+            redis_client,
+            chat_per_minute=limits.chat_rate_per_minute,
+            confirm_per_minute=limits.confirm_rate_per_minute,
+        )
+        concurrency_gate: ConcurrencyGate | InMemoryConcurrencyGate = (
+            ConcurrencyGate(
+                redis_client,
+                max_chat=limits.max_concurrent_chats,
+                max_confirm=limits.max_concurrent_confirms,
+                lease_seconds=limits.concurrency_lease_seconds,
+            )
+        )
+    else:
+        rate_limiter = InMemoryRateLimiter(
+            chat_per_minute=limits.chat_rate_per_minute,
+            confirm_per_minute=limits.confirm_rate_per_minute,
+        )
+        concurrency_gate = InMemoryConcurrencyGate(
+            max_chat=limits.max_concurrent_chats,
+            max_confirm=limits.max_concurrent_confirms,
+            lease_seconds=limits.concurrency_lease_seconds,
+        )
+    app.state.rate_limiter = rate_limiter
+    app.state.concurrency_gate = concurrency_gate
+
+    provider_breaker = CircuitBreaker(
+        name="provider",
+        failure_threshold=limits.breaker_failure_threshold,
+        cooldown_seconds=limits.breaker_cooldown_seconds,
+        metrics=metrics,
+    )
+    app.state.provider_breaker = provider_breaker
 
     model_selection_store = (
         RedisModelSelectionStore(redis_client)
@@ -168,6 +216,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         model_router,
         selection_store=model_selection_store,
         metrics=metrics,
+        breaker=provider_breaker,
     )
     app.state.model_router = model_router
     app.state.ai_gateway = gateway
@@ -213,6 +262,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         confirmation_store=confirmation_store,
         usage_store=usage_store,
         metrics=metrics,
+        audit_trail=audit_trail,
+        pricing=pricing_from_settings(settings),
     )
 
     logger.info("AI service started")

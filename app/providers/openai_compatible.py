@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -106,6 +107,104 @@ class OpenAICompatibleProvider(ModelProvider):
             ) from exc
 
         return _parse_completion(body, provider_name=self.name)
+
+    async def generate_stream(
+        self, request: GenerationRequest
+    ) -> AsyncIterator[str]:
+        if not self._api_key:
+            raise AppError(
+                code="AI_PROVIDER_NOT_CONFIGURED",
+                message="AI provider API key is not configured",
+                status_code=503,
+            )
+
+        payload: dict[str, Any] = {
+            "model": request.model or self._default_model,
+            "messages": [
+                _to_openai_message(message) for message in request.messages
+            ],
+            "temperature": request.temperature,
+            "max_tokens": request.max_tokens,
+            "stream": True,
+        }
+        if request.tools:
+            payload["tools"] = [_to_openai_tool(tool) for tool in request.tools]
+            payload["tool_choice"] = request.tool_choice
+
+        url = f"{self._base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            async with self._http.stream(
+                "POST",
+                url,
+                headers=headers,
+                json=payload,
+                timeout=self._timeout,
+            ) as response:
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    status = (
+                        exc.response.status_code
+                        if exc.response is not None
+                        else None
+                    )
+                    raise AppError(
+                        code="AI_PROVIDER_ERROR",
+                        message=f"AI provider request failed (HTTP {status})",
+                        status_code=502,
+                        retryable=status in _UNAVAILABLE_STATUS,
+                    ) from exc
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        data = line[6:].strip()
+                    elif line.startswith("data:"):
+                        data = line[5:].strip()
+                    else:
+                        continue
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = _stream_delta_text(chunk)
+                    if delta:
+                        yield delta
+        except AppError:
+            raise
+        except httpx.TimeoutException as exc:
+            raise AppError(
+                code="AI_PROVIDER_ERROR",
+                message="AI provider request timed out",
+                status_code=502,
+                retryable=True,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise AppError(
+                code="AI_PROVIDER_ERROR",
+                message="AI provider request failed",
+                status_code=502,
+                retryable=True,
+            ) from exc
+
+
+def _stream_delta_text(chunk: dict[str, Any]) -> str:
+    try:
+        choice = chunk["choices"][0]
+        delta = choice.get("delta") or {}
+        content = delta.get("content")
+        if isinstance(content, str):
+            return content
+    except (KeyError, IndexError, TypeError):
+        return ""
+    return ""
 
 
 def build_cheaper_provider(

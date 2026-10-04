@@ -6,9 +6,13 @@ from collections.abc import Callable
 from typing import Any
 
 from app.core.exceptions import AppError
+from app.limits.circuit_breaker import CircuitBreaker
+from app.limits.request_budget import RequestBudget
+from app.observability.events import MODEL_ATTEMPT, emit_event
 from app.observability.metrics import MetricsRegistry
 from app.orchestrator.model_config import ModelSelectionStore
 from app.orchestrator.model_router import ModelRouter
+from app.orchestrator.token_usage import RequestTokenUsage
 from app.prompts.synthesis import (
     build_continuation_instruction,
     build_synthesis_instruction,
@@ -41,30 +45,34 @@ class AiGateway:
         *,
         selection_store: ModelSelectionStore | None = None,
         metrics: MetricsRegistry | None = None,
+        breaker: CircuitBreaker | None = None,
     ) -> None:
         self._model_router = model_router
         self._selection_store = selection_store
         self._metrics = metrics
+        self._breaker = breaker or CircuitBreaker(name="provider")
 
-    async def generate(self, request: GenerationRequest) -> GenerationResponse:
+    async def generate(
+        self,
+        request: GenerationRequest,
+        *,
+        budget: RequestBudget | None = None,
+        token_usage: RequestTokenUsage | None = None,
+        call_type: str = "generate",
+        round: int = 0,
+    ) -> GenerationResponse:
         provider, model = await self._resolve()
         if model is not None:
             request = request.model_copy(update={"model": model})
 
-        try:
-            return await self._call(provider, request)
-        except AppError as exc:
-            fallback = self._fallback_for(provider) if exc.retryable else None
-            if fallback is None:
-                raise
-            logger.warning(
-                "Provider %s did not respond; switching to %s",
-                provider.name,
-                fallback.name,
-            )
-            # Drop the primary model name so the fallback uses its own model.
-            fallback_request = request.model_copy(update={"model": None})
-            return await self._call(fallback, fallback_request)
+        return await self._generate_with_retry_fallback(
+            provider,
+            request,
+            budget=budget,
+            token_usage=token_usage,
+            call_type=call_type,
+            round=round,
+        )
 
     async def generate_chat_turn(
         self,
@@ -73,6 +81,10 @@ class AiGateway:
         *,
         temperature: float,
         max_tokens: int,
+        budget: RequestBudget | None = None,
+        token_usage: RequestTokenUsage | None = None,
+        call_type: str = "initial",
+        round: int = 0,
     ) -> GenerationResponse:
         return await self.generate(
             GenerationRequest(
@@ -81,7 +93,11 @@ class AiGateway:
                 max_tokens=max_tokens,
                 tools=tools or None,
                 tool_choice="auto" if tools else "none",
-            )
+            ),
+            budget=budget,
+            token_usage=token_usage,
+            call_type=call_type,
+            round=round,
         )
 
     async def generate_with_optional_parse_repair(
@@ -93,6 +109,8 @@ class AiGateway:
         temperature: float,
         max_tokens: int,
         describe_errors: DescribeErrorsFn,
+        budget: RequestBudget | None = None,
+        token_usage: RequestTokenUsage | None = None,
     ) -> GenerationResponse:
         try:
             return await self.generate_chat_turn(
@@ -100,6 +118,10 @@ class AiGateway:
                 tools,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                budget=budget,
+                token_usage=token_usage,
+                call_type="initial",
+                round=0,
             )
         except AppError as exc:
             if exc.code != "TOOL_ARGS_INVALID":
@@ -113,6 +135,9 @@ class AiGateway:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 describe_errors=describe_errors,
+                budget=budget,
+                token_usage=token_usage,
+                round=0,
             )
 
     async def repair_tool_calls(
@@ -126,6 +151,9 @@ class AiGateway:
         temperature: float,
         max_tokens: int,
         describe_errors: DescribeErrorsFn,
+        budget: RequestBudget | None = None,
+        token_usage: RequestTokenUsage | None = None,
+        round: int = 0,
     ) -> GenerationResponse:
         if previous is not None and not detail:
             error_lines = describe_errors(previous.tool_calls, store_id)
@@ -157,6 +185,10 @@ class AiGateway:
             tools,
             temperature=temperature,
             max_tokens=max_tokens,
+            budget=budget,
+            token_usage=token_usage,
+            call_type="repair",
+            round=round,
         )
 
     async def continue_or_synthesize(
@@ -168,6 +200,9 @@ class AiGateway:
         allow_tools: bool,
         temperature: float,
         max_tokens: int,
+        budget: RequestBudget | None = None,
+        token_usage: RequestTokenUsage | None = None,
+        round: int = 0,
     ) -> GenerationResponse:
         """Post-tool-round generation: either chain further tool calls
         (allow_tools) or force the final grounded answer."""
@@ -187,19 +222,152 @@ class AiGateway:
                 max_tokens=max_tokens,
                 tools=tools if allow_tools else None,
                 tool_choice="auto" if allow_tools else "none",
-            )
+            ),
+            budget=budget,
+            token_usage=token_usage,
+            call_type="continue" if allow_tools else "synthesize",
+            round=round,
         )
 
+    async def _generate_with_retry_fallback(
+        self,
+        provider: Any,
+        request: GenerationRequest,
+        *,
+        budget: RequestBudget | None,
+        token_usage: RequestTokenUsage | None = None,
+        call_type: str = "generate",
+        round: int = 0,
+    ) -> GenerationResponse:
+        """breaker → attempt → retryable retry → fallback → final failure."""
+        self._breaker.allow()
+        try:
+            return await self._budgeted_call(
+                provider,
+                request,
+                budget=budget,
+                token_usage=token_usage,
+                call_type=call_type,
+                round=round,
+                retry=False,
+                fallback=False,
+            )
+        except AppError as exc:
+            if exc.retryable:
+                self._breaker.record_failure()
+            else:
+                raise
+
+            # At most one more attempt on the same provider if budget remains.
+            try:
+                self._breaker.allow()
+                return await self._budgeted_call(
+                    provider,
+                    request,
+                    budget=budget,
+                    token_usage=token_usage,
+                    call_type=call_type,
+                    round=round,
+                    retry=True,
+                    fallback=False,
+                )
+            except AppError as retry_exc:
+                if retry_exc.retryable:
+                    self._breaker.record_failure()
+                if not retry_exc.retryable:
+                    raise
+                fallback = self._fallback_for(provider)
+                if fallback is None:
+                    raise
+                logger.warning(
+                    "Provider %s did not respond; switching to %s",
+                    provider.name,
+                    fallback.name,
+                )
+                fallback_request = request.model_copy(update={"model": None})
+                self._breaker.allow()
+                return await self._budgeted_call(
+                    fallback,
+                    fallback_request,
+                    budget=budget,
+                    token_usage=token_usage,
+                    call_type=call_type,
+                    round=round,
+                    retry=False,
+                    fallback=True,
+                )
+
+    async def _budgeted_call(
+        self,
+        provider: Any,
+        request: GenerationRequest,
+        *,
+        budget: RequestBudget | None,
+        token_usage: RequestTokenUsage | None,
+        call_type: str,
+        round: int,
+        retry: bool,
+        fallback: bool,
+    ) -> GenerationResponse:
+        if budget is not None:
+            budget.begin_model_call()
+        response = await self._call(
+            provider, request, retry=retry, fallback=fallback
+        )
+        if budget is not None:
+            budget.record_tokens(
+                input_tokens=response.input_tokens,
+                output_tokens=response.output_tokens,
+            )
+        if token_usage is not None:
+            entry = token_usage.record(
+                model=response.model or (request.model or ""),
+                call_type=call_type,
+                round=round,
+                input_tokens=response.input_tokens,
+                output_tokens=response.output_tokens,
+                provider=provider.name,
+                retry=retry,
+                fallback=fallback,
+            )
+            if self._metrics is not None:
+                self._metrics.record_token_usage(
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                    usage_source=entry.usage_source,
+                )
+        self._breaker.record_success()
+        return response
+
     async def _call(
-        self, provider: Any, request: GenerationRequest
+        self,
+        provider: Any,
+        request: GenerationRequest,
+        *,
+        retry: bool = False,
+        fallback: bool = False,
     ) -> GenerationResponse:
         started = time.perf_counter()
+        # Routine attempts show up in chat.request metrics; only surface
+        # retries/fallbacks as first-class INFO events.
+        attempt_level = (
+            logging.INFO if retry or fallback else logging.DEBUG
+        )
+        emit_event(
+            MODEL_ATTEMPT,
+            level=attempt_level,
+            provider=provider.name,
+            retry=retry,
+            fallback=fallback,
+        )
         try:
             response = await provider.generate(request)
         except Exception:
-            self._record(started, error=True)
+            self._record(
+                started, error=True, retry=retry, fallback=fallback
+            )
             raise
-        self._record(started, error=False)
+        self._record(started, error=False, retry=retry, fallback=fallback)
         return response
 
     async def _resolve(self) -> tuple[Any, str | None]:
@@ -231,9 +399,19 @@ class AiGateway:
             return None
         return fallback
 
-    def _record(self, started: float, *, error: bool) -> None:
+    def _record(
+        self,
+        started: float,
+        *,
+        error: bool,
+        retry: bool = False,
+        fallback: bool = False,
+    ) -> None:
         if self._metrics is None:
             return
         self._metrics.record_provider_call(
-            (time.perf_counter() - started) * 1000, error=error
+            (time.perf_counter() - started) * 1000,
+            error=error,
+            retry=retry,
+            fallback=fallback,
         )

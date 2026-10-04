@@ -38,6 +38,19 @@ _NEITHER_FORMAT = (
     "no invented store numbers.\n"
 )
 
+_CUSTOMER_LIVE = (
+    "- Customer: call search_customer; answer only fields present in the "
+    "result. Never invent missing sections.\n"
+    "- Basic ask → name/phone/email/active only. Extra slices "
+    "(address, GST, account, ledger) only when returned.\n"
+    "- ledger.truncated → mention download buttons only if downloads is "
+    "present. Multiple matches → list name+phone and ask which.\n"
+    "- payment_history is store-wide payments, not one customer ledger.\n"
+    "- create/update_customer: name/phone/email only. Unsupported edits: "
+    "say so. Unsupported lists/reminders/exports: short refusal "
+    "(how-to may still use Documentation).\n"
+)
+
 _HOWTO_LAYOUT = (
     "- How-to answers: short intro, then numbered steps with a blank line "
     "between each — `1. **Title**` then 1–2 short detail lines. Prefer "
@@ -109,6 +122,15 @@ def build_chat_system_prompt(
             "- Tool storeId args must equal the active storeId. "
             "Read tools may run after you call them.\n"
         )
+        parts.append(
+            "- The same name may be a customer, a product, or both. "
+            "Reply with only the lookups that returned items. Customer "
+            "hit: customer info only. Product hit: product info only. "
+            "Both: both. Do not mention the empty lookup. Say nothing "
+            "was found only when every lookup was empty.\n"
+        )
+        if "search_customer" in tool_names:
+            parts.append(_CUSTOMER_LIVE)
     else:
         parts.append(
             "- Never invent live store numbers (sales, stock, prices, "
@@ -138,15 +160,32 @@ def build_chat_system_prompt(
         )
         parts.append(
             "- Never invent customer/product ObjectIds — search or reuse "
-            "prior tool-result IDs. "
-            "ledger_credit = customer PAYMENT; ledger_debit = DEBIT on khata.\n"
+            "prior tool-result IDs.\n"
         )
 
     if has_sensitive:
+        sensitive_names = ", ".join(
+            tool.name for tool in tools if tool.risk == ToolRisk.SENSITIVE
+        )
         parts.append(
-            "- Sensitive tools (release_invoice) NEVER auto-run — calling "
-            "only stages confirmation. Do not claim release until the user "
-            "confirms in the app.\n"
+            f"- Sensitive tools ({sensitive_names}) NEVER auto-run — calling "
+            "only stages confirmation. Do not claim the action finished "
+            "until the user confirms in the app.\n"
+        )
+        if "ledger_credit" in tool_names or "ledger_debit" in tool_names:
+            parts.append(
+                "- ledger_credit = customer PAYMENT; ledger_debit = DEBIT "
+                "on khata. Do not say the payment or debit was saved until "
+                "the user confirms in the app.\n"
+            )
+
+    if has_create_customer:
+        parts.append(
+            "- If the user asks whether you can create/add a customer: "
+            "say yes — you can, once they give name and a 10-digit phone "
+            "or email. Ask for those missing fields; do not refuse or send "
+            "them only to the dashboard Customers page while "
+            "create_customer is available.\n"
         )
 
     if has_invoice_chain or has_create_customer:
@@ -172,11 +211,11 @@ def build_chat_system_prompt(
         parts.append(
             "- create_invoice_draft is DRAFT only. After success, say draft "
             "is ready and they must Confirm in the app to release. Call "
-            "release_invoice only for an existing draft with a real "
-            "invoiceId. At most ONE draft per request — if a draft already "
-            "exists and user says haan/yes/confirm/release, call "
-            "release_invoice (do not create another). To replace Walk-in "
-            "after draft: search/create customer then update_invoice_draft.\n"
+            "release_invoice only when the user asked to release an existing "
+            "draft and you have a real invoiceId. At most ONE draft per "
+            "request — do not create another to release. A bare yes uses the "
+            "confirm button already on screen. To replace Walk-in after "
+            "draft: search/create customer then update_invoice_draft.\n"
         )
 
     parts.append(_answer_format(with_docs=bool(documentation)))
@@ -211,11 +250,19 @@ def build_documentation_block(
     """Format retrieved chunks with source citations under a token budget.
 
     Chunks arrive score-descending; lowest-score chunks are dropped first.
+    Duplicate source+text chunks are skipped.
     """
     entries: list[str] = []
     used_tokens = 0
-    for index, chunk in enumerate(chunks, start=1):
+    seen: set[str] = set()
+    index = 0
+    for chunk in chunks:
         source = chunk.metadata.get("source", "unknown")
+        key = f"{source}\n{chunk.text}"
+        if key in seen:
+            continue
+        seen.add(key)
+        index += 1
         entry = f"[{index}] source={source}\n{chunk.text}"
         entry_tokens = estimate_tokens(entry)
         if used_tokens + entry_tokens > max_tokens:

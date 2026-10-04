@@ -45,7 +45,7 @@ def estimate_prompt_token_breakdown(
     docs_header = estimate_tokens("\nDocumentation:\n") if documentation else 0
     system_total = estimate_tokens(system_content)
     system = max(0, system_total - rag - docs_header)
-    tools_tokens = _estimate_tool_schema_tokens(tools)
+    tools_tokens = estimate_tool_schema_tokens(tools)
     history = sum(estimate_tokens(message.content) for message in history_messages)
     user = estimate_tokens(user_text)
     return PromptTokenBreakdown(
@@ -57,7 +57,7 @@ def estimate_prompt_token_breakdown(
     )
 
 
-def _estimate_tool_schema_tokens(
+def estimate_tool_schema_tokens(
     tools: list[ToolDefinition] | tuple[ToolDefinition, ...],
 ) -> int:
     if not tools:

@@ -10,3 +10,4 @@ class ToolContext:
     access_token: str
     store_id: str
     retailer: RetailerClient
+    question: str = ""

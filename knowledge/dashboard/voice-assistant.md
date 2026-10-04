@@ -26,7 +26,8 @@ The voice assistant is a floating pill available on every dashboard page. Press 
 - **Stock summary** — "Stock ka summary do" → stock totals (SKUs, quantities, low stock).
 - **Product search** — "Sugar 1kg hai kya?" → product lookup by name.
 - **Payment history** — "Recent customer payments dikhao" → latest customer payments.
-- **Draft invoice / customer / khata writes** — create draft bills and customers; **releasing** an invoice (stock deduct) always asks you to **Confirm** or **Cancel** in the chat panel first.
+- **Create customer** — "Can you create a new customer?" → yes; give name + phone or email and it creates the customer.
+- **Draft invoice / khata writes** — create draft bills; **releasing** an invoice (stock deduct) always asks you to **Confirm** or **Cancel** in the chat panel first.
 
 ## Business rules
 
@@ -52,8 +53,11 @@ The voice assistant is a floating pill available on every dashboard page. Press 
 
 ## FAQ
 
+**Q: Can I create a customer by voice/chat?** 
+Yes — give the customer name and a 10-digit phone or email. The assistant creates them for the active store.
+
 **Q: Can I create an invoice by voice?** 
-Not yet — voice actions are read-only. Write actions with a confirmation step are on the roadmap.
+Yes for **draft** invoices (name the customer/products). **Releasing** a draft always needs Confirm in the chat panel first.
 
 **Q: Which languages can I speak?** 
 Hindi, Hinglish, Gujarati, and English — matching your app language setting.

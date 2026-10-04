@@ -345,6 +345,85 @@ class LimitSettings(BaseSettings):
         default="data/tool_audit.jsonl",
         validation_alias="AI_AUDIT_TRAIL_PATH",
     )
+    chat_rate_per_minute: int = Field(
+        default=30,
+        ge=0,
+        validation_alias="AI_CHAT_RATE_PER_MINUTE",
+    )
+    confirm_rate_per_minute: int = Field(
+        default=20,
+        ge=0,
+        validation_alias="AI_CONFIRM_RATE_PER_MINUTE",
+    )
+    max_concurrent_chats: int = Field(
+        default=2,
+        ge=0,
+        validation_alias="AI_MAX_CONCURRENT_CHATS_PER_STORE_USER",
+    )
+    max_concurrent_confirms: int = Field(
+        default=2,
+        ge=0,
+        validation_alias="AI_MAX_CONCURRENT_CONFIRMS_PER_STORE_USER",
+    )
+    concurrency_lease_seconds: int = Field(
+        default=60,
+        ge=5,
+        le=600,
+        validation_alias="AI_CONCURRENCY_LEASE_SECONDS",
+    )
+    max_model_calls: int = Field(
+        default=4,
+        ge=1,
+        le=20,
+        validation_alias="AI_MAX_MODEL_CALLS",
+    )
+    max_tool_calls: int = Field(
+        default=8,
+        ge=1,
+        le=40,
+        validation_alias="AI_MAX_TOOL_CALLS",
+    )
+    max_estimated_input_tokens: int = Field(
+        default=12_000,
+        ge=1_000,
+        le=200_000,
+        validation_alias="AI_MAX_ESTIMATED_INPUT_TOKENS",
+    )
+    max_estimated_output_tokens: int = Field(
+        default=4_000,
+        ge=256,
+        le=64_000,
+        validation_alias="AI_MAX_ESTIMATED_OUTPUT_TOKENS",
+    )
+    request_deadline_seconds: float = Field(
+        default=55.0,
+        gt=1,
+        le=300,
+        validation_alias="AI_REQUEST_DEADLINE_SECONDS",
+    )
+    breaker_failure_threshold: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        validation_alias="AI_BREAKER_FAILURE_THRESHOLD",
+    )
+    breaker_cooldown_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        le=600,
+        validation_alias="AI_BREAKER_COOLDOWN_SECONDS",
+    )
+    pricing_version: str = Field(
+        default="v1",
+        min_length=1,
+        max_length=32,
+        validation_alias="AI_PRICING_VERSION",
+    )
+    embedding_usd_per_million_tokens: float = Field(
+        default=0.02,
+        ge=0,
+        validation_alias="AI_EMBEDDING_USD_PER_MILLION_TOKENS",
+    )
 
     @field_validator("redis_url", "audit_trail_path", mode="before")
     @classmethod
@@ -399,6 +478,11 @@ class Settings(BaseSettings):
             )
 
         if self.server.environment == "production":
+            if not self.limits.redis_url:
+                raise ValueError(
+                    "AI_REDIS_URL is required in production "
+                    "(shared rate limits, concurrency, and confirmations)"
+                )
             if self.guards.input_mode != "enforce":
                 raise ValueError(
                     "AI_INPUT_GUARD_MODE must be 'enforce' in production "

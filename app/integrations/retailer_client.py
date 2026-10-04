@@ -87,13 +87,34 @@ class RetailerClient:
         store_id: str,
         query: str,
         limit: int = 10,
+        include_addresses: bool = False,
+        include_account: bool = False,
     ) -> RetailerResponse:
+        params: dict[str, Any] = {"search": query, "limit": limit}
+        if include_addresses:
+            params["includeAddresses"] = "true"
+        if include_account:
+            params["includeAccount"] = "true"
         return await self._request(
             "GET",
             "/customer",
             access_token=access_token,
             store_id=store_id,
-            params={"search": query, "limit": limit},
+            params=params,
+        )
+
+    async def get_customer_ledger_export(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str,
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            f"/customer-account/{customer_id}/ledger/export",
+            access_token=access_token,
+            store_id=store_id,
         )
 
     async def create_customer(
@@ -269,13 +290,13 @@ class RetailerClient:
         except httpx.TimeoutException as exc:
             raise RetailerHttpError(
                 status_code=504,
-                code="RETAILER_ERROR",
+                code="RETAILER_TIMEOUT",
                 message="Retailer request timed out",
             ) from exc
         except httpx.HTTPError as exc:
             raise RetailerHttpError(
                 status_code=502,
-                code="RETAILER_ERROR",
+                code="RETAILER_UNAVAILABLE",
                 message="Retailer request failed",
             ) from exc
 

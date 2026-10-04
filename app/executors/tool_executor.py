@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
+from collections.abc import Collection
 
 from app.core.exceptions import AppError
 from app.idempotency import (
@@ -12,6 +15,7 @@ from app.idempotency import (
 )
 from app.integrations.retailer_client import RetailerClient
 from app.observability import AuditTrail, MetricsRegistry
+from app.observability.events import TOOL_EXECUTION, emit_event
 from app.schemas.tool import ToolCall, ToolResult, ToolRisk
 from app.tools.context import ToolContext
 from app.tools.registry import ToolRegistry
@@ -41,9 +45,22 @@ class ToolExecutor:
         *,
         access_token: str,
         store_id: str,
+        allowed_names: Collection[str],
         session_id: str | None = None,
         user_id: str | None = None,
+        question: str = "",
+        parallel: bool = False,
     ) -> list[ToolResult]:
+        if parallel and len(tool_calls) > 1:
+            return await self._execute_reads_parallel(
+                tool_calls,
+                access_token=access_token,
+                store_id=store_id,
+                allowed_names=allowed_names,
+                session_id=session_id,
+                user_id=user_id,
+                question=question,
+            )
         return await self._execute(
             tool_calls,
             access_token=access_token,
@@ -51,7 +68,82 @@ class ToolExecutor:
             allowed_risk=ToolRisk.READ,
             session_id=session_id,
             user_id=user_id,
+            question=question,
+            allowed_names=allowed_names,
         )
+
+    async def _execute_reads_parallel(
+        self,
+        tool_calls: list[ToolCall],
+        *,
+        access_token: str,
+        store_id: str,
+        allowed_names: Collection[str],
+        session_id: str | None,
+        user_id: str | None,
+        question: str,
+    ) -> list[ToolResult]:
+        if self._metrics is not None:
+            self._metrics.record_parallel_batch(len(tool_calls))
+
+        context = ToolContext(
+            access_token=access_token,
+            store_id=store_id,
+            retailer=self._retailer,
+            question=question,
+        )
+
+        async def _one(call: ToolCall) -> ToolResult:
+            try:
+                return await self._run_read(
+                    call,
+                    context=context,
+                    allowed_names=allowed_names,
+                    store_id=store_id,
+                    session_id=session_id,
+                    user_id=user_id,
+                )
+            except asyncio.CancelledError:
+                raise
+            except AppError as exc:
+                return ToolResult(
+                    tool=call.name,
+                    success=False,
+                    data={"code": exc.code, "message": exc.message},
+                )
+            except Exception:
+                logger.exception("Parallel read failed", extra={"tool": call.name})
+                return ToolResult(
+                    tool=call.name,
+                    success=False,
+                    data={
+                        "code": "RETAILER_UNAVAILABLE",
+                        "message": "Tool execution failed",
+                    },
+                )
+
+        gathered = await asyncio.gather(
+            *[_one(call) for call in tool_calls],
+            return_exceptions=True,
+        )
+        results: list[ToolResult] = []
+        for call, item in zip(tool_calls, gathered, strict=True):
+            if isinstance(item, asyncio.CancelledError):
+                raise item
+            if isinstance(item, BaseException):
+                results.append(
+                    ToolResult(
+                        tool=call.name,
+                        success=False,
+                        data={
+                            "code": "RETAILER_UNAVAILABLE",
+                            "message": "Tool execution failed",
+                        },
+                    )
+                )
+            else:
+                results.append(item)
+        return results
 
     async def execute_writes(
         self,
@@ -61,6 +153,7 @@ class ToolExecutor:
         store_id: str,
         session_id: str,
         user_id: str,
+        allowed_names: Collection[str],
         prior_successful_drafts: int = 0,
     ) -> list[ToolResult]:
         """prior_successful_drafts: drafts already created earlier in this
@@ -74,6 +167,7 @@ class ToolExecutor:
             session_id=session_id,
             user_id=user_id,
             prior_draft_calls=prior_successful_drafts,
+            allowed_names=allowed_names,
         )
 
     async def execute_confirmations(
@@ -85,6 +179,7 @@ class ToolExecutor:
         session_id: str,
         user_id: str,
         confirmation_id: str,
+        business_idempotency_key: str | None = None,
     ) -> list[ToolResult]:
         """Run SENSITIVE tools only after an approved confirmation token."""
         if not tool_calls:
@@ -97,6 +192,7 @@ class ToolExecutor:
         )
         results: list[ToolResult] = []
         for call in tool_calls:
+            _assert_request_store(call, store_id)
             definition = self._registry.get_definition(call.name)
             if definition.risk != ToolRisk.SENSITIVE:
                 raise AppError(
@@ -115,7 +211,7 @@ class ToolExecutor:
                     status_code=500,
                 ) from exc
 
-            key = build_idempotency_key(
+            key = business_idempotency_key or build_idempotency_key(
                 session_id=session_id,
                 tool_name=call.name,
                 arguments={
@@ -138,7 +234,10 @@ class ToolExecutor:
                 results.append(cached)
                 continue
 
-            result = await handler(call.arguments, context)
+            arguments = dict(call.arguments)
+            if call.name in {"ledger_credit", "ledger_debit"}:
+                arguments["idempotencyKey"] = key
+            result = await handler(arguments, context)
             await self._idempotency.put(key, result)
             self._audit(
                 session_id=session_id,
@@ -162,7 +261,9 @@ class ToolExecutor:
         allowed_risk: ToolRisk,
         session_id: str | None,
         user_id: str | None,
+        allowed_names: Collection[str],
         prior_draft_calls: int = 0,
+        question: str = "",
     ) -> list[ToolResult]:
         if not tool_calls:
             return []
@@ -171,10 +272,13 @@ class ToolExecutor:
             access_token=access_token,
             store_id=store_id,
             retailer=self._retailer,
+            question=question,
         )
         results: list[ToolResult] = []
         draft_calls_seen = prior_draft_calls
         for call in tool_calls:
+            _assert_allowed(call, allowed_names)
+            _assert_request_store(call, store_id)
             definition = self._registry.get_definition(call.name)
             if definition.risk != allowed_risk:
                 raise AppError(
@@ -231,19 +335,76 @@ class ToolExecutor:
                     store_id=store_id,
                 )
             else:
-                result = await handler(call.arguments, context)
-                self._audit(
+                result = await self._run_read(
+                    call,
+                    context=context,
+                    allowed_names=allowed_names,
+                    store_id=store_id,
                     session_id=session_id,
                     user_id=user_id,
-                    store_id=store_id,
-                    tool=call.name,
-                    success=result.success,
-                    error_code=_error_code(result),
-                    idempotency_key=None,
-                    cache_hit=None,
+                    handler=handler,
+                    skip_prechecks=True,
                 )
             results.append(result)
         return results
+
+    async def _run_read(
+        self,
+        call: ToolCall,
+        *,
+        context: ToolContext,
+        allowed_names: Collection[str],
+        store_id: str,
+        session_id: str | None,
+        user_id: str | None,
+        handler=None,
+        skip_prechecks: bool = False,
+    ) -> ToolResult:
+        started = time.perf_counter()
+        if not skip_prechecks:
+            _assert_allowed(call, allowed_names)
+            _assert_request_store(call, store_id)
+            definition = self._registry.get_definition(call.name)
+            if definition.risk != ToolRisk.READ:
+                raise AppError(
+                    code="TOOL_NOT_EXECUTABLE",
+                    message=(
+                        f"Tool '{call.name}' is not auto-executable as read"
+                    ),
+                    status_code=500,
+                )
+        if handler is None:
+            try:
+                handler = self._registry.get_handler(call.name)
+            except KeyError as exc:
+                raise AppError(
+                    code="TOOL_NOT_EXECUTABLE",
+                    message=f"Tool '{call.name}' has no handler",
+                    status_code=500,
+                ) from exc
+
+        result = await handler(call.arguments, context)
+        # Read tools: at most one retry on ambiguous Retailer errors.
+        if (
+            not result.success
+            and isinstance(result.data, dict)
+            and result.data.get("code")
+            in {"RETAILER_TIMEOUT", "RETAILER_UNAVAILABLE"}
+        ):
+            result = await handler(call.arguments, context)
+        latency_ms = (time.perf_counter() - started) * 1000
+        self._audit(
+            session_id=session_id,
+            user_id=user_id,
+            store_id=store_id,
+            tool=call.name,
+            success=result.success,
+            error_code=_error_code(result),
+            idempotency_key=None,
+            cache_hit=None,
+            latency_ms=latency_ms,
+        )
+        return result
 
     async def _run_write(
         self,
@@ -274,11 +435,7 @@ class ToolExecutor:
             )
             return cached
 
-        arguments = dict(call.arguments)
-        if call.name in {"ledger_credit", "ledger_debit"}:
-            arguments["idempotencyKey"] = key
-
-        result = await handler(arguments, context)
+        result = await handler(dict(call.arguments), context)
         await self._idempotency.put(key, result)
         self._audit(
             session_id=session_id,
@@ -303,6 +460,7 @@ class ToolExecutor:
         error_code: str | None,
         idempotency_key: str | None,
         cache_hit: bool | None,
+        latency_ms: float | None = None,
     ) -> None:
         # Never log phones, amounts, or free-text notes (rule.md / PII).
         event = {
@@ -317,11 +475,54 @@ class ToolExecutor:
             ),
             "cacheHit": cache_hit,
         }
-        logger.info("Tool execution audit", extra={"audit": event})
+        event_with_name = {"event": TOOL_EXECUTION, **event}
+        # Full audit goes to the trail file; logs stay slim (ids already in
+        # correlation). Successes are DEBUG — chat.request lists tools_called.
+        emit_event(
+            TOOL_EXECUTION,
+            level=logging.WARNING if not success else logging.DEBUG,
+            tool=tool,
+            success=success,
+            errorCode=error_code,
+            cacheHit=cache_hit,
+        )
         if self._audit_trail is not None:
-            self._audit_trail.append(event)
+            self._audit_trail.append(event_with_name)
         if self._metrics is not None:
-            self._metrics.record_tool(tool, success=success)
+            self._metrics.record_tool(
+                tool, success=success, latency_ms=latency_ms
+            )
+
+
+def _assert_allowed(call: ToolCall, allowed_names: Collection[str]) -> None:
+    """Reject a tool the turn's capability set did not include.
+
+    Hiding the schema from the model is not enough. This runs before
+    the handler and before any Retailer call.
+    """
+    if call.name not in allowed_names:
+        raise AppError(
+            code="TOOL_NOT_ALLOWED",
+            message=f"Tool '{call.name}' is not allowlisted",
+            status_code=400,
+        )
+
+
+def _assert_request_store(call: ToolCall, store_id: str) -> None:
+    """Reject a model-supplied store id that is not the request store.
+
+    Handlers call Retailer with ToolContext.store_id. This check stops a
+    mismatched argument from running under the caller's token.
+    """
+    supplied = call.arguments.get("storeId")
+    if not isinstance(supplied, str):
+        return
+    if supplied != store_id:
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message="Tool storeId must match the chat request storeId",
+            status_code=400,
+        )
 
 
 def _error_code(result: ToolResult) -> str | None:

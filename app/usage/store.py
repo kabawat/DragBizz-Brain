@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
+from app.core.exceptions import AppError
+
 logger = logging.getLogger(__name__)
 
 _KEY_PREFIX = "ai:usage"
@@ -114,12 +116,16 @@ class RedisUsageStore:
 
     async def get_today(self, store_id: str) -> TenantUsage:
         day = usage_day()
-        # Fail open: a Redis outage suspends cap enforcement, never chat.
+        # Fail closed: cap checks must not silently disable on Redis outage.
         try:
             raw = await self._redis.hgetall(self._key(store_id, day)) or {}
-        except Exception:
+        except Exception as exc:
             logger.warning("Usage counter read failed", exc_info=True)
-            return TenantUsage(day=day)
+            raise AppError(
+                code="AI_STORE_UNAVAILABLE",
+                message="Usage store unavailable",
+                status_code=503,
+            ) from exc
         return TenantUsage(
             day=day,
             requests=int(raw.get("requests", 0)),

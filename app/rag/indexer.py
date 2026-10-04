@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 
 from app.config import Settings, get_settings
+from app.observability.pricing import PricingConfig, pricing_from_settings
 from app.rag.chunker import DocumentChunk, chunk_markdown, estimate_tokens
 from app.rag.embedding_service import EmbeddingService
 from app.rag.vector_store import VectorStore
@@ -18,8 +19,6 @@ from app.rag.vector_store import VectorStore
 logger = logging.getLogger(__name__)
 
 DEFAULT_KNOWLEDGE_ROOT = Path(__file__).resolve().parents[2] / "knowledge"
-# text-embedding-3-small pricing (USD per 1M tokens).
-EMBEDDING_USD_PER_MILLION_TOKENS = 0.02
 
 
 @dataclass(frozen=True)
@@ -30,16 +29,18 @@ class IndexSummary:
     chunks_skipped: int
     points_deleted: int
     embedded_tokens: int
-
-    @property
-    def estimated_cost_usd(self) -> float:
-        return self.embedded_tokens * EMBEDDING_USD_PER_MILLION_TOKENS / 1_000_000
+    estimated_cost_usd: float
+    usage_source: str
+    cost_source: str
+    pricing_version: str
 
 
 async def index_knowledge(
     root: Path,
     embedding_service: EmbeddingService,
     vector_store: VectorStore,
+    *,
+    pricing: PricingConfig | None = None,
 ) -> IndexSummary:
     """Sync `root` markdown docs into Qdrant.
 
@@ -64,17 +65,25 @@ async def index_knowledge(
     if stale_ids:
         await vector_store.delete_points(stale_ids)
 
+    embedded_tokens = sum(estimate_tokens(c.content) for c in new_chunks)
+    pricing_cfg = pricing or pricing_from_settings(get_settings())
+    cost = pricing_cfg.estimate_embedding_cost(embedded_tokens)
     summary = IndexSummary(
         files_scanned=len(files),
         chunks_total=len(desired),
         chunks_embedded=len(new_chunks),
         chunks_skipped=len(desired) - len(new_chunks),
         points_deleted=len(stale_ids),
-        embedded_tokens=sum(estimate_tokens(c.content) for c in new_chunks),
+        embedded_tokens=embedded_tokens,
+        estimated_cost_usd=cost.cost_usd or 0.0,
+        usage_source=cost.usage_source,
+        cost_source=cost.cost_source,
+        pricing_version=cost.pricing_version,
     )
     logger.info(
         "Index summary: files=%s chunks=%s embedded=%s skipped=%s deleted=%s "
-        "tokens=%s est_cost_usd=%.6f",
+        "tokens=%s cost_usd=%.6f usage_source=%s cost_source=%s "
+        "pricing_version=%s",
         summary.files_scanned,
         summary.chunks_total,
         summary.chunks_embedded,
@@ -82,6 +91,9 @@ async def index_knowledge(
         summary.points_deleted,
         summary.embedded_tokens,
         summary.estimated_cost_usd,
+        summary.usage_source,
+        summary.cost_source,
+        summary.pricing_version,
     )
     return summary
 
@@ -94,7 +106,10 @@ async def _run_cli(settings: Settings, root: Path) -> IndexSummary:
         try:
             await vector_store.ensure_collection()
             return await index_knowledge(
-                root, EmbeddingService(settings, http_client), vector_store
+                root,
+                EmbeddingService(settings, http_client),
+                vector_store,
+                pricing=pricing_from_settings(settings),
             )
         finally:
             await vector_store.close()

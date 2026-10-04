@@ -5,11 +5,6 @@ from typing import Any
 from app.integrations.retailer_client import RetailerHttpError
 from app.schemas.tool import ToolResult
 from app.tools.context import ToolContext
-from app.tools.ledger_mapping import (
-    LEDGER_CREDIT_TYPE,
-    LEDGER_DEBIT_TYPE,
-    LedgerRetailerType,
-)
 
 
 async def create_customer(
@@ -21,7 +16,7 @@ async def create_customer(
     try:
         response = await context.retailer.create_customer(
             access_token=context.access_token,
-            store_id=arguments["storeId"],
+            store_id=context.store_id,
             name=arguments["name"],
             phone=arguments.get("phone"),
             email=arguments.get("email"),
@@ -71,7 +66,7 @@ async def _find_existing_customer(
         try:
             response = await context.retailer.get_customers(
                 access_token=context.access_token,
-                store_id=arguments["storeId"],
+                store_id=context.store_id,
                 query=identifier,
             )
         except RetailerHttpError:
@@ -104,7 +99,7 @@ async def update_customer(
     try:
         response = await context.retailer.update_customer(
             access_token=context.access_token,
-            store_id=arguments["storeId"],
+            store_id=context.store_id,
             customer_id=arguments["customerId"],
             name=arguments["name"],
             phone=arguments.get("phone"),
@@ -135,7 +130,7 @@ async def create_invoice_draft(
     try:
         response = await context.retailer.create_invoice_draft(
             access_token=context.access_token,
-            store_id=arguments["storeId"],
+            store_id=context.store_id,
             items=list(arguments["items"]),
             customer_id=customer_id,
             is_walkin=customer_id is None,
@@ -169,7 +164,7 @@ async def update_invoice_draft(
     try:
         response = await context.retailer.update_invoice_draft(
             access_token=context.access_token,
-            store_id=arguments["storeId"],
+            store_id=context.store_id,
             invoice_id=arguments["invoiceId"],
             customer_id=customer_id,
             items=list(items) if items is not None else None,
@@ -183,65 +178,6 @@ async def update_invoice_draft(
         tool="update_invoice_draft",
         success=True,
         data=_attach_invoice_open_path(payload),
-    )
-
-
-async def ledger_credit(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
-    return await _ledger_write(
-        "ledger_credit",
-        LEDGER_CREDIT_TYPE,
-        arguments,
-        context,
-    )
-
-
-async def ledger_debit(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
-    return await _ledger_write(
-        "ledger_debit",
-        LEDGER_DEBIT_TYPE,
-        arguments,
-        context,
-    )
-
-
-async def _ledger_write(
-    tool: str,
-    transaction_type: LedgerRetailerType,
-    arguments: dict[str, Any],
-    context: ToolContext,
-) -> ToolResult:
-    idempotency_key = arguments.get("idempotencyKey")
-    if not isinstance(idempotency_key, str) or not idempotency_key.strip():
-        return ToolResult(
-            tool=tool,
-            success=False,
-            data={
-                "code": "TOOL_ARGS_INVALID",
-                "message": "idempotencyKey is required for ledger writes",
-            },
-        )
-    try:
-        response = await context.retailer.create_ledger_transaction(
-            access_token=context.access_token,
-            store_id=arguments["storeId"],
-            customer_id=arguments["customerId"],
-            transaction_type=transaction_type,
-            amount=float(arguments["amount"]),
-            idempotency_key=idempotency_key.strip(),
-            notes=arguments.get("notes"),
-        )
-    except RetailerHttpError as exc:
-        return _failure(tool, exc)
-
-    data = response.body.get("data")
-    return ToolResult(
-        tool=tool,
-        success=True,
-        data=data if isinstance(data, dict) else {"transaction": data},
     )
 
 
@@ -310,6 +246,4 @@ WRITE_TOOL_HANDLERS = {
     "update_customer": update_customer,
     "create_invoice_draft": create_invoice_draft,
     "update_invoice_draft": update_invoice_draft,
-    "ledger_credit": ledger_credit,
-    "ledger_debit": ledger_debit,
 }

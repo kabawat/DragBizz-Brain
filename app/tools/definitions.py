@@ -3,7 +3,7 @@ from app.schemas.tool import ToolDefinition, ToolRisk
 _STORE_ID_PROP = {
     "type": "string",
     "pattern": "^[a-fA-F0-9]{24}$",
-    "description": "Active store ObjectId; must match the chat request storeId",
+    "description": "Active store ObjectId",
 }
 
 _OBJECT_ID_PROP = {
@@ -22,6 +22,7 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         name="search_product",
         description="Search live products by name/SKU (price, stock, status).",
         risk=ToolRisk.READ,
+        allows_parallel=True,
         parameters={
             "type": "object",
             "additionalProperties": False,
@@ -41,6 +42,7 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         name="today_sale",
         description="Today's live sales: revenue, profit, bill count.",
         risk=ToolRisk.READ,
+        allows_parallel=True,
         parameters={
             "type": "object",
             "additionalProperties": False,
@@ -52,6 +54,7 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         name="stock_summary",
         description="Live stock totals (SKUs, qty, low/out of stock).",
         risk=ToolRisk.READ,
+        allows_parallel=True,
         parameters={
             "type": "object",
             "additionalProperties": False,
@@ -62,10 +65,13 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="search_customer",
         description=(
-            "Search customers by name/phone/email; returns real ObjectIds. "
-            "Use before create, bill, or khata."
+            "Find a customer by name, phone, or email. Basic result is "
+            "name, phone, email, and active status. Address, GST, khata "
+            "totals, and ledger lines are added only when the user asked "
+            "for that part."
         ),
         risk=ToolRisk.READ,
+        allows_parallel=True,
         parameters={
             "type": "object",
             "additionalProperties": False,
@@ -83,8 +89,12 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="payment_history",
-        description="Recent live customer payment records.",
+        description=(
+            "Recent customer payments for this store. Not one customer's "
+            "ledger lines."
+        ),
         risk=ToolRisk.READ,
+        allows_parallel=True,
         parameters={
             "type": "object",
             "additionalProperties": False,
@@ -238,64 +248,29 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "required": ["storeId", "invoiceId"],
         },
     ),
-    ToolDefinition(
-        name="ledger_credit",
-        description=(
-            "Record customer PAYMENT (khata credit). Real customerId and amount."
-        ),
-        risk=ToolRisk.WRITE,
-        parameters={
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "storeId": _STORE_ID_PROP,
-                "customerId": {
-                    **_OBJECT_ID_PROP,
-                    "description": "Customer ObjectId",
-                },
-                "amount": {
-                    "type": "number",
-                    "minimum": 0.01,
-                    "description": "Payment amount in INR",
-                },
-                "notes": {
-                    "type": "string",
-                    "maxLength": 500,
-                },
-            },
-            "required": ["storeId", "customerId", "amount"],
-        },
-    ),
-    ToolDefinition(
-        name="ledger_debit",
-        description=(
-            "Record customer DEBIT on khata (increases due). "
-            "Real customerId + amount>0. Not invoice release."
-        ),
-        risk=ToolRisk.WRITE,
-        parameters={
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "storeId": _STORE_ID_PROP,
-                "customerId": {
-                    **_OBJECT_ID_PROP,
-                    "description": "Customer ObjectId",
-                },
-                "amount": {
-                    "type": "number",
-                    "minimum": 0.01,
-                    "description": "Debit amount in INR",
-                },
-                "notes": {
-                    "type": "string",
-                    "maxLength": 500,
-                },
-            },
-            "required": ["storeId", "customerId", "amount"],
-        },
-    ),
 )
+
+_LEDGER_PARAMETERS = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "storeId": _STORE_ID_PROP,
+        "customerId": {
+            **_OBJECT_ID_PROP,
+            "description": "Customer ObjectId",
+        },
+        "amount": {
+            "type": "number",
+            "minimum": 0.01,
+            "description": "Amount in INR",
+        },
+        "notes": {
+            "type": "string",
+            "maxLength": 500,
+        },
+    },
+    "required": ["storeId", "customerId", "amount"],
+}
 
 SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
@@ -317,5 +292,23 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             },
             "required": ["storeId", "invoiceId"],
         },
+    ),
+    ToolDefinition(
+        name="ledger_credit",
+        description=(
+            "Stage customer PAYMENT (khata credit) for user confirm. "
+            "Real customerId and amount. Does not post until confirmed."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters=_LEDGER_PARAMETERS,
+    ),
+    ToolDefinition(
+        name="ledger_debit",
+        description=(
+            "Stage customer DEBIT on khata (increases due) for user confirm. "
+            "Real customerId and amount. Does not post until confirmed."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters=_LEDGER_PARAMETERS,
     ),
 )

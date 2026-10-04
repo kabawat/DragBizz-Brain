@@ -6,12 +6,38 @@ from typing import Any
 
 from app.confirmations import (
     CONFIRMATION_TYPE_INVOICE_RELEASE,
+    CONFIRMATION_TYPE_LEDGER_CREDIT,
+    CONFIRMATION_TYPE_LEDGER_DEBIT,
     ConfirmationStore,
     PendingConfirmationRecord,
 )
 from app.core.exceptions import AppError
+from app.observability.audit_trail import AuditTrail
+from app.observability.confirmation_audit import audit_confirmation
+from app.observability.metrics import MetricsRegistry
 from app.schemas.chat import PendingConfirmation
 from app.schemas.tool import ToolCall, ToolResult
+
+
+def _audit_pending(
+    record: PendingConfirmationRecord,
+    *,
+    audit_trail: AuditTrail | None,
+    metrics: MetricsRegistry | None,
+) -> None:
+    audit_confirmation(
+        audit_trail=audit_trail,
+        metrics=metrics,
+        confirmation_id=record.confirmation_id,
+        type=record.type,
+        status="PENDING",
+        previous_status=None,
+        user_id=record.user_id,
+        store_id=record.store_id,
+        session_id=record.session_id,
+        tool=record.tool_name,
+        business_idempotency_key=record.business_idempotency_key,
+    )
 
 
 def pending_to_schema(record: PendingConfirmationRecord) -> PendingConfirmation:
@@ -74,6 +100,8 @@ async def stage_from_draft_result(
     store_id: str,
     session_id: str,
     result: ToolResult,
+    audit_trail: AuditTrail | None = None,
+    metrics: MetricsRegistry | None = None,
 ) -> PendingConfirmationRecord | None:
     # Draft update refreshes the pending confirmation too — customer link
     # changes GST/totals, so the preview must show fresh numbers.
@@ -84,7 +112,7 @@ async def stage_from_draft_result(
     draft_id = extract_invoice_id(result.data)
     if draft_id is None:
         return None
-    return await store.create(
+    record = await store.create(
         user_id=user_id,
         store_id=store_id,
         session_id=session_id,
@@ -94,6 +122,12 @@ async def stage_from_draft_result(
         tool_name="release_invoice",
         arguments={"storeId": store_id, "invoiceId": draft_id},
     )
+    _audit_pending(
+        record,
+        audit_trail=audit_trail,
+        metrics=metrics,
+    )
+    return record
 
 
 async def stage_from_sensitive_calls(
@@ -103,6 +137,8 @@ async def stage_from_sensitive_calls(
     store_id: str,
     session_id: str,
     sensitive_calls: list[ToolCall],
+    audit_trail: AuditTrail | None = None,
+    metrics: MetricsRegistry | None = None,
 ) -> PendingConfirmationRecord | None:
     """Stage at most one SENSITIVE confirmation per turn."""
     if not sensitive_calls:
@@ -114,6 +150,16 @@ async def stage_from_sensitive_calls(
             status_code=400,
         )
     call = sensitive_calls[0]
+    if call.name in {CONFIRMATION_TYPE_LEDGER_CREDIT, CONFIRMATION_TYPE_LEDGER_DEBIT}:
+        return await _stage_ledger_call(
+            store,
+            user_id=user_id,
+            store_id=store_id,
+            session_id=session_id,
+            call=call,
+            audit_trail=audit_trail,
+            metrics=metrics,
+        )
     if call.name != "release_invoice":
         raise AppError(
             code="TOOL_NOT_EXECUTABLE",
@@ -132,7 +178,7 @@ async def stage_from_sensitive_calls(
         "currency": "INR",
         "openPath": f"/dashboard/invoices/{invoice_id}",
     }
-    return await store.create(
+    record = await store.create(
         user_id=user_id,
         store_id=store_id,
         session_id=session_id,
@@ -150,3 +196,73 @@ async def stage_from_sensitive_calls(
             },
         },
     )
+    _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
+    return record
+
+
+def _positive_amount(value: Any) -> int | float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value <= 0:
+        return None
+    if isinstance(value, int):
+        return value
+    return float(value)
+
+
+async def _stage_ledger_call(
+    store: ConfirmationStore,
+    *,
+    user_id: str,
+    store_id: str,
+    session_id: str,
+    call: ToolCall,
+    audit_trail: AuditTrail | None = None,
+    metrics: MetricsRegistry | None = None,
+) -> PendingConfirmationRecord:
+    customer_id = call.arguments.get("customerId")
+    if not isinstance(customer_id, str) or not customer_id.strip():
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message=f"{call.name} requires customerId",
+            status_code=400,
+        )
+    amount = _positive_amount(call.arguments.get("amount"))
+    if amount is None:
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message=f"{call.name} requires amount greater than 0",
+            status_code=400,
+        )
+    customer_id = customer_id.strip()
+    action = "payment" if call.name == "ledger_credit" else "debit"
+    arguments: dict[str, Any] = {
+        "storeId": store_id,
+        "customerId": customer_id,
+        "amount": amount,
+    }
+    notes = call.arguments.get("notes")
+    if isinstance(notes, str) and notes.strip():
+        arguments["notes"] = notes.strip()
+    confirmation_type = (
+        CONFIRMATION_TYPE_LEDGER_CREDIT
+        if call.name == "ledger_credit"
+        else CONFIRMATION_TYPE_LEDGER_DEBIT
+    )
+    record = await store.create(
+        user_id=user_id,
+        store_id=store_id,
+        session_id=session_id,
+        type=confirmation_type,
+        draft_id=customer_id,
+        summary={
+            "currency": "INR",
+            "total": amount,
+            "action": action,
+            "customerId": customer_id,
+        },
+        tool_name=call.name,
+        arguments=arguments,
+    )
+    _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
+    return record
