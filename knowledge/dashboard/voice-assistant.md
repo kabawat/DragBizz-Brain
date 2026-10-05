@@ -15,10 +15,12 @@ The voice assistant is a floating pill available on every dashboard page. Press 
 
 ## Workflow
 
-1. Open with **Alt+V** or click the floating pill (drag it anywhere; position is remembered). **Esc** closes.
-2. Press the mic and speak — the assistant listens, converts speech to text, and sends it — or type the question and press Enter.
-3. The assistant replies with an answer; when it used store data it lists the lookups it ran with a done/failed marker.
-4. Clear resets the conversation.
+1. Open with **Alt+V** or click the floating pill. **Esc** closes (or collapses full screen first).
+2. Press the mic and speak — or type the question and press Enter.
+3. Click the expand icon for a full-screen workspace (chat history | chat | live context).
+4. Type `/` for slash shortcuts (sales, dues, stock, create-customer, invoice, and more). Arrow keys + Enter select a command.
+5. The assistant replies with an answer; sensitive actions (invoice release) ask you to **Confirm** or **Cancel** first.
+6. Use **New chat** / clear to reset the conversation.
 
 ## What it can answer today
 
@@ -42,6 +44,7 @@ The voice assistant is a floating pill available on every dashboard page. Press 
 - "Aaj kitne bill bane?" → today's sales count and amount.
 - "Kya Parle-G stock mein hai?" → product search result with stock.
 - "Is customer ne pichhla payment kab kiya?" → payment history lookup.
+- `/create-customer` or `/invoice` → slash shortcuts fill a ready prompt.
 
 ## Errors
 
@@ -53,17 +56,21 @@ The voice assistant is a floating pill available on every dashboard page. Press 
 
 ## FAQ
 
-**Q: Can I create a customer by voice/chat?** 
+**Q: How do I use DragBizz chat?**  
+Open with Alt+V (or the chat button), type or speak your question, optionally expand to full screen, and use `/` for shortcuts. Pick a store first.
+
+**Q: Can I create a customer by voice/chat?**  
 Yes — give the customer name and a 10-digit phone or email. The assistant creates them for the active store.
 
-**Q: Can I create an invoice by voice?** 
+**Q: Can I create an invoice by voice?**  
 Yes for **draft** invoices (name the customer/products). **Releasing** a draft always needs Confirm in the chat panel first.
 
-**Q: Which languages can I speak?** 
+**Q: Which languages can I speak?**  
 Hindi, Hinglish, Gujarati, and English — matching your app language setting.
 
-**Q: Does it work without a microphone?** 
+**Q: Does it work without a microphone?**  
 Yes — type your question in the panel; the AI works the same way.
 
-**Q: Is my voice recorded all the time?** 
+**Q: Is my voice recorded all the time?**  
 No — the microphone is active only while the listening indicator is on.
+

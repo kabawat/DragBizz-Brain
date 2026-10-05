@@ -20,6 +20,7 @@ from app.prompts.system.chat import (
     build_chat_system_prompt,
     build_documentation_block,
 )
+from app.rag.local_fallback import retrieve_local_knowledge
 from app.rag.models import RetrievedChunk
 from app.rag.retrieval_cache import NoOpRagCache, RagCache
 from app.rag.retriever import Retriever
@@ -135,10 +136,28 @@ async def build_chat_context(
                 retriever, question, metrics=metrics, cache_hit=False
             )
             if rag_failed:
-                # docs routing cannot invent how-to; both/unknown continue.
-                if routing == "docs":
+                # Embeddings/Qdrant down — still serve local markdown so
+                # how-to questions (chat help, invoice FAQ) keep working.
+                local_chunks = retrieve_local_knowledge(question)
+                if local_chunks:
+                    retrieved = local_chunks
+                    documentation = build_documentation_block(
+                        retrieved,
+                        max_tokens=docs_budget,
+                    )
+                    emit_event(
+                        RAG_RETRIEVE,
+                        level=logging.INFO,
+                        failed=False,
+                        cache_hit=False,
+                        fallback="local",
+                        chunks=len(local_chunks),
+                    )
+                elif routing == "docs":
                     docs_unavailable = True
-                documentation = ""
+                    documentation = ""
+                else:
+                    documentation = ""
             else:
                 documentation = build_documentation_block(
                     retrieved,

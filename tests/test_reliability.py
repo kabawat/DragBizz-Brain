@@ -623,11 +623,12 @@ async def _docs_unavailable() -> None:
             context_max_tokens=1000, context_max_tokens_action=512
         )
     )
+    # Nonsense query must not match local markdown keywords.
     context = await build_chat_context(
         sessions=InMemorySessionStore(),
         retriever=FailingRetriever(),  # type: ignore[arg-type]
         settings=settings,  # type: ignore[arg-type]
-        question="how do I create an invoice?",
+        question="xyzzy plugh qwerty asdfgh",
         language="en",
         session_id=SESSION,
         user_id="u1",
@@ -636,6 +637,38 @@ async def _docs_unavailable() -> None:
         routing="docs",
     )
     assert context.docs_unavailable is True
+
+
+def test_docs_routing_local_fallback_when_rag_fails() -> None:
+    asyncio.run(_docs_local_fallback())
+
+
+async def _docs_local_fallback() -> None:
+    settings = SimpleNamespace(
+        rag=SimpleNamespace(
+            context_max_tokens=1000, context_max_tokens_action=512
+        )
+    )
+    context = await build_chat_context(
+        sessions=InMemorySessionStore(),
+        retriever=FailingRetriever(),  # type: ignore[arg-type]
+        settings=settings,  # type: ignore[arg-type]
+        question="How do I use DragBizz chat voice assistant?",
+        language="en",
+        session_id=SESSION,
+        user_id="u1",
+        store_id=STORE,
+        tools=[],
+        routing="docs",
+    )
+    assert context.docs_unavailable is False
+    assert context.messages
+    assert context.retrieved
+    assert any(
+        "voice" in (chunk.metadata.get("source") or "")
+        or "assistant" in (chunk.metadata.get("source") or "")
+        for chunk in context.retrieved
+    )
 
 
 def test_both_routing_continues_without_docs() -> None:
