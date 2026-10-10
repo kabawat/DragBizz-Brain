@@ -1,60 +1,94 @@
 # DragBizz AI Service
 
-FastAPI service that powers DragBizz chat: authenticated store Q&A, RAG over product docs, and retailer tool calls (sales, stock, customers, invoices). It does not talk to DragBizz databases directly — tools call approved business APIs with the caller's JWT and store scope.
+The AI service handles DragBizz chat, including store-specific questions, product
+documentation search, and business actions. It accesses business data through the
+approved APIs, using the caller's JWT and store scope; it does not connect directly
+to DragBizz databases.
 
-## Setup
+## Requirements
 
-1. Copy env and install deps:
+- Python 3.11 or newer for local development
+- Docker with the Compose plugin to run the full stack in containers
+
+## Configure and install
+
+From this directory, run:
 
 ```bash
-cp .env.example .env
 ./setup.sh
 ```
 
-2. Fill required values in `.env`:
+The script creates `.env` from `.env.example` if needed, creates `.venv`, and
+installs the service and development dependencies. On Debian or Ubuntu, it also
+installs the matching `python3-venv` package if Python reports that `ensurepip`
+is unavailable; this may prompt for your sudo password.
 
-| Env | Purpose |
+Set the values you need in `.env` before starting the service:
+
+| Variable | Purpose |
 |---|---|
-| `AI_OPENAI_API_KEY` | Embeddings (+ OpenAI chat fallback) |
-| `CHEAPER_INFERENCE_API_KEY` | Primary chat provider (optional) |
-| `AI_BASE_URL` | Nginx base (`http://dragbizz.local`) for `/auth` and `/retailer` |
-| `AI_QDRANT_URL` | Qdrant URL (`http://localhost:6333` local; `http://qdrant:6333` in Docker) |
-| `AI_REDIS_URL` | Optional; sessions, usage, model selection (empty = in-process) |
+| `AI_OPENAI_API_KEY` | OpenAI embeddings and chat fallback |
+| `CHEAPER_INFERENCE_API_KEY` | Optional primary chat provider |
+| `AI_BASE_URL` | Base URL for the `/auth` and `/retailer` APIs |
+| `AI_QDRANT_URL` | Qdrant URL; use `http://localhost:6333` locally |
+| `AI_REDIS_URL` | Optional Redis URL; empty uses in-process storage |
 
-3. Run:
+## Run
+
+Start the full stack with Docker Compose:
 
 ```bash
-./run.sh                 # Docker: Redis + Qdrant + AI on :4004
-./run.sh --index         # same, then index knowledge/
-./run.sh --normal        # local .venv + uvicorn --reload
+./run.sh
+```
+
+Or run the API locally (Qdrant and any other required services must be available):
+
+```bash
+./run.sh --normal
+```
+
+Locally, the API listens on port `4004` by default. Docker Compose publishes it
+on port `8005` by default; set `HOST_HTTP_PORT` to change that host port.
+`./run.sh --help` lists all available options. Add `--index` to either command
+to index the knowledge documents as part of startup:
+
+```bash
+./run.sh --index
 ./run.sh --normal --index
 ```
 
-Or:
+The equivalent Compose command is:
 
 ```bash
 docker compose up --build
 ```
 
-4. Index docs (needs OpenAI key + Qdrant):
+## Index knowledge documents
+
+Indexing requires a working Qdrant connection and an embedding provider configured
+in `.env`. The `--index` option runs the indexer as part of startup. To run it
+manually:
 
 ```bash
+# Local service environment
+source .venv/bin/activate
 python -m app.rag.indexer
-# production:
+
+# Docker Compose
 docker compose exec dragbizz-ai python -m app.rag.indexer --yes
 ```
 
 ## Endpoints
 
-| URL | Notes |
+| Endpoint | Access |
 |---|---|
-| `http://localhost:4004` | API |
-| `/docs` | Swagger |
-| `/api/v1/health` | Public |
-| `/api/v1/ready` | Public |
-| `POST /api/v1/chat` | Auth required (Bearer or `at` cookie) |
+| `http://localhost:4004` (local) / `http://localhost:8005` (Docker) | API |
+| `/docs` | Swagger UI |
+| `/api/v1/health` | Public health check |
+| `/api/v1/ready` | Public readiness check |
+| `POST /api/v1/chat` | Bearer token or `at` cookie required |
 
-## Chat smoke test
+## Chat request example
 
 ```bash
 curl -sS -X POST "http://localhost:4004/api/v1/chat" \
