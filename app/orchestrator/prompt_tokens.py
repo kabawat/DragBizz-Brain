@@ -18,15 +18,6 @@ class PromptTokenBreakdown:
     history: int
     user: int
 
-    def as_metrics(self) -> dict[str, int]:
-        return {
-            "prompt_system_tokens": self.system,
-            "prompt_tools_tokens": self.tools,
-            "prompt_rag_tokens": self.rag,
-            "prompt_history_tokens": self.history,
-            "prompt_user_tokens": self.user,
-        }
-
 
 def estimate_prompt_token_breakdown(
     *,

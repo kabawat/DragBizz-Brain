@@ -26,10 +26,6 @@ class ServiceSettings(BaseSettings):
     def auth_url(self) -> str:
         return f"{self.base_url}/auth"
 
-    @property
-    def utility_url(self) -> str:
-        return f"{self.base_url}/utility"
-
     @field_validator("base_url")
     @classmethod
     def strip_slash(cls, value: str) -> str:

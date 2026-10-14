@@ -324,15 +324,6 @@ def resolve_turn_intent(
     return TurnIntent(routing=routing, tool_names=tool_names)
 
 
-def select_tools_for_question(
-    question: str,
-    *,
-    available: Iterable[str],
-) -> frozenset[str]:
-    """Return tool names to inject for this turn."""
-    return resolve_turn_intent(question, available=available).tool_names
-
-
 def user_requested_sensitive_action(question: str, tool_name: str) -> bool:
     """True when the user text itself asks for this sensitive action.
 

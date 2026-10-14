@@ -261,7 +261,7 @@ async def run_tool_loop(
                 generations.append(generation)
                 break
 
-        read_calls, write_calls, sensitive_calls = partition_tool_calls(
+        _, write_calls, sensitive_calls = partition_tool_calls(
             tool_calls, registry=registry
         )
         stages = plan_execution(tool_calls, registry=registry)

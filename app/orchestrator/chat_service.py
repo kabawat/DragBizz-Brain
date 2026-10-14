@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
-import re
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
@@ -22,12 +20,18 @@ from app.observability.pricing import PricingConfig, pricing_from_settings
 from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.cancel import CancelScope
 from app.orchestrator.chat_context import build_chat_context
+from app.orchestrator.chat_helpers import (
+    get_usage_source,
+    normalize_dashboard_links,
+    sum_optional_tokens,
+)
+from app.orchestrator.chat_metrics import log_request_metrics
+from app.orchestrator.chat_stream import stream_chat
 from app.orchestrator.confirm_flow import handle_confirm
 from app.orchestrator.confirmation import (
     pending_to_schema,
     stage_from_draft_result,
 )
-from app.orchestrator.prompt_tokens import PromptTokenBreakdown
 from app.orchestrator.token_usage import RequestTokenUsage
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.orchestrator.tool_loop import run_tool_loop
@@ -38,14 +42,12 @@ from app.prompts.fallback import (
     get_fallback_message,
 )
 from app.prompts.refusal import get_refusal_message
-from app.rag.models import RetrievedChunk
 from app.rag.retrieval_cache import NoOpRagCache, RagCache
 from app.rag.retriever import Retriever
 from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
     ConfirmRequest,
-    GenerationResponse,
     PendingConfirmation,
 )
 from app.sessions import (
@@ -273,7 +275,7 @@ class ChatService:
                     pending = pending_to_schema(staged_draft)
                     break
 
-        reply = _normalize_dashboard_links(outcome.generation.content or "")
+        reply = normalize_dashboard_links(outcome.generation.content or "")
         message = self._guard_output(
             reply,
             tool_results=outcome.all_results,
@@ -308,11 +310,11 @@ class ChatService:
             output_tokens = token_usage.output_tokens
             usage_source = token_usage.usage_source
         else:
-            usage_source = _usage_source(outcome.generations)
-            input_tokens = _sum_optional_tokens(
+            usage_source = get_usage_source(outcome.generations)
+            input_tokens = sum_optional_tokens(
                 *(item.input_tokens for item in outcome.generations)
             )
-            output_tokens = _sum_optional_tokens(
+            output_tokens = sum_optional_tokens(
                 *(item.output_tokens for item in outcome.generations)
             )
         cost = self._pricing.compute_chat_cost(
@@ -336,7 +338,7 @@ class ChatService:
         if self._metrics is not None:
             self._metrics.record_chat(latency_ms, error=False)
 
-        self._log_request_metrics(
+        log_request_metrics(
             generations=outcome.generations,
             retrieved=context.retrieved,
             tool_calls=outcome.all_calls,
@@ -376,119 +378,17 @@ class ChatService:
         access_token: str,
         cancel: CancelScope | None = None,
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
-        if self._metrics is not None:
-            self._metrics.record_stream_request()
-        started = time.perf_counter()
-        ttft_recorded = False
-        yield (
-            "request.started",
-            {
-                "requestId": request_id,
-                "sessionId": body.session_id,
-            },
-        )
-
-        queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
-
-        async def _emit(event: str, payload: dict[str, Any]) -> None:
-            await queue.put((event, payload))
-
-        scope = cancel or CancelScope()
-
-        async def _run() -> ChatResponse:
-            return await self.handle(
-                body,
-                user=user,
-                request_id=request_id,
-                store_id=store_id,
-                access_token=access_token,
-                cancel=scope,
-                emit=_emit,
-            )
-
-        task = asyncio.create_task(_run())
-        response: ChatResponse | None = None
-        aborted = False
-        try:
-            while True:
-                if scope.cancelled:
-                    aborted = True
-                    task.cancel()
-                    break
-                if task.done() and queue.empty():
-                    break
-                try:
-                    item = await asyncio.wait_for(queue.get(), timeout=0.05)
-                except TimeoutError:
-                    if task.done():
-                        while not queue.empty():
-                            item = queue.get_nowait()
-                            if item is not None:
-                                yield item
-                        break
-                    continue
-                if item is None:
-                    break
-                yield item
-
-            try:
-                response = await task
-            except asyncio.CancelledError:
-                aborted = True
-                response = None
-        except asyncio.CancelledError:
-            aborted = True
-            scope.cancel()
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-            response = None
-
-        if aborted or response is None:
-            if self._metrics is not None:
-                self._metrics.record_stream_aborted()
-                self._metrics.record_cancel()
-            yield ("request.aborted", {"requestId": request_id})
-            return
-
-        message = response.message or ""
-        chunk_size = 48
-        for index in range(0, len(message), chunk_size):
-            if scope.cancelled:
-                if self._metrics is not None:
-                    self._metrics.record_stream_aborted()
-                    self._metrics.record_cancel()
-                yield ("request.aborted", {"requestId": request_id})
-                return
-            delta = message[index : index + chunk_size]
-            if not ttft_recorded and self._metrics is not None:
-                self._metrics.record_stream_ttft(
-                    (time.perf_counter() - started) * 1000
-                )
-                ttft_recorded = True
-            yield ("assistant.delta", {"text": delta})
-
-        pending_payload = None
-        if response.pending_confirmation is not None:
-            pending = response.pending_confirmation
-            pending_payload = {
-                "confirmationId": pending.confirmation_id,
-                "draftId": pending.draft_id,
-                "type": pending.type,
-                "expiresAt": pending.expires_at,
-            }
-        if self._metrics is not None:
-            self._metrics.record_stream_completed()
-        yield (
-            "request.completed",
-            {
-                "requestId": request_id,
-                "sessionId": response.session_id,
-                "provider": response.provider,
-                "model": response.model,
-                "pendingConfirmation": pending_payload,
-            },
-        )
+        async for event in stream_chat(
+            self.handle,
+            body,
+            user=user,
+            request_id=request_id,
+            store_id=store_id,
+            access_token=access_token,
+            metrics=self._metrics,
+            cancel=cancel,
+        ):
+            yield event
 
     async def confirm(
         self,
@@ -580,87 +480,3 @@ class ChatService:
             message="Daily AI usage limit reached for this store",
             status_code=429,
         )
-
-    def _log_request_metrics(
-        self,
-        *,
-        generations: list[GenerationResponse],
-        retrieved: list[RetrievedChunk],
-        tool_calls: list[Any],
-        history_turns: int,
-        latency_ms: float,
-        input_tokens: int | None,
-        output_tokens: int | None,
-        cost,
-        token_breakdown: PromptTokenBreakdown,
-        rag_cache_hit: bool,
-        outcome: str,
-        token_usage: RequestTokenUsage | None = None,
-        compacted_tokens: int = 0,
-        removed_schema_tokens: int = 0,
-        removed_result_tokens: int = 0,
-    ) -> None:
-        # Doc IDs/scores, tokens, latency, cost — never question or answer
-        # text, never user data (rule.md #19).
-        final = generations[-1]
-        usage_agg = token_usage.aggregate() if token_usage is not None else {}
-        total_tokens = (
-            usage_agg.get("totalTokens")
-            if usage_agg
-            else (
-                (input_tokens or 0) + (output_tokens or 0)
-                if input_tokens is not None or output_tokens is not None
-                else None
-            )
-        )
-        # Keep the INFO line scannable; detailed call breakdown stays in
-        # metrics registry / DEBUG if needed later.
-        metrics_payload = {
-            "latency_ms": round(latency_ms, 1),
-            "outcome": outcome,
-            "provider": final.provider,
-            "model": final.model,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": total_tokens,
-            "cost_usd": cost.cost_usd,
-            "model_calls": usage_agg.get("modelCalls", len(generations)),
-            "tools_called": [call.name for call in tool_calls],
-            "rag_docs": len(retrieved),
-            "rag_cache_hit": rag_cache_hit,
-            "prompt_rag_tokens": token_breakdown.rag,
-            "history_turns": history_turns,
-        }
-        if compacted_tokens or removed_schema_tokens or removed_result_tokens:
-            metrics_payload["compacted_tokens"] = compacted_tokens
-            metrics_payload["removed_schema_tokens"] = removed_schema_tokens
-            metrics_payload["removed_result_tokens"] = removed_result_tokens
-        emit_event(CHAT_REQUEST, metrics=metrics_payload, outcome=outcome)
-
-
-_DASHBOARD_LINK_RE = re.compile(
-    r"(?:https?://)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?::\d+)?"
-    r"(/dashboard/[^\s)\]\"']*)"
-)
-
-
-def _normalize_dashboard_links(text: str) -> str:
-    return _DASHBOARD_LINK_RE.sub(r"\1", text)
-
-
-def _sum_optional_tokens(*values: int | None) -> int | None:
-    present = [value for value in values if value is not None]
-    if not present:
-        return None
-    return sum(present)
-
-
-def _usage_source(generations: list[GenerationResponse]) -> str:
-    if not generations:
-        return "estimated"
-    if all(
-        item.input_tokens is not None and item.output_tokens is not None
-        for item in generations
-    ):
-        return "actual"
-    return "estimated"
