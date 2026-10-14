@@ -49,9 +49,12 @@ from app.schemas.chat import (
     PendingConfirmation,
 )
 from app.sessions import (
+    DurableHistoryStore,
     InMemorySessionStore,
+    NoOpHistoryStore,
     SessionStore,
     SessionTurn,
+    persist_turn_safe,
 )
 from app.tools.registry import ToolRegistry
 from app.usage import InMemoryUsageStore, UsageStore
@@ -75,6 +78,7 @@ class ChatService:
         input_guard: InputGuard | None = None,
         output_guard: OutputGuard | None = None,
         session_store: SessionStore | None = None,
+        history_store: DurableHistoryStore | None = None,
         confirmation_store: ConfirmationStore | None = None,
         usage_store: UsageStore | None = None,
         metrics: MetricsRegistry | None = None,
@@ -95,6 +99,7 @@ class ChatService:
             max_turns=settings.session.max_turns,
             history_max_tokens=settings.session.history_max_tokens,
         )
+        self._history: DurableHistoryStore = history_store or NoOpHistoryStore()
         self._confirmations = confirmation_store or InMemoryConfirmationStore(
             ttl_seconds=settings.session.confirmation_ttl_seconds
         )
@@ -286,6 +291,15 @@ class ChatService:
                     outcome.all_results
                 ),
             ),
+        )
+        await persist_turn_safe(
+            self._history,
+            session_id=body.session_id,
+            user_id=user_id,
+            store_id=store_id,
+            user_text=body.text,
+            assistant_text=message,
+            tool_results=outcome.all_results,
         )
 
         # Tracker includes retries/fallback; generations omit those attempts.
@@ -497,6 +511,7 @@ class ChatService:
             guard_output=self._guard_output,
             audit_trail=self._audit_trail,
             metrics=self._metrics,
+            history=self._history,
         )
 
     def _guard_input(self, body: ChatRequest) -> str | None:

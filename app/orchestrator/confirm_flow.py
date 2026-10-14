@@ -17,12 +17,49 @@ from app.observability.confirmation_audit import audit_confirmation
 from app.observability.metrics import MetricsRegistry
 from app.schemas.chat import ChatResponse, ConfirmRequest
 from app.schemas.tool import ToolCall, ToolResult
-from app.sessions import SessionStore, SessionTurn
+from app.sessions import (
+    DurableHistoryStore,
+    SessionStore,
+    SessionTurn,
+    persist_turn_safe,
+)
 from app.tools.projection import project_tool_results
 
 GuardOutputFn = Callable[..., str]
 
 _AMBIGUOUS_CODES = frozenset({"RETAILER_TIMEOUT", "RETAILER_UNAVAILABLE"})
+
+
+async def _append_and_persist(
+    *,
+    sessions: SessionStore,
+    history: DurableHistoryStore | None,
+    session_id: str,
+    user_id: str,
+    store_id: str,
+    user_text: str,
+    assistant_text: str,
+    tool_results: list[ToolResult] | None = None,
+) -> None:
+    await sessions.append_turn(
+        session_id=session_id,
+        user_id=user_id,
+        store_id=store_id,
+        turn=SessionTurn(
+            user_text=user_text,
+            assistant_text=assistant_text,
+            tool_context=sessions.compact_tool_context(tool_results or []),
+        ),
+    )
+    await persist_turn_safe(
+        history,
+        session_id=session_id,
+        user_id=user_id,
+        store_id=store_id,
+        user_text=user_text,
+        assistant_text=assistant_text,
+        tool_results=tool_results,
+    )
 
 
 async def handle_confirm(
@@ -38,6 +75,7 @@ async def handle_confirm(
     guard_output: GuardOutputFn,
     audit_trail: AuditTrail | None = None,
     metrics: MetricsRegistry | None = None,
+    history: DurableHistoryStore | None = None,
 ) -> ChatResponse:
     if body.action == "reject":
         record = await confirmations.reject(
@@ -61,15 +99,14 @@ async def handle_confirm(
             business_idempotency_key=record.business_idempotency_key,
         )
         message = _reject_message(record)
-        await sessions.append_turn(
+        await _append_and_persist(
+            sessions=sessions,
+            history=history,
             session_id=body.session_id,
             user_id=user_id,
             store_id=store_id,
-            turn=SessionTurn(
-                user_text="[confirm:reject]",
-                assistant_text=message,
-                tool_context=None,
-            ),
+            user_text="[confirm:reject]",
+            assistant_text=message,
         )
         return ChatResponse(
             message=message,
@@ -149,15 +186,14 @@ async def handle_confirm(
                 business_idempotency_key=record.business_idempotency_key,
             )
             message = _unknown_message(record)
-            await sessions.append_turn(
+            await _append_and_persist(
+                sessions=sessions,
+                history=history,
                 session_id=body.session_id,
                 user_id=user_id,
                 store_id=store_id,
-                turn=SessionTurn(
-                    user_text="[confirm:approve]",
-                    assistant_text=message,
-                    tool_context=None,
-                ),
+                user_text="[confirm:approve]",
+                assistant_text=message,
             )
             return ChatResponse(
                 message=message,
@@ -186,15 +222,14 @@ async def handle_confirm(
             business_idempotency_key=record.business_idempotency_key,
         )
         message = _unknown_message(record)
-        await sessions.append_turn(
+        await _append_and_persist(
+            sessions=sessions,
+            history=history,
             session_id=body.session_id,
             user_id=user_id,
             store_id=store_id,
-            turn=SessionTurn(
-                user_text="[confirm:approve]",
-                assistant_text=message,
-                tool_context=None,
-            ),
+            user_text="[confirm:approve]",
+            assistant_text=message,
         )
         return ChatResponse(
             message=message,
@@ -246,15 +281,15 @@ async def handle_confirm(
         language="hi-IN",
     )
 
-    await sessions.append_turn(
+    await _append_and_persist(
+        sessions=sessions,
+        history=history,
         session_id=body.session_id,
         user_id=user_id,
         store_id=store_id,
-        turn=SessionTurn(
-            user_text="[confirm:approve]",
-            assistant_text=message,
-            tool_context=sessions.compact_tool_context(projected),
-        ),
+        user_text="[confirm:approve]",
+        assistant_text=message,
+        tool_results=projected,
     )
     return ChatResponse(
         message=message,

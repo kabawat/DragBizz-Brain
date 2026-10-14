@@ -11,6 +11,7 @@ dependencies = [
   "fastapi",
   "httpx",
   "jsonschema",
+  "motor",
   "pydantic-settings",
   "PyJWT[crypto]",
   "qdrant-client",
@@ -21,9 +22,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest",
+  "pytest-asyncio",
   "pytest-cov",
   "ruff",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.setuptools.packages.find]
 include = ["app*"]

@@ -34,7 +34,12 @@ from app.rag.embedding_service import EmbeddingService
 from app.rag.retrieval_cache import build_rag_cache
 from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStore
-from app.sessions import InMemorySessionStore, RedisSessionStore
+from app.sessions import (
+    InMemorySessionStore,
+    MongoHistoryStore,
+    NoOpHistoryStore,
+    RedisSessionStore,
+)
 from app.tools.definitions import (
     READ_TOOL_DEFINITIONS,
     SENSITIVE_TOOL_DEFINITIONS,
@@ -240,6 +245,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     )
     app.state.session_store = session_store
+
+    mongo_client = None
+    history_store = NoOpHistoryStore()
+    if settings.session.mongodb_uri:
+        from motor.motor_asyncio import AsyncIOMotorClient
+
+        mongo_client = AsyncIOMotorClient(settings.session.mongodb_uri)
+        try:
+            await mongo_client.admin.command("ping")
+            history_store = MongoHistoryStore(mongo_client.get_default_database())
+            await history_store.ensure_indexes()
+            logger.info("Durable chat history Mongo connected")
+        except Exception:
+            logger.warning(
+                "AI_MONGODB_URI set but Mongo unreachable; history fail-open",
+                exc_info=True,
+            )
+            mongo_client.close()
+            mongo_client = None
+            history_store = NoOpHistoryStore()
+    app.state.mongo_client = mongo_client
+    app.state.history_store = history_store
+
     rag_cache = build_rag_cache(
         redis_client, ttl_seconds=settings.rag.cache_ttl_seconds
     )
@@ -259,6 +287,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         retriever=retriever,
         rag_cache=rag_cache,
         session_store=session_store,
+        history_store=history_store,
         confirmation_store=confirmation_store,
         usage_store=usage_store,
         metrics=metrics,
@@ -274,6 +303,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             audit_trail.close()
         if redis_client is not None:
             await redis_client.aclose()
+        if mongo_client is not None:
+            mongo_client.close()
         await vector_store.close()
         await http_client.aclose()
         logger.info("AI service stopped")

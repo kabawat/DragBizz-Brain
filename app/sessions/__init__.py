@@ -1,9 +1,14 @@
-"""Chat session memory package (Protocol + InMemory/Redis).
-
-Intentional thin package: multiple orchestrator consumers share SessionStore
-without owning a backend. Do not flatten into chat_service.
-"""
-
+from app.sessions.history import (
+    DurableHistoryStore,
+    HistoryMessage,
+    HistorySessionDetail,
+    HistorySessionSummary,
+    InMemoryHistoryStore,
+    MongoHistoryStore,
+    NoOpHistoryStore,
+    persist_turn_safe,
+    title_from_text,
+)
 from app.sessions.store import (
     InMemorySessionStore,
     RedisSessionStore,
@@ -13,9 +18,18 @@ from app.sessions.store import (
 )
 
 __all__ = [
+    "DurableHistoryStore",
+    "HistoryMessage",
+    "HistorySessionDetail",
+    "HistorySessionSummary",
+    "InMemoryHistoryStore",
     "InMemorySessionStore",
+    "MongoHistoryStore",
+    "NoOpHistoryStore",
     "RedisSessionStore",
     "SessionStore",
     "SessionTurn",
+    "persist_turn_safe",
+    "title_from_text",
     "turns_to_messages",
 ]

@@ -325,6 +325,16 @@ class SessionSettings(BaseSettings):
         le=3_600,
         validation_alias="AI_CONFIRMATION_TTL_SECONDS",
     )
+    # Durable chat archive (existing Mongo). Empty = history APIs fail-open.
+    mongodb_uri: str | None = Field(
+        default=None,
+        validation_alias="AI_MONGODB_URI",
+    )
+
+    @field_validator("mongodb_uri", mode="before")
+    @classmethod
+    def empty_mongodb_as_none(cls, value: object) -> object:
+        return _empty_as_none(value)
 
 
 class LimitSettings(BaseSettings):
