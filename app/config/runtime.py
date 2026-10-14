@@ -1,0 +1,168 @@
+from typing import Literal
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
+
+from app.config.base import _empty_as_none, _group_config
+
+
+class GuardSettings(BaseSettings):
+    model_config = _group_config()
+
+    input_mode: Literal["off", "log", "enforce"] = Field(
+        default="log",
+        validation_alias="AI_INPUT_GUARD_MODE",
+    )
+    output_mode: Literal["off", "log", "enforce"] = Field(
+        default="log",
+        validation_alias="AI_OUTPUT_GUARD_MODE",
+    )
+
+
+class SessionSettings(BaseSettings):
+    model_config = _group_config()
+
+    ttl_seconds: int = Field(
+        default=1_800,
+        ge=60,
+        le=86_400,
+        validation_alias="AI_SESSION_TTL_SECONDS",
+    )
+    max_turns: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        validation_alias="AI_SESSION_MAX_TURNS",
+    )
+    history_max_tokens: int = Field(
+        default=1_200,
+        ge=200,
+        le=16_000,
+        validation_alias="AI_SESSION_HISTORY_MAX_TOKENS",
+    )
+    idempotency_ttl_seconds: int = Field(
+        default=86_400,
+        ge=60,
+        le=604_800,
+        validation_alias="AI_IDEMPOTENCY_TTL_SECONDS",
+    )
+    confirmation_ttl_seconds: int = Field(
+        default=300,
+        ge=30,
+        le=3_600,
+        validation_alias="AI_CONFIRMATION_TTL_SECONDS",
+    )
+    # Durable chat archive (existing Mongo). Empty = history APIs fail-open.
+    mongodb_uri: str | None = Field(
+        default=None,
+        validation_alias="AI_MONGODB_URI",
+    )
+
+    @field_validator("mongodb_uri", mode="before")
+    @classmethod
+    def empty_mongodb_as_none(cls, value: object) -> object:
+        return _empty_as_none(value)
+
+
+class LimitSettings(BaseSettings):
+    model_config = _group_config()
+
+    redis_url: str | None = Field(default=None, validation_alias="AI_REDIS_URL")
+    tenant_daily_token_cap: int = Field(
+        default=0,
+        ge=0,
+        validation_alias="AI_TENANT_DAILY_TOKEN_CAP",
+    )
+    tenant_daily_cost_cap_usd: float = Field(
+        default=0,
+        ge=0,
+        validation_alias="AI_TENANT_DAILY_COST_CAP_USD",
+    )
+    audit_trail_path: str | None = Field(
+        default="data/tool_audit.jsonl",
+        validation_alias="AI_AUDIT_TRAIL_PATH",
+    )
+    chat_rate_per_minute: int = Field(
+        default=30,
+        ge=0,
+        validation_alias="AI_CHAT_RATE_PER_MINUTE",
+    )
+    confirm_rate_per_minute: int = Field(
+        default=20,
+        ge=0,
+        validation_alias="AI_CONFIRM_RATE_PER_MINUTE",
+    )
+    max_concurrent_chats: int = Field(
+        default=2,
+        ge=0,
+        validation_alias="AI_MAX_CONCURRENT_CHATS_PER_STORE_USER",
+    )
+    max_concurrent_confirms: int = Field(
+        default=2,
+        ge=0,
+        validation_alias="AI_MAX_CONCURRENT_CONFIRMS_PER_STORE_USER",
+    )
+    concurrency_lease_seconds: int = Field(
+        default=60,
+        ge=5,
+        le=600,
+        validation_alias="AI_CONCURRENCY_LEASE_SECONDS",
+    )
+    max_model_calls: int = Field(
+        default=4,
+        ge=1,
+        le=20,
+        validation_alias="AI_MAX_MODEL_CALLS",
+    )
+    max_tool_calls: int = Field(
+        default=8,
+        ge=1,
+        le=40,
+        validation_alias="AI_MAX_TOOL_CALLS",
+    )
+    max_estimated_input_tokens: int = Field(
+        default=12_000,
+        ge=1_000,
+        le=200_000,
+        validation_alias="AI_MAX_ESTIMATED_INPUT_TOKENS",
+    )
+    max_estimated_output_tokens: int = Field(
+        default=4_000,
+        ge=256,
+        le=64_000,
+        validation_alias="AI_MAX_ESTIMATED_OUTPUT_TOKENS",
+    )
+    request_deadline_seconds: float = Field(
+        default=55.0,
+        gt=1,
+        le=300,
+        validation_alias="AI_REQUEST_DEADLINE_SECONDS",
+    )
+    breaker_failure_threshold: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        validation_alias="AI_BREAKER_FAILURE_THRESHOLD",
+    )
+    breaker_cooldown_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        le=600,
+        validation_alias="AI_BREAKER_COOLDOWN_SECONDS",
+    )
+    pricing_version: str = Field(
+        default="v1",
+        min_length=1,
+        max_length=32,
+        validation_alias="AI_PRICING_VERSION",
+    )
+    embedding_usd_per_million_tokens: float = Field(
+        default=0.02,
+        ge=0,
+        validation_alias="AI_EMBEDDING_USD_PER_MILLION_TOKENS",
+    )
+
+    @field_validator("redis_url", "audit_trail_path", mode="before")
+    @classmethod
+    def empty_as_none(cls, value: object) -> object:
+        return _empty_as_none(value)
