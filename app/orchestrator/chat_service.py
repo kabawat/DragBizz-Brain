@@ -35,7 +35,12 @@ from app.orchestrator.confirmation import (
 from app.orchestrator.token_usage import RequestTokenUsage
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.orchestrator.tool_loop import run_tool_loop
-from app.orchestrator.tool_selector import resolve_turn_intent
+from app.orchestrator.ledger_auto import try_fast_ledger_turn
+from app.orchestrator.tool_selector import (
+    looks_like_field_fill,
+    narrow_field_fill_tools,
+    resolve_turn_intent,
+)
 from app.prompts.fallback import (
     get_budget_exceeded_message,
     get_docs_unavailable_message,
@@ -56,7 +61,7 @@ from app.sessions import (
     NoOpHistoryStore,
     SessionStore,
     SessionTurn,
-    persist_turn_safe,
+    schedule_persist_turn,
 )
 from app.tools.registry import ToolRegistry
 from app.usage import InMemoryUsageStore, UsageStore
@@ -136,10 +141,92 @@ class ChatService:
             )
 
         available = {definition.name for definition in self._registry.definitions()}
-        # Capability set comes from the current user message only.
-        intent = resolve_turn_intent(body.text, available=available)
-        tools = list(self._registry.definitions_for(intent.tool_names))
+        prior_turns = await self._sessions.load_history(
+            session_id=body.session_id,
+            user_id=user_id,
+            store_id=store_id,
+        )
+        intent = resolve_turn_intent(
+            body.text,
+            available=available,
+            prior_user_texts=[turn.user_text for turn in prior_turns],
+        )
+        tool_names = intent.tool_names
+        field_fill = looks_like_field_fill(body.text)
+        if field_fill:
+            tool_names = narrow_field_fill_tools(tool_names)
+        tools = list(self._registry.definitions_for(tool_names))
         allowed_names = frozenset(tool.name for tool in tools)
+
+        if cancel is not None:
+            cancel.raise_if_cancelled()
+        fast_ledger = await try_fast_ledger_turn(
+            question=body.text,
+            language=body.language,
+            store_id=store_id,
+            access_token=access_token,
+            session_id=body.session_id,
+            user_id=user_id,
+            allowed_names=allowed_names,
+            executor=self._executor,
+            confirmations=self._confirmations,
+            audit_trail=self._audit_trail,
+            metrics=self._metrics,
+        )
+        if fast_ledger is not None:
+            message = self._guard_output(
+                fast_ledger.message,
+                tool_results=fast_ledger.tool_results,
+                language=body.language,
+            )
+            await self._sessions.append_turn(
+                session_id=body.session_id,
+                user_id=user_id,
+                store_id=store_id,
+                turn=SessionTurn(
+                    user_text=body.text,
+                    assistant_text=message,
+                    tool_context=self._sessions.compact_tool_context(
+                        fast_ledger.tool_results
+                    ),
+                ),
+            )
+            schedule_persist_turn(
+                self._history,
+                session_id=body.session_id,
+                user_id=user_id,
+                store_id=store_id,
+                user_text=body.text,
+                assistant_text=message,
+                tool_results=fast_ledger.tool_results,
+            )
+            latency_ms = round((time.perf_counter() - started) * 1000, 1)
+            if self._metrics is not None:
+                self._metrics.record_chat(latency_ms, error=False)
+            emit_event(
+                CHAT_REQUEST,
+                outcome="ok",
+                metrics={
+                    "latency_ms": latency_ms,
+                    "outcome": "ok",
+                    "provider": "fast_ledger",
+                    "model": "",
+                    "model_calls": 0,
+                    "tools_called": [call.name for call in fast_ledger.tool_calls],
+                },
+            )
+            return ChatResponse(
+                message=message,
+                session_id=body.session_id,
+                request_id=request_id,
+                user_id=user_id,
+                provider="fast_ledger",
+                model="",
+                tool_calls=fast_ledger.tool_calls,
+                tool_results=fast_ledger.tool_results,
+                pending_confirmation=fast_ledger.pending_confirmation,
+            )
+
         context = await build_chat_context(
             sessions=self._sessions,
             retriever=self._retriever,
@@ -153,6 +240,7 @@ class ChatService:
             routing=intent.routing,
             rag_cache=self._rag_cache,
             metrics=self._metrics,
+            prior_turns=prior_turns,
         )
         if context.docs_unavailable:
             message = get_docs_unavailable_message(body.language)
@@ -201,12 +289,19 @@ class ChatService:
         try:
             if cancel is not None:
                 cancel.raise_if_cancelled()
+            max_tokens = self._settings.chat.max_tokens
+            if field_fill:
+                max_tokens = min(
+                    max_tokens, self._settings.chat.synthesis_max_tokens
+                )
+            elif tools:
+                max_tokens = min(max_tokens, 512)
             generation = await self._gateway.generate_with_optional_parse_repair(
                 context.messages,
                 tools,
                 store_id=store_id,
                 temperature=self._settings.chat.temperature,
-                max_tokens=self._settings.chat.max_tokens,
+                max_tokens=max_tokens,
                 describe_errors=_describe_errors,
                 budget=budget,
                 token_usage=token_usage,
@@ -254,13 +349,26 @@ class ChatService:
                 provider="budget",
                 model="",
             )
+        except AppError:
+            logger.exception("Chat generation failed; returning fallback")
+            message = get_fallback_message(body.language)
+            latency_ms = round((time.perf_counter() - started) * 1000, 1)
+            if self._metrics is not None:
+                self._metrics.record_chat(latency_ms, error=True)
+            return ChatResponse(
+                message=message,
+                session_id=body.session_id,
+                request_id=request_id,
+                user_id=user_id,
+                provider="error",
+                model="",
+            )
 
         pending: PendingConfirmation | None = None
         if outcome.staged_sensitive is not None:
             pending = pending_to_schema(outcome.staged_sensitive)
         else:
-            # Latest draft write wins — an update in a later round carries
-            # fresher totals than the create before it.
+            # Prefer the latest draft write in this turn.
             for result in reversed(outcome.all_write_results):
                 staged_draft = await stage_from_draft_result(
                     self._confirmations,
@@ -281,6 +389,8 @@ class ChatService:
             tool_results=outcome.all_results,
             language=body.language,
         )
+        if not message.strip():
+            message = get_fallback_message(body.language)
 
         await self._sessions.append_turn(
             session_id=body.session_id,
@@ -294,7 +404,7 @@ class ChatService:
                 ),
             ),
         )
-        await persist_turn_safe(
+        schedule_persist_turn(
             self._history,
             session_id=body.session_id,
             user_id=user_id,
@@ -304,7 +414,7 @@ class ChatService:
             tool_results=outcome.all_results,
         )
 
-        # Tracker includes retries/fallback; generations omit those attempts.
+        # Prefer tracker totals when present (includes retries).
         if token_usage.model_calls:
             input_tokens = token_usage.input_tokens
             output_tokens = token_usage.output_tokens
@@ -421,7 +531,7 @@ class ChatService:
         decision = self._input_guard.evaluate(body.text)
         if decision.allowed:
             return None
-        # Log category + matched fragment only — never the full question text.
+        # Log category/match only, not full question.
         logger.warning(
             "Input guard flagged question: category=%s matched=%r mode=%s",
             decision.category,
@@ -445,7 +555,7 @@ class ChatService:
         decision = self._output_guard.evaluate(message, tool_results)
         if decision.allowed:
             return message
-        # Log category + matched fragment only — never the full response text.
+        # Log category/match only, not full response.
         logger.warning(
             "Output guard flagged response: category=%s matched=%r mode=%s",
             decision.category,
@@ -455,7 +565,7 @@ class ChatService:
         if mode != "enforce":
             return message
         if decision.category == "SECRET_LEAK":
-            # Scrub the secret, keep the rest of the answer usable.
+            # Scrub leaked secret; keep the rest.
             return decision.sanitized_text
         return get_fallback_message(language)
 

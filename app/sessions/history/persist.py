@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -53,3 +54,42 @@ async def persist_turn_safe(
             session_id,
             exc_info=True,
         )
+
+
+def schedule_persist_turn(
+    history: DurableHistoryStore | None,
+    *,
+    session_id: str,
+    user_id: str,
+    store_id: str,
+    user_text: str,
+    assistant_text: str,
+    tool_results: list[Any] | None = None,
+) -> None:
+    """Fire-and-forget durable write so chat TTFT is not blocked by Mongo."""
+    if history is None or isinstance(history, NoOpHistoryStore):
+        return
+    task = asyncio.create_task(
+        persist_turn_safe(
+            history,
+            session_id=session_id,
+            user_id=user_id,
+            store_id=store_id,
+            user_text=user_text,
+            assistant_text=assistant_text,
+            tool_results=tool_results,
+        )
+    )
+
+    def _done(done: asyncio.Task[None]) -> None:
+        if done.cancelled():
+            return
+        exc = done.exception()
+        if exc is not None:
+            logger.warning(
+                "Durable history background task failed for session %s: %s",
+                session_id,
+                exc,
+            )
+
+    task.add_done_callback(_done)

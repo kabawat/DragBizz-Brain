@@ -16,6 +16,8 @@ from app.orchestrator.confirm_flow import handle_confirm
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.orchestrator.tool_loop import run_tool_loop
 from app.orchestrator.tool_selector import (
+    looks_like_field_fill,
+    narrow_field_fill_tools,
     resolve_turn_intent,
     should_retrieve_docs,
     user_requested_sensitive_action,
@@ -49,6 +51,9 @@ _READ = frozenset(
         "stock_summary",
         "search_customer",
         "payment_history",
+        "list_stores",
+        "customer_summary",
+        "invoice_summary",
     }
 )
 _WRITES = frozenset(
@@ -166,9 +171,11 @@ def test_unregistered_write_stays_out_of_the_read_set() -> None:
 
 def test_customer_lookup_hides_writes() -> None:
     names = _intent("Rahul ka number").tool_names
-    assert "search_customer" in names
-    assert "payment_history" in names
+    assert names == frozenset({"search_customer"})
     assert _WRITES.isdisjoint(names)
+    assert _intent("vikram name se customer").tool_names == frozenset(
+        {"search_customer"}
+    )
 
 
 def test_payment_history_does_not_offer_ledger_credit() -> None:
@@ -177,6 +184,43 @@ def test_payment_history_does_not_offer_ledger_credit() -> None:
     assert user_requested_sensitive_action(
         "recent payment dikhao", "ledger_credit"
     )
+
+
+def test_store_name_and_count_expose_list_stores() -> None:
+    for text in (
+        "mere store ka name kya hain ?",
+        "store ka naam kya hai",
+        "mere pass total kitane store hain?",
+        "how many stores do I have",
+    ):
+        intent = _intent(text)
+        assert intent.routing == "tools", text
+        assert intent.tool_names == frozenset({"list_stores"}), text
+        assert should_retrieve_docs(intent.routing) is False
+
+
+def test_customer_and_invoice_totals_expose_summary_tools() -> None:
+    for text in (
+        "total customers kitne hain",
+        "kitne customers hain",
+        "how many customers",
+    ):
+        intent = _intent(text)
+        assert intent.routing == "tools", text
+        assert "customer_summary" in intent.tool_names, text
+        assert should_retrieve_docs(intent.routing) is False
+
+    for text in (
+        "total invoice kitne hain",
+        "aaj ki invoice kitni",
+        "todays invoices",
+        "last 7 days invoice",
+        "pichle 7 din ke bill",
+    ):
+        intent = _intent(text)
+        assert intent.routing == "tools", text
+        assert "invoice_summary" in intent.tool_names, text
+        assert should_retrieve_docs(intent.routing) is False
 
 
 def test_create_and_update_cues_stay_separate() -> None:
@@ -193,6 +237,107 @@ def test_create_and_update_cues_stay_separate() -> None:
     updated = _intent("update customer").tool_names
     assert "update_customer" in updated
     assert "create_customer" not in updated
+
+
+def test_post_create_email_add_exposes_update() -> None:
+    prior = ["naya customer banao", "Vikram", "9812321232"]
+    for text in (
+        "is me email bhi add kar do",
+        "yes vikram ka email update karna hain",
+        "vikram ka email update karna hain",
+        "add email",
+        "email update",
+    ):
+        intent = resolve_turn_intent(
+            text,
+            available=_available(),
+            prior_user_texts=prior,
+        )
+        assert "update_customer" in intent.tool_names, text
+        assert "search_customer" in intent.tool_names, text
+
+
+def test_followup_keeps_create_customer_from_prior() -> None:
+    intent = resolve_turn_intent(
+        "phone 6366576778",
+        available=_available(),
+        prior_user_texts=[
+            "kya new customer bana sakte ho ?",
+            "name : vikram",
+        ],
+    )
+    assert intent.routing == "unknown"
+    assert "create_customer" in intent.tool_names
+    assert "search_customer" in intent.tool_names
+    assert not should_retrieve_docs(
+        intent.routing, tool_names=intent.tool_names
+    )
+
+
+def test_unknown_write_followup_skips_rag() -> None:
+    intent = resolve_turn_intent(
+        "Vikram",
+        available=_available(),
+        prior_user_texts=["naya customer banao"],
+    )
+    assert intent.routing == "unknown"
+    assert "create_customer" in intent.tool_names
+    assert not should_retrieve_docs(
+        intent.routing, tool_names=intent.tool_names
+    )
+
+
+def test_customer_udhaar_exposes_ledger_debit() -> None:
+    text = (
+        "vikram ne 100 mere se udhar le kar gya hai us ke khate me add kar do"
+    )
+    intent = _intent(text)
+    assert "ledger_debit" in intent.tool_names
+    assert "search_customer" in intent.tool_names
+    assert user_requested_sensitive_action(text, "ledger_debit")
+
+    spaced = "vikram ke khate me 100 add kar do"
+    spaced_intent = _intent(spaced)
+    assert "ledger_debit" in spaced_intent.tool_names
+    assert user_requested_sensitive_action(spaced, "ledger_debit")
+
+
+def test_customer_jama_exposes_ledger_credit() -> None:
+    text = "vikram ne 500 jama kar diya khata me"
+    intent = _intent(text)
+    assert "ledger_credit" in intent.tool_names
+    assert "search_customer" in intent.tool_names
+    assert user_requested_sensitive_action(text, "ledger_credit")
+
+
+def test_customer_account_ask_keeps_search() -> None:
+    intent = _intent("Krishav ka account dikhao")
+    assert "search_customer" in intent.tool_names
+    assert _WRITES.isdisjoint(intent.tool_names)
+
+
+def test_field_fill_narrows_tools() -> None:
+    assert looks_like_field_fill("mukesh")
+    assert looks_like_field_fill("9812321232")
+    assert looks_like_field_fill("a@b.com")
+    assert not looks_like_field_fill("aaj ki sale")
+    intent = resolve_turn_intent(
+        "mukesh",
+        available=_available(),
+        prior_user_texts=["naya customer banao"],
+    )
+    narrowed = narrow_field_fill_tools(intent.tool_names)
+    assert narrowed == frozenset({"create_customer", "search_customer"})
+
+
+def test_new_family_does_not_carry_prior_create() -> None:
+    intent = resolve_turn_intent(
+        "aaj ki sale",
+        available=_available(),
+        prior_user_texts=["naya customer banao"],
+    )
+    assert "today_sale" in intent.tool_names
+    assert "create_customer" not in intent.tool_names
 
 
 def test_howto_keeps_reads_and_docs() -> None:

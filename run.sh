@@ -68,8 +68,8 @@ if [ "$MODE" = "normal" ]; then
 
   exec python -m uvicorn app.main:app \
     --reload \
-    --host "${AI_HOST:-0.0.0.0}" \
-    --port "${AI_PORT:-4004}" \
+    --host 0.0.0.0 \
+    --port 4004 \
     "${PASS_ARGS[@]}"
 fi
 

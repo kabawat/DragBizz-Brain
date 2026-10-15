@@ -23,6 +23,11 @@ from app.orchestrator.context_optimize import (
     compact_result_for_model,
     tools_for_continue,
 )
+from app.orchestrator.ledger_auto import (
+    customer_label_for_id,
+    ledger_pending_message,
+    maybe_auto_ledger_call,
+)
 from app.orchestrator.prompt_tokens import estimate_tool_schema_tokens
 from app.orchestrator.token_usage import RequestTokenUsage
 from app.orchestrator.tool_call_validator import ToolCallValidator
@@ -118,14 +123,22 @@ def _sensitive_placeholder(
     confirmation_id = None
     if staged_for_call and staged is not None:
         confirmation_id = staged.confirmation_id
+    data: dict[str, Any] = {
+        "status": "pending_confirmation",
+        "confirmationId": confirmation_id,
+        "draftId": draft_id,
+    }
+    # Ground output-guard currency checks on the staged amount.
+    amount = call.arguments.get("amount")
+    if isinstance(amount, (int, float)) and not isinstance(amount, bool):
+        data["amount"] = amount
+    customer_id = call.arguments.get("customerId")
+    if isinstance(customer_id, str) and customer_id.strip():
+        data["customerId"] = customer_id.strip()
     return ToolResult(
         tool=call.name,
         success=True,
-        data={
-            "status": "pending_confirmation",
-            "confirmationId": confirmation_id,
-            "draftId": draft_id,
-        },
+        data=data,
     )
 
 
@@ -460,6 +473,48 @@ async def run_tool_loop(
                     ),
                 )
             )
+
+        if staged_sensitive is None:
+            auto_ledger = maybe_auto_ledger_call(
+                question=question,
+                store_id=store_id,
+                allowed_names=allowed_names,
+                results=all_results,
+                already_called={call.name for call in all_calls},
+            )
+            if auto_ledger is not None:
+                if cancel is not None:
+                    cancel.raise_if_cancelled()
+                staged_sensitive = await stage_from_sensitive_calls(
+                    confirmations,
+                    user_id=user_id,
+                    store_id=store_id,
+                    session_id=session_id,
+                    sensitive_calls=[auto_ledger],
+                    audit_trail=audit_trail,
+                    metrics=metrics,
+                )
+                projected = project_tool_result(
+                    _sensitive_placeholder(auto_ledger, staged_sensitive)
+                )
+                all_calls.append(auto_ledger)
+                all_results.append(projected)
+                amount = auto_ledger.arguments.get("amount")
+                customer_id = str(auto_ledger.arguments.get("customerId") or "")
+                generation = GenerationResponse(
+                    provider=generation.provider,
+                    model=generation.model,
+                    content=ledger_pending_message(
+                        tool_name=auto_ledger.name,
+                        amount=amount if isinstance(amount, (int, float)) else 0,
+                        customer_name=customer_label_for_id(
+                            all_results, customer_id
+                        ),
+                        language=language,
+                    ),
+                )
+                generations.append(generation)
+                break
 
         draft_done = any(
             result.success

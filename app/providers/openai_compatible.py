@@ -276,6 +276,7 @@ def _parse_completion(
     content = message.get("content") or ""
     raw_tool_calls = message.get("tool_calls") or []
     tool_calls: list[ToolCall] = []
+    parse_failures = 0
     for raw in raw_tool_calls:
         try:
             function = raw["function"]
@@ -288,13 +289,24 @@ def _parse_completion(
                 )
             )
         except AppError:
-            raise
-        except (KeyError, TypeError) as exc:
-            raise AppError(
-                code="TOOL_ARGS_INVALID",
-                message="Provider returned malformed tool call arguments",
-                status_code=400,
-            ) from exc
+            parse_failures += 1
+            continue
+        except (KeyError, TypeError):
+            parse_failures += 1
+            continue
+
+    # Only fail hard when every tool call was unusable and there was no text.
+    if (
+        raw_tool_calls
+        and not tool_calls
+        and parse_failures > 0
+        and not (isinstance(content, str) and content.strip())
+    ):
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message="Tool arguments must be valid JSON",
+            status_code=400,
+        )
 
     usage = body.get("usage") or {}
     return GenerationResponse(
@@ -316,14 +328,20 @@ def _parse_arguments(raw: object) -> dict[str, Any]:
             message="Tool arguments must be a JSON object",
             status_code=400,
         )
+    text = raw.strip() if raw else ""
+    if not text:
+        return {}
     try:
-        parsed = json.loads(raw) if raw else {}
-    except json.JSONDecodeError as exc:
-        raise AppError(
-            code="TOOL_ARGS_INVALID",
-            message="Tool arguments must be valid JSON",
-            status_code=400,
-        ) from exc
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        repaired = _repair_json_object(text)
+        if repaired is None:
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="Tool arguments must be valid JSON",
+                status_code=400,
+            )
+        parsed = repaired
     if not isinstance(parsed, dict):
         raise AppError(
             code="TOOL_ARGS_INVALID",
@@ -331,3 +349,51 @@ def _parse_arguments(raw: object) -> dict[str, Any]:
             status_code=400,
         )
     return parsed
+
+
+def _repair_json_object(text: str) -> dict[str, Any] | None:
+    """Best-effort fix for truncated / trailing-comma tool argument JSON."""
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        candidate = candidate.strip("`")
+        if candidate.lower().startswith("json"):
+            candidate = candidate[4:].strip()
+    stack: list[str] = []
+    cleaned_chars: list[str] = []
+    in_string = False
+    escape = False
+    for ch in candidate:
+        if in_string:
+            cleaned_chars.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            cleaned_chars.append(ch)
+            continue
+        if ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+            cleaned_chars.append(ch)
+            continue
+        if ch in "}]":
+            if stack and stack[-1] == ch:
+                stack.pop()
+            cleaned_chars.append(ch)
+            continue
+        cleaned_chars.append(ch)
+    if in_string:
+        if escape:
+            cleaned_chars.append("\\")
+        cleaned_chars.append('"')
+    cleaned = "".join(cleaned_chars) + "".join(reversed(stack))
+    cleaned = cleaned.replace(",}", "}").replace(",]", "]")
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None

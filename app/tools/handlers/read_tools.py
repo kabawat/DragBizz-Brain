@@ -147,8 +147,9 @@ _LEDGER_RE = re.compile(
     re.IGNORECASE,
 )
 _KHATA_RE = re.compile(
-    r"khata|udhaar|udhar|baaki|baqi|\bdue\b|\bjama\b|balance|"
-    r"kitne bill|kitna paid|kitna jama",
+    r"khata|khate|udhaar|udhar|baaki|baqi|\bdue\b|\bdues\b|"
+    r"\bjama\b|balance|\baccount\b|hisab|kitne bill|kitna paid|"
+    r"kitna jama|kitna baaki|total due|total paid",
     re.IGNORECASE,
 )
 
@@ -271,6 +272,173 @@ async def payment_history(
     return ToolResult(tool="payment_history", success=True, data=data)
 
 
+async def customer_summary(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_customer_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+    except RetailerHttpError as exc:
+        return _failure("customer_summary", exc)
+
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+    new_customers = payload.get("newCustomers")
+    data: dict[str, Any] = {
+        "totalCustomers": payload.get("totalCustomers"),
+        "todayCustomers": payload.get("todayCustomers"),
+    }
+    if isinstance(new_customers, dict):
+        data["newCustomers"] = {
+            key: new_customers[key]
+            for key in (
+                "last1Day",
+                "last7Days",
+                "last15Days",
+                "last30Days",
+                "last3Months",
+                "last6Months",
+                "last12Months",
+            )
+            if key in new_customers
+        }
+    return ToolResult(tool="customer_summary", success=True, data=data)
+
+
+async def invoice_summary(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_invoice_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+    except RetailerHttpError as exc:
+        return _failure("invoice_summary", exc)
+
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    counts = payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
+    amounts = payload.get("amounts") if isinstance(payload.get("amounts"), dict) else {}
+    today = payload.get("today") if isinstance(payload.get("today"), dict) else {}
+    data: dict[str, Any] = {
+        "counts": {
+            key: counts[key]
+            for key in (
+                "totalInvoices",
+                "releasedInvoices",
+                "draftInvoices",
+                "cancelledInvoices",
+            )
+            if key in counts
+        },
+        "amounts": {
+            key: amounts[key]
+            for key in ("totalAmount", "averageOrderValue")
+            if key in amounts
+        },
+        "today": {
+            key: today[key]
+            for key in ("totalInvoices", "releasedInvoices")
+            if key in today
+        },
+    }
+
+    period_days = arguments.get("periodDays")
+    if isinstance(period_days, int) and period_days in {1, 7, 15, 30}:
+        try:
+            detailed = await context.retailer.get_invoice_detailed_analytics(
+                access_token=context.access_token,
+                store_id=context.store_id,
+                period_days=period_days,
+            )
+        except RetailerHttpError as exc:
+            return _failure("invoice_summary", exc)
+        detail_payload = (
+            detailed.body.get("data") if isinstance(detailed.body, dict) else {}
+        )
+        if isinstance(detail_payload, dict):
+            period_summary = detail_payload.get("summary")
+            period_today = detail_payload.get("today")
+            period_meta = detail_payload.get("period")
+            period_out: dict[str, Any] = {"days": period_days}
+            if isinstance(period_summary, dict):
+                period_out["summary"] = {
+                    key: period_summary[key]
+                    for key in (
+                        "totalRevenue",
+                        "totalProfit",
+                        "totalSales",
+                        "avgOrderValue",
+                    )
+                    if key in period_summary
+                }
+            if isinstance(period_today, dict):
+                period_out["today"] = {
+                    key: period_today[key]
+                    for key in ("revenue", "profit", "sales")
+                    if key in period_today
+                }
+            if isinstance(period_meta, dict):
+                for key in ("startDate", "endDate"):
+                    if isinstance(period_meta.get(key), str):
+                        period_out[key] = period_meta[key]
+            data["period"] = period_out
+
+    return ToolResult(tool="invoice_summary", success=True, data=data)
+
+
+async def list_stores(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_stores(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+    except RetailerHttpError as exc:
+        return _failure("list_stores", exc)
+
+    raw = response.body.get("data")
+    if isinstance(raw, dict):
+        raw_items = [raw]
+    elif isinstance(raw, list):
+        raw_items = raw
+    else:
+        raw_items = []
+
+    stores: list[dict[str, Any]] = []
+    active_id = context.store_id
+    active_name: str | None = None
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        store_id = str(item.get("id") or item.get("_id") or "").strip()
+        name = item.get("name")
+        name_str = name.strip() if isinstance(name, str) else None
+        row: dict[str, Any] = {"id": store_id, "name": name_str}
+        if store_id and store_id == active_id:
+            row["active"] = True
+            active_name = name_str
+        stores.append(row)
+
+    return ToolResult(
+        tool="list_stores",
+        success=True,
+        data={
+            "count": len(stores),
+            "activeStoreId": active_id,
+            "activeStoreName": active_name,
+            "stores": stores,
+        },
+    )
+
+
 def _failure(tool: str, exc: RetailerHttpError) -> ToolResult:
     return ToolResult(
         tool=tool,
@@ -285,4 +453,7 @@ READ_TOOL_HANDLERS = {
     "stock_summary": stock_summary,
     "search_customer": search_customer,
     "payment_history": payment_history,
+    "list_stores": list_stores,
+    "customer_summary": customer_summary,
+    "invoice_summary": invoice_summary,
 }

@@ -36,7 +36,7 @@ services:
     build: .
     container_name: dragbizz_ai
     ports:
-      - "${HOST_HTTP_PORT:-8005}:${AI_PORT:-4004}"
+      - "${HOST_HTTP_PORT:-8004}:4004"
     env_file:
       - .env
     environment:

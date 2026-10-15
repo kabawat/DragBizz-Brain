@@ -21,7 +21,7 @@ from app.sessions import (
     DurableHistoryStore,
     SessionStore,
     SessionTurn,
-    persist_turn_safe,
+    schedule_persist_turn,
 )
 from app.tools.projection import project_tool_results
 
@@ -51,7 +51,7 @@ async def _append_and_persist(
             tool_context=sessions.compact_tool_context(tool_results or []),
         ),
     )
-    await persist_turn_safe(
+    schedule_persist_turn(
         history,
         session_id=session_id,
         user_id=user_id,

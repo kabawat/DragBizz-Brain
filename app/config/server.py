@@ -1,9 +1,12 @@
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 from app.config.base import _group_config
+
+_BIND_HOST = "0.0.0.0"
+_BIND_PORT = 4004
 
 
 class ServerSettings(BaseSettings):
@@ -14,8 +17,9 @@ class ServerSettings(BaseSettings):
         default="development",
         validation_alias="AI_ENVIRONMENT",
     )
-    host: str = Field(default="0.0.0.0", validation_alias="AI_HOST")
-    port: int = Field(default=4004, ge=1, le=65535, validation_alias="AI_PORT")
+    # Fixed bind — never taken from AI_HOST / AI_PORT env.
+    host: str = _BIND_HOST
+    port: int = _BIND_PORT
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(
         default="INFO",
         validation_alias="AI_LOG_LEVEL",
@@ -26,3 +30,9 @@ class ServerSettings(BaseSettings):
         default_factory=list,
         validation_alias="AI_CORS_ORIGINS",
     )
+
+    @model_validator(mode="after")
+    def _lock_bind_address(self) -> "ServerSettings":
+        self.host = _BIND_HOST
+        self.port = _BIND_PORT
+        return self

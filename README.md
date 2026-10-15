@@ -48,7 +48,7 @@ Or run the API locally (Qdrant and any other required services must be available
 ```
 
 Locally, the API listens on port `4004` by default. Docker Compose publishes it
-on port `8005` by default; set `HOST_HTTP_PORT` to change that host port.
+on port `8004` by default; set `HOST_HTTP_PORT` to change that host port.
 `./run.sh --help` lists all available options. Add `--index` to either command
 to index the knowledge documents as part of startup:
 
@@ -82,7 +82,7 @@ docker compose exec dragbizz-ai python -m app.rag.indexer --yes
 
 | Endpoint | Access |
 |---|---|
-| `http://localhost:4004` (local) / `http://localhost:8005` (Docker) | API |
+| `http://localhost:4004` (local) / `http://localhost:8004` (Docker) | API |
 | `/docs` | Swagger UI |
 | `/api/v1/health` | Public health check |
 | `/api/v1/ready` | Public readiness check |

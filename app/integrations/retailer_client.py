@@ -55,6 +55,41 @@ class RetailerClient:
             store_id=store_id,
         )
 
+    async def get_customer_analytics(
+        self, *, access_token: str, store_id: str
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/analytics/customers",
+            access_token=access_token,
+            store_id=store_id,
+        )
+
+    async def get_invoice_analytics(
+        self, *, access_token: str, store_id: str
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/analytics/invoices",
+            access_token=access_token,
+            store_id=store_id,
+        )
+
+    async def get_invoice_detailed_analytics(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        period_days: int,
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/analytics/invoices/detailed",
+            access_token=access_token,
+            store_id=store_id,
+            params={"period": str(period_days)},
+        )
+
     async def get_stock(
         self, *, access_token: str, store_id: str
     ) -> RetailerResponse:
@@ -113,6 +148,19 @@ class RetailerClient:
         return await self._request(
             "GET",
             f"/customer-account/{customer_id}/ledger/export",
+            access_token=access_token,
+            store_id=store_id,
+        )
+
+    async def get_stores(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/store",
             access_token=access_token,
             store_id=store_id,
         )

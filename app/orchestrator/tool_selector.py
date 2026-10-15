@@ -1,24 +1,17 @@
-"""Turn intent: routing label + capability set for this user message.
-
-Routing labels are ``tools`` / ``docs`` / ``both`` / ``neither``.
-Unmatched questions are ``unknown`` and receive read tools only.
-Write and sensitive names come from longer action phrases in the
-current user text. History, tool results, and retrieved docs are
-not inputs.
-"""
+"""Turn intent: routing label + exposed tools for this message."""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+_PRIOR_EXPOSURE_TURNS = 4
+
 RoutingLabel = Literal["tools", "docs", "both", "neither", "unknown"]
 
-# Read tools offered when the question matches no family, or when it
-# matches a family but not an action phrase. A newly registered write
-# or sensitive tool stays out of this set until an exposure map names it.
+# Default reads when no write exposure matches.
 _READ_TOOLS = frozenset(
     {
         "search_product",
@@ -26,23 +19,26 @@ _READ_TOOLS = frozenset(
         "stock_summary",
         "search_customer",
         "payment_history",
+        "list_stores",
+        "customer_summary",
+        "invoice_summary",
     }
 )
 
-# Reads for a matched family. Writes and sensitive tools are added
-# separately, and only from the longer phrases in _FAMILY_CUES.
 _FAMILY_READS: dict[str, frozenset[str]] = {
-    "sale": frozenset({"today_sale"}),
+    "sale": frozenset({"today_sale", "invoice_summary"}),
     "stock": frozenset({"stock_summary", "search_product"}),
     "product": frozenset({"search_product"}),
     "payment": frozenset({"payment_history", "search_customer"}),
-    "customer": frozenset({"search_customer", "payment_history"}),
+    # Lookup/create flows need search only; payment history is payment-family.
+    "customer": frozenset({"search_customer"}),
+    "customer_stats": frozenset({"customer_summary"}),
     "invoice": frozenset({"search_customer", "search_product"}),
+    "invoice_stats": frozenset({"invoice_summary", "today_sale"}),
+    "store": frozenset({"list_stores"}),
 }
 
-# Longer family phrases only. Short Phase 1 tokens (payment, jama,
-# debit, release) stay in _SENSITIVE_ACTION_CUES and do not grant
-# exposure by themselves.
+# Write tools from action phrases (not short sensitive tokens alone).
 _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
     (
         (
@@ -63,15 +59,75 @@ _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
         frozenset({"create_customer"}),
     ),
     (
-        ("update customer", "customer update"),
+        (
+            "update customer",
+            "customer update",
+            "edit customer",
+            "customer edit",
+            "update email",
+            "email update",
+            "email badlo",
+            "email change",
+            "email add",
+            "add email",
+            "email bhi",
+            "email daal",
+            "email dalo",
+            "email daalo",
+            "update phone",
+            "phone update",
+            "number update",
+            "phone badlo",
+            "number badlo",
+            "update details",
+            "details update",
+        ),
         frozenset({"update_customer"}),
     ),
     (
-        ("ledger credit", "jama karo", "payment record"),
+        (
+            "ledger credit",
+            "jama karo",
+            "jama kar diya",
+            "jama kar",
+            "jama diya",
+            "jama de diya",
+            "jama daal",
+            "jama dalo",
+            "jama add",
+            "payment record",
+            "payment add",
+            "payment mila",
+            "payment liya",
+            "payment le liya",
+            "paid karo",
+            "khata jama",
+            "credit add",
+        ),
         frozenset({"ledger_credit"}),
     ),
     (
-        ("ledger debit", "udhaar add", "udhaar dalo"),
+        (
+            "ledger debit",
+            "udhaar add",
+            "udhaar dalo",
+            "udhar add",
+            "udhar dalo",
+            "udhaar le",
+            "udhar le",
+            "udhaar laga",
+            "udhar laga",
+            "mere se udhaar",
+            "mere se udhar",
+            "khate me add",
+            "khata me add",
+            "khate mein add",
+            "khata mein add",
+            "khate me daal",
+            "khata me daal",
+            "due add",
+            "debit add",
+        ),
         frozenset({"ledger_debit"}),
     ),
     (
@@ -147,10 +203,20 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
     "customer": (
         "customer",
         "khata",
+        "khate",
         "udhaar",
+        "udhar",
+        "account",
+        "hisab",
+        "dues",
         "gstin",
         "baaki",
         "baqi",
+        "ka number",
+        "ki number",
+        "mobile number",
+        "phone number",
+
         "naya customer",
         "customer banao",
         "customer bana",
@@ -166,12 +232,46 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "customer add",
         "update customer",
         "customer update",
+        "edit customer",
+        "customer edit",
+        "update email",
+        "email update",
+        "email badlo",
+        "email change",
+        "email add",
+        "add email",
+        "email bhi",
+        "email daal",
+        "email dalo",
+        "email daalo",
+        "update phone",
+        "phone update",
+        "number update",
+        "phone badlo",
+        "number badlo",
+        "update details",
+        "details update",
         "ledger credit",
         "ledger debit",
         "udhaar add",
         "udhaar dalo",
+        "udhar add",
+        "udhar dalo",
+        "udhaar le",
+        "udhar le",
+        "mere se udhaar",
+        "mere se udhar",
+        "khate me add",
+        "khata me add",
         "jama karo",
+        "jama kar diya",
+        "jama kar",
+        "jama diya",
+        "jama daal",
         "payment record",
+        "payment add",
+        "payment mila",
+        "khata jama",
     ),
     "invoice": (
         "bill banao",
@@ -193,9 +293,112 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "ke liye bill",
         "ke liye invoice",
     ),
+    "store": (
+        "store ka name",
+        "store ka naam",
+        "store name",
+        "store naam",
+        "mere store",
+        "mera store",
+        "my store",
+        "kitane store",
+        "kitne store",
+        "kitna store",
+        "how many store",
+        "how many stores",
+        "total store",
+        "total stores",
+        "stores list",
+        "store list",
+        "saare store",
+        "saare stores",
+        "all stores",
+        "active store",
+    ),
+    "customer_stats": (
+        "total customer",
+        "total customers",
+        "kitne customer",
+        "kitane customer",
+        "kitna customer",
+        "kitne customers",
+        "kitane customers",
+        "how many customer",
+        "how many customers",
+        "customer count",
+        "customers count",
+        "customer total",
+        "customers total",
+        "aaj ke customer",
+        "aaj ke customers",
+        "today customer",
+        "today customers",
+        "new customer",
+        "new customers",
+        "naye customer",
+        "naye customers",
+    ),
+    "invoice_stats": (
+        "total invoice",
+        "total invoices",
+        "total bill",
+        "total bills",
+        "kitne invoice",
+        "kitane invoice",
+        "kitna invoice",
+        "kitne bill",
+        "kitane bill",
+        "kitna bill",
+        "how many invoice",
+        "how many invoices",
+        "how many bill",
+        "how many bills",
+        "invoice count",
+        "invoices count",
+        "bill count",
+        "bills count",
+        "aaj ki invoice",
+        "aaj ke invoice",
+        "aaj ka invoice",
+        "aaj ki bill",
+        "aaj ke bill",
+        "today invoice",
+        "todays invoice",
+        "today's invoice",
+        "today invoices",
+        "todays invoices",
+        "today's invoices",
+        "today bill",
+        "todays bill",
+        "today's bill",
+        "last 7 day",
+        "last 7 days",
+        "last7 day",
+        "last7 days",
+        "last seven day",
+        "last seven days",
+        "pichle 7 din",
+        "pichhle 7 din",
+        "7 din ki invoice",
+        "7 din ke invoice",
+        "7 days invoice",
+        "7 day invoice",
+        "hafta invoice",
+        "hafte ki invoice",
+        "hafte ke bill",
+        "weekly invoice",
+        "weekly bill",
+        "last 15 day",
+        "last 15 days",
+        "last 30 day",
+        "last 30 days",
+        "pichle 30 din",
+        "is mahine",
+        "is month",
+        "this month",
+    ),
 }
 
-# Docs/FAQ path when no tool family matched.
 _HOW_TO_CUES = (
     "kaise",
     "kaisein",
@@ -208,7 +411,6 @@ _HOW_TO_CUES = (
     "guide",
 )
 
-# Whole-message small talk.
 _NEITHER_RE = re.compile(
     r"^(hi|hello|hey|yo|thanks|thank you(?:\s+bhai)?|theek hai|"
     r"ok|okay|kem cho|namaste|bye|good morning|good evening)\W*$",
@@ -237,9 +439,7 @@ _EXPOSURE_RES = tuple(
     for cues, names in _EXPOSURE
 )
 
-# Explicit user wording required before a sensitive tool may be staged.
-# Phrases are the action cues already used by the family lists, plus the
-# short action words (payment, jama, debit, release).
+# Sensitive tools need explicit user wording before staging.
 _SENSITIVE_ACTION_CUES: dict[str, tuple[str, ...]] = {
     "release_invoice": (
         *tuple(cue for cue in _FAMILY_CUES["invoice"] if cue.startswith("release")),
@@ -248,7 +448,20 @@ _SENSITIVE_ACTION_CUES: dict[str, tuple[str, ...]] = {
     "ledger_credit": (
         "ledger credit",
         "jama karo",
+        "jama kar diya",
+        "jama kar",
+        "jama diya",
+        "jama de diya",
+        "jama daal",
+        "jama dalo",
+        "jama add",
         "payment record",
+        "payment add",
+        "payment mila",
+        "payment liya",
+        "paid karo",
+        "khata jama",
+        "credit add",
         "jama",
         "payment",
     ),
@@ -256,6 +469,24 @@ _SENSITIVE_ACTION_CUES: dict[str, tuple[str, ...]] = {
         "ledger debit",
         "udhaar add",
         "udhaar dalo",
+        "udhar add",
+        "udhar dalo",
+        "udhaar le",
+        "udhar le",
+        "udhaar laga",
+        "udhar laga",
+        "mere se udhaar",
+        "mere se udhar",
+        "khate me add",
+        "khata me add",
+        "khate mein add",
+        "khata mein add",
+        "khate me daal",
+        "khata me daal",
+        "due add",
+        "debit add",
+        "udhaar",
+        "udhar",
         "debit",
     ),
 }
@@ -264,6 +495,20 @@ _SENSITIVE_ACTION_RES = {
     for name, cues in _SENSITIVE_ACTION_CUES.items()
     if cues
 }
+
+# Amount may sit between "khate me" and "add" ("khate me 100 add kar do").
+_LEDGER_DEBIT_FLEX_RE = re.compile(
+    r"khate?\s+me(?:in)?\s+(?:\S+\s+){0,4}(?:add|daal|dalo)\b"
+    r"|(?:add|daal|dalo)\s+(?:kar(?:o|u|un|oon| do| dena)?)?\s*"
+    r".{0,24}\b(?:khata|khate|udhaar|udhar)\b"
+    r"|\bmere\s+se\s+udha?ar\b",
+    re.IGNORECASE,
+)
+_LEDGER_CREDIT_FLEX_RE = re.compile(
+    r"khate?\s+me(?:in)?\s+(?:\S+\s+){0,4}(?:jama|payment|paid)\b"
+    r"|(?:jama|payment|paid)\s+(?:\S+\s+){0,4}\b(?:khata|khate)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -277,6 +522,20 @@ def _exposure_tools(text: str) -> set[str]:
     for pattern, tools in _EXPOSURE_RES:
         if pattern.search(text):
             names |= tools
+    if _LEDGER_DEBIT_FLEX_RE.search(text):
+        names.add("ledger_debit")
+    if _LEDGER_CREDIT_FLEX_RE.search(text):
+        names.add("ledger_credit")
+    return names
+
+
+def _prior_exposure_tools(prior_user_texts: Sequence[str] | None) -> set[str]:
+    if not prior_user_texts:
+        return set()
+    names: set[str] = set()
+    for text in prior_user_texts[-_PRIOR_EXPOSURE_TURNS:]:
+        if isinstance(text, str) and text.strip():
+            names |= _exposure_tools(text)
     return names
 
 
@@ -284,12 +543,8 @@ def resolve_turn_intent(
     question: str,
     *,
     available: Iterable[str],
+    prior_user_texts: Sequence[str] | None = None,
 ) -> TurnIntent:
-    """Classify routing and the capability set for this user message.
-
-    The set is computed from ``question`` only. Callers must not pass
-    history, tool JSON, or retrieved documentation.
-    """
     available_set = frozenset(available)
     text = question.strip()
     read_only = _READ_TOOLS & available_set
@@ -319,23 +574,77 @@ def resolve_turn_intent(
         tool_names = frozenset()
     else:
         routing = "unknown"
-        tool_names = read_only
+        # Keep prior writes + apply current-turn exposure cues.
+        carried = _prior_exposure_tools(prior_user_texts)
+        current = _exposure_tools(text)
+        tool_names = (read_only | carried | current) & available_set
 
     return TurnIntent(routing=routing, tool_names=tool_names)
 
 
 def user_requested_sensitive_action(question: str, tool_name: str) -> bool:
-    """True when the user text itself asks for this sensitive action.
-
-    A tool result or retrieved document must not be enough to stage a
-    khata write or an invoice release.
-    """
+    """True if user text itself asks for this sensitive action."""
+    text = question.strip()
+    if tool_name == "ledger_debit" and _LEDGER_DEBIT_FLEX_RE.search(text):
+        return True
+    if tool_name == "ledger_credit" and _LEDGER_CREDIT_FLEX_RE.search(text):
+        return True
     pattern = _SENSITIVE_ACTION_RES.get(tool_name)
     if pattern is None:
         return False
-    return bool(pattern.search(question.strip()))
+    return bool(pattern.search(text))
 
 
-def should_retrieve_docs(routing: RoutingLabel) -> bool:
-    """Skip RAG on pure live-data and small-talk turns."""
-    return routing in {"docs", "both", "unknown"}
+def should_retrieve_docs(
+    routing: RoutingLabel,
+    *,
+    tool_names: frozenset[str] | None = None,
+) -> bool:
+    """Skip RAG on tool-only turns and write follow-ups."""
+    if routing in {"docs", "both"}:
+        return True
+    if routing != "unknown":
+        return False
+    if tool_names is not None and tool_names - _READ_TOOLS:
+        return False
+    return True
+
+
+_PHONE_RE = re.compile(r"^[\d\s+\-]{8,16}$")
+_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def looks_like_field_fill(text: str) -> bool:
+    """Short name / phone / email replies in multi-turn write flows."""
+    value = text.strip()
+    if not value or len(value) > 64:
+        return False
+    if _PHONE_RE.fullmatch(value) or _EMAIL_RE.fullmatch(value):
+        return True
+    if len(value.split()) > 4:
+        return False
+    if _HOW_TO_RE.search(value) or _NEITHER_RE.match(value):
+        return False
+    for pattern in _FAMILY_RES.values():
+        if pattern.search(value):
+            return False
+    return True
+
+
+def narrow_field_fill_tools(tool_names: frozenset[str]) -> frozenset[str]:
+    """Keep write tools + minimal companion reads for field-fill turns."""
+    writes = tool_names - _READ_TOOLS
+    if not writes:
+        return tool_names
+    companions: set[str] = set()
+    if writes & {"create_customer", "update_customer"}:
+        companions.add("search_customer")
+    if writes & {
+        "create_invoice_draft",
+        "update_invoice_draft",
+        "release_invoice",
+    }:
+        companions.update({"search_customer", "search_product"})
+    if writes & {"ledger_credit", "ledger_debit"}:
+        companions.update({"search_customer", "payment_history"})
+    return frozenset(writes | (companions & tool_names))

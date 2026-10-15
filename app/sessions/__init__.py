@@ -7,6 +7,7 @@ from app.sessions.history import (
     MongoHistoryStore,
     NoOpHistoryStore,
     persist_turn_safe,
+    schedule_persist_turn,
     title_from_text,
 )
 from app.sessions.store import (
@@ -30,6 +31,7 @@ __all__ = [
     "SessionStore",
     "SessionTurn",
     "persist_turn_safe",
+    "schedule_persist_turn",
     "title_from_text",
     "turns_to_messages",
 ]

@@ -16,6 +16,7 @@ from app.orchestrator.prompt_tokens import (
 )
 from app.orchestrator.rag_budget import rag_docs_budget_for_routing
 from app.orchestrator.tool_selector import RoutingLabel, should_retrieve_docs
+from app.prompts.abuse import count_abuse_strikes
 from app.prompts.system.chat import (
     build_chat_system_prompt,
     build_documentation_block,
@@ -102,13 +103,15 @@ async def build_chat_context(
     routing: RoutingLabel = "unknown",
     rag_cache: RagCache | None = None,
     metrics: MetricsRegistry | None = None,
+    prior_turns: list[SessionTurn] | None = None,
 ) -> ChatContext:
     cache: RagCache = rag_cache or NoOpRagCache()
-    prior_turns = await sessions.load_history(
-        session_id=session_id,
-        user_id=user_id,
-        store_id=store_id,
-    )
+    if prior_turns is None:
+        prior_turns = await sessions.load_history(
+            session_id=session_id,
+            user_id=user_id,
+            store_id=store_id,
+        )
     docs_budget = rag_docs_budget_for_routing(
         routing,
         faq_budget=settings.rag.context_max_tokens,
@@ -119,25 +122,21 @@ async def build_chat_context(
     documentation = ""
     rag_cache_hit = False
     docs_unavailable = False
-    if should_retrieve_docs(routing):
+    tool_names = frozenset(tool.name for tool in tools)
+    if should_retrieve_docs(routing, tool_names=tool_names):
         cached_docs = await cache.get_documentation_block(
             question, budget=docs_budget
         )
         if cached_docs is not None:
             documentation = cached_docs
             rag_cache_hit = True
-            # Still fetch chunk metadata for metrics when possible (may hit
-            # the chunk cache without a second embed/search).
-            retrieved, _ = await retrieve_documentation(
-                retriever, question, metrics=metrics, cache_hit=True
-            )
+            retrieved = []
         else:
             retrieved, rag_failed = await retrieve_documentation(
                 retriever, question, metrics=metrics, cache_hit=False
             )
             if rag_failed:
-                # Embeddings/Qdrant down — still serve local markdown so
-                # how-to questions (chat help, invoice FAQ) keep working.
+                # Fallback when embeddings/Qdrant are down.
                 local_chunks = retrieve_local_knowledge(question)
                 if local_chunks:
                     retrieved = local_chunks
@@ -184,12 +183,17 @@ async def build_chat_context(
         )
 
     history_messages = turns_to_messages(prior_turns)
+    abuse_strikes = count_abuse_strikes(
+        [turn.user_text for turn in prior_turns],
+        question,
+    )
     system_content = build_chat_system_prompt(
         language=language,
         store_id=store_id,
         tools=tools,
         documentation=documentation,
         routing=routing,
+        abuse_strikes=abuse_strikes,
     )
     messages = [
         ChatMessage(role="system", content=system_content),

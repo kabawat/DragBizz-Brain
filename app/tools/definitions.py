@@ -102,6 +102,64 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "required": ["storeId"],
         },
     ),
+    ToolDefinition(
+        name="list_stores",
+        description=(
+            "List the user's accessible stores (name, id) and mark which "
+            "one is active. Use for store name, store count, or which "
+            "stores they have."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"storeId": _STORE_ID_PROP},
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="customer_summary",
+        description=(
+            "Store customer totals: total customers, today new, and new "
+            "customers in last 7/15/30 days (and longer windows)."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"storeId": _STORE_ID_PROP},
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="invoice_summary",
+        description=(
+            "Invoice/bill counts and amounts. Returns all-time totals, "
+            "today's invoices, and optionally a period window "
+            "(periodDays=7/15/30) for last N days invoice count/revenue."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "periodDays": {
+                    "type": "integer",
+                    "enum": [1, 7, 15, 30],
+                    "description": (
+                        "Optional lookback window in days. Use 7 for "
+                        "last week, 30 for last month. Omit for "
+                        "all-time + today only."
+                    ),
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
 )
 
 WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (

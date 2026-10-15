@@ -55,6 +55,22 @@ class RecordingRetailer:
         self.calls.append(("products", kwargs))
         return RetailerResponse(status_code=200, body={"data": []})
 
+    async def get_customers(self, **kwargs):
+        self.calls.append(("customers", kwargs))
+        return RetailerResponse(
+            status_code=200,
+            body={
+                "data": [
+                    {
+                        "id": CUSTOMER,
+                        "name": "Vikram",
+                        "phone": "9812345678",
+                        "isActive": True,
+                    }
+                ]
+            },
+        )
+
 
 class Gateway:
     async def continue_or_synthesize(self, *_args, **_kwargs):
@@ -131,6 +147,72 @@ def test_sensitive_cues_require_the_user_to_ask() -> None:
     assert not user_requested_sensitive_action(
         "maggi current price", "ledger_debit"
     )
+
+
+def test_search_then_auto_stages_ledger_debit() -> None:
+    asyncio.run(_auto_ledger_after_search())
+
+
+async def _auto_ledger_after_search() -> None:
+    from app.orchestrator.ledger_auto import parse_ledger_amount
+
+    assert parse_ledger_amount("vikram ke khate me 100 add kar do") == 100
+    retailer = RecordingRetailer()
+    call = ToolCall(
+        id="call-search",
+        name="search_customer",
+        arguments={"storeId": STORE, "query": "vikram"},
+    )
+    outcome, _executor = await _run(
+        "vikram ke khate me 100 add kar do",
+        call,
+        retailer,
+    )
+    assert outcome.staged_sensitive is not None
+    assert outcome.staged_sensitive.tool_name == "ledger_debit"
+    assert outcome.staged_sensitive.arguments["amount"] == 100
+    assert outcome.staged_sensitive.arguments["customerId"] == CUSTOMER
+    assert "100" in outcome.generation.content
+    assert "Confirm" in outcome.generation.content or "confirm" in (
+        outcome.generation.content.lower()
+    )
+    assert retailer.calls and retailer.calls[0][0] == "customers"
+
+
+def test_fast_ledger_turn_skips_llm() -> None:
+    asyncio.run(_fast_ledger_turn())
+
+
+async def _fast_ledger_turn() -> None:
+    from app.orchestrator.ledger_auto import (
+        extract_customer_query,
+        try_fast_ledger_turn,
+    )
+
+    assert extract_customer_query("vikram ke khate me 100 add kar do") == "vikram"
+    retailer = RecordingRetailer()
+    registry = _registry()
+    executor = ToolExecutor(registry=registry, retailer=retailer)
+    allowed = frozenset({"search_customer", "ledger_debit", "ledger_credit"})
+    fast = await try_fast_ledger_turn(
+        question="vikram ke khate me 100 add kar do",
+        language="hi-IN",
+        store_id=STORE,
+        access_token="token",
+        session_id=SESSION,
+        user_id="user-1",
+        allowed_names=allowed,
+        executor=executor,
+        confirmations=InMemoryConfirmationStore(),
+    )
+    assert fast is not None
+    assert fast.pending_confirmation is not None
+    assert [call.name for call in fast.tool_calls] == [
+        "search_customer",
+        "ledger_debit",
+    ]
+    assert "100" in fast.message
+    assert retailer.calls and retailer.calls[0][0] == "customers"
 
 
 def test_ledger_confirm_posts_once() -> None:

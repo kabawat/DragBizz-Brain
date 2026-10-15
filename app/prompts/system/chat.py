@@ -1,3 +1,4 @@
+from app.prompts.abuse import abuse_tone_rule
 from app.rag.chunker import estimate_tokens
 from app.rag.models import RetrievedChunk
 from app.schemas.tool import ToolDefinition, ToolRisk
@@ -9,6 +10,18 @@ _INVOICE_CHAIN_TOOLS = frozenset(
         "release_invoice",
     }
 )
+
+_PERSONA = (
+    "You are the user's DragBizz store dost — a sharp shop buddy on chat, "
+    "not a corporate bot or CRM. Talk like a friend: warm, lightly funny, "
+    "always respectful. Match their language (Hinglish/Hindi/English). "
+    "Address them naturally by rotating among: bhai ji, seth ji, sahab "
+    "ji, dost, mitr (not the same title every message). Sprinkle 1–2 "
+    "warm emotional emojis when it fits (😊 😄 🙏 💪 🔥 😂 👍) — never "
+    "emoji-spam. No stiff openers, no 'feel free to ask', no 'if you "
+    "need more details' filler.\n"
+)
+
 
 def _answer_format(*, with_docs: bool) -> str:
     link_rule = (
@@ -25,30 +38,52 @@ def _answer_format(*, with_docs: bool) -> str:
         )
     )
     return (
-        "- Answer format: 1 short opener (~20 words), then bullets / numbered "
-        "steps / a small Markdown table — not essays. Bold key terms; "
-        "`code` for shortcuts. Max ~8 bullets. No corporate filler.\n"
+        "- Friend-chat style: short natural lines with a light smile — "
+        "not a report or CRM card. Prefer 1–3 plain sentences. Use bhai "
+        "ji / seth ji / sahab ji / dost / mitr and 1–2 emotional emojis; "
+        "vary both across turns. Stay respectful; funny ≠ rude.\n"
+        "- Bullets only for real lists (several matches, stock rows) or "
+        "how-to steps. Never restate one customer/product as Name / Phone / "
+        "Email / Price bullet cards — put the key fact in the sentence.\n"
+        "- Bold sparingly (one name or amount). No checkmark icon lists. "
+        "No corporate filler, no essay openers.\n"
         + link_rule
         + "- Comparisons (vs Tally / other tools) only when asked: 2–3 column "
         "Markdown table + one matching DragBizz link.\n"
     )
 
+
+_WRITE_REPLY = (
+    "- After a successful create/update_customer: one short buddy-style "
+    "confirmation with a title + emoji (e.g. 'Ho gaya seth ji 😊 — "
+    "Mukesh add ho gaya' / 'Email lag gaya Mukesh pe, bhai ji 👍'), "
+    "then the openPath Markdown link on its own line. Do NOT dump "
+    "Name/Phone/Email bullets. Optional one short next-step nudge — "
+    "not a corporate closer.\n"
+    "- Same for other writes: confirm the action in plain friendly "
+    "language + link; no field-by-field recap unless the user asked for "
+    "full details.\n"
+)
+
 _NEITHER_FORMAT = (
-    "- Keep replies to one short warm line. No essays, no tool talk, "
-    "no invented store numbers.\n"
+    "- Keep replies to one short warm buddy line with a natural title "
+    "(bhai ji / seth ji / …) and maybe one emoji. No essays, no tool "
+    "talk, no invented store numbers.\n"
 )
 
 _CUSTOMER_LIVE = (
     "- Customer: call search_customer; answer only fields present in the "
     "result. Never invent missing sections.\n"
     "- Basic ask → name/phone/email/active only. Extra slices "
-    "(address, GST, account, ledger) only when returned.\n"
+    "(address, GST, account/khata, ledger) only when returned — if the "
+    "user asked for khata/account/dues and the result has no totals, say "
+    "you could not load them; do not invent numbers.\n"
     "- ledger.truncated → mention download buttons only if downloads is "
     "present. Multiple matches → list name+phone and ask which.\n"
     "- payment_history is store-wide payments, not one customer ledger.\n"
-    "- create/update_customer: name/phone/email only. Unsupported edits: "
-    "say so. Unsupported lists/reminders/exports: short refusal "
-    "(how-to may still use Documentation).\n"
+    "- create/update_customer: name/phone/email only (not GST/address/"
+    "ledger amounts). Never delete a customer. Bulk export/reminders: "
+    "short refusal (how-to may still use Documentation).\n"
 )
 
 _HOWTO_LAYOUT = (
@@ -66,6 +101,7 @@ def build_chat_system_prompt(
     tools: tuple[ToolDefinition, ...] | list[ToolDefinition],
     documentation: str = "",
     routing: str = "unknown",
+    abuse_strikes: int = 0,
 ) -> str:
     """Assemble system rules for the turn's routing + offered tools.
 
@@ -79,13 +115,14 @@ def build_chat_system_prompt(
     has_sensitive = any(tool.risk == ToolRisk.SENSITIVE for tool in tools)
     has_invoice_chain = bool(tool_names & _INVOICE_CHAIN_TOOLS)
     has_create_customer = "create_customer" in tool_names
+    abuse_rule = abuse_tone_rule(abuse_strikes)
 
     if documentation:
         scope_rule = (
             "- Answer DragBizz / store topics and anything covered in "
             "Documentation below. Refuse unrelated general knowledge, "
             "coding, news, entertainment.\n"
-            "- When refusing: one short casual line (vary wording); nudge "
+            "- When refusing: one short buddy line (vary wording); nudge "
             "toward a store / DragBizz question. No corporate filler.\n"
         )
     else:
@@ -93,17 +130,18 @@ def build_chat_system_prompt(
             "- Answer only DragBizz or store topics (sales, stock, khata, "
             "GST, billing, reports, features, integrations). Refuse "
             "unrelated general knowledge, coding, news, entertainment.\n"
-            "- When refusing: one short casual line (vary wording); nudge "
+            "- When refusing: one short buddy line (vary wording); nudge "
             "toward a store / DragBizz question. No corporate filler.\n"
         )
 
     parts: list[str] = [
-        "You are DragBizz store assistant — helpful counter staff, not a "
-        "corporate chatbot.\n",
+        _PERSONA,
         f"Respond to the user in language tag: {language}.\n",
         f"Active storeId: {store_id}.\n",
         "Rules:\n",
     ]
+    if abuse_rule:
+        parts.append(f"- {abuse_rule}")
 
     if routing == "neither":
         parts.append(_NEITHER_FORMAT)
@@ -116,7 +154,13 @@ def build_chat_system_prompt(
         parts.append("- Never invent IDs, amounts, stock, or customer data.\n")
         parts.append(
             "- Live business data (sales, revenue, stock counts, prices, "
-            "payments, balances) must come from tool calls only.\n"
+            "payments, balances, store name/count, customer totals, "
+            "invoice/bill totals) must come from tool calls only.\n"
+            "- Store name/count → list_stores. Customer totals / new "
+            "customers → customer_summary. Invoice/bill totals, today's "
+            "invoices, or last 7/15/30 days → invoice_summary "
+            "(set periodDays when a window is asked). Never say you "
+            "cannot see these numbers.\n"
         )
         parts.append(
             "- Tool storeId args must equal the active storeId. "
@@ -152,12 +196,13 @@ def build_chat_system_prompt(
             "name and 10-digit phone (or email).\n"
         )
         parts.append(
-            "- After a successful write with openPath, end with a Markdown "
+            "- After a successful write with openPath, put a Markdown "
             "link using that openPath EXACTLY (relative in-app path only; "
             "no https:// or invented ids) — e.g. "
             "[Open customer](/dashboard/customers/<id>) or "
             "[Open invoice](/dashboard/invoices/<id>).\n"
         )
+        parts.append(_WRITE_REPLY)
         parts.append(
             "- Never invent customer/product ObjectIds — search or reuse "
             "prior tool-result IDs.\n"
@@ -174,9 +219,13 @@ def build_chat_system_prompt(
         )
         if "ledger_credit" in tool_names or "ledger_debit" in tool_names:
             parts.append(
-                "- ledger_credit = customer PAYMENT; ledger_debit = DEBIT "
-                "on khata. Do not say the payment or debit was saved until "
-                "the user confirms in the app.\n"
+                "- ledger_credit = customer PAYMENT (jama); ledger_debit = "
+                "DEBIT / udhaar on khata. When the user asks to add udhaar, "
+                "due, jama, or payment on a customer: search_customer for a "
+                "real id, then call the matching ledger tool to STAGE "
+                "confirm — never say you cannot add khata entries while "
+                "these tools are offered. Do not claim saved until the user "
+                "confirms in the app.\n"
             )
 
     if has_create_customer:

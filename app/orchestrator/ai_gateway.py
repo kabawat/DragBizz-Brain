@@ -126,19 +126,30 @@ class AiGateway:
         except AppError as exc:
             if exc.code != "TOOL_ARGS_INVALID":
                 raise
-            return await self.repair_tool_calls(
-                messages=messages,
-                tools=tools,
-                previous=None,
-                store_id=store_id,
-                detail=exc.message,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                describe_errors=describe_errors,
-                budget=budget,
-                token_usage=token_usage,
-                round=0,
-            )
+            try:
+                return await self.repair_tool_calls(
+                    messages=messages,
+                    tools=tools,
+                    previous=None,
+                    store_id=store_id,
+                    detail=exc.message,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    describe_errors=describe_errors,
+                    budget=budget,
+                    token_usage=token_usage,
+                    round=0,
+                )
+            except AppError as repair_exc:
+                if repair_exc.code != "TOOL_ARGS_INVALID":
+                    raise
+                # Avoid crashing an already-open SSE stream on bad tool JSON.
+                return GenerationResponse(
+                    provider="repair_failed",
+                    model="",
+                    content="",
+                    tool_calls=[],
+                )
 
     async def repair_tool_calls(
         self,
@@ -371,8 +382,8 @@ class AiGateway:
         return response
 
     async def _resolve(self) -> tuple[Any, str | None]:
-        """Admin pin wins. Otherwise chat uses Cheaper Inference
-        (deepseek-v4.1-flash). OpenAI is only the fallback."""
+        """Admin pin wins. Otherwise use AI_ACTIVE_PROVIDER (OpenAI by
+        default). Cheaper Inference is the cross-fallback only."""
         if self._selection_store is not None:
             selection = await self._selection_store.get()
             if selection is not None:
@@ -381,14 +392,17 @@ class AiGateway:
                     return provider, selection.model
                 logger.warning(
                     "Selected provider '%s' is not registered; "
-                    "using cheaper inference",
+                    "using active provider",
                     selection.provider,
                 )
 
-        preferred = self._model_router.get(CHEAPER_PROVIDER_NAME)
+        active = self._model_router.get_active()
+        if active is not None:
+            return active, None
+        preferred = self._model_router.get(OPENAI_PROVIDER_NAME)
         if preferred is not None:
             return preferred, None
-        return self._model_router.get_active(), None
+        return self._model_router.get(CHEAPER_PROVIDER_NAME), None
 
     def _fallback_for(self, provider: Any) -> Any | None:
         fallback_name = _FALLBACK_PROVIDER.get(provider.name)

@@ -385,6 +385,111 @@ def _project_customer_row(item: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
+def project_customer_summary(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in ("totalCustomers", "todayCustomers"):
+        if key in data:
+            out[key] = data[key]
+    new_customers = data.get("newCustomers")
+    if isinstance(new_customers, dict):
+        picked = _pick(
+            new_customers,
+            (
+                "last1Day",
+                "last7Days",
+                "last15Days",
+                "last30Days",
+                "last3Months",
+                "last6Months",
+                "last12Months",
+            ),
+        )
+        if picked:
+            out["newCustomers"] = picked
+    return out
+
+
+def project_invoice_summary(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    counts = data.get("counts")
+    if isinstance(counts, dict):
+        picked = _pick(
+            counts,
+            (
+                "totalInvoices",
+                "releasedInvoices",
+                "draftInvoices",
+                "cancelledInvoices",
+            ),
+        )
+        if picked:
+            out["counts"] = picked
+    amounts = data.get("amounts")
+    if isinstance(amounts, dict):
+        picked = _pick(amounts, ("totalAmount", "averageOrderValue"))
+        if picked:
+            out["amounts"] = picked
+    today = data.get("today")
+    if isinstance(today, dict):
+        picked = _pick(today, ("totalInvoices", "releasedInvoices"))
+        if picked:
+            out["today"] = picked
+    period = data.get("period")
+    if isinstance(period, dict):
+        period_out: dict[str, Any] = {}
+        if isinstance(period.get("days"), int):
+            period_out["days"] = period["days"]
+        for key in ("startDate", "endDate"):
+            if isinstance(period.get(key), str):
+                period_out[key] = period[key]
+        summary = period.get("summary")
+        if isinstance(summary, dict):
+            picked = _pick(
+                summary,
+                ("totalRevenue", "totalProfit", "totalSales", "avgOrderValue"),
+            )
+            if picked:
+                period_out["summary"] = picked
+        period_today = period.get("today")
+        if isinstance(period_today, dict):
+            picked = _pick(period_today, ("revenue", "profit", "sales"))
+            if picked:
+                period_out["today"] = picked
+        if period_out:
+            out["period"] = period_out
+    return out
+
+
+def project_list_stores(data: dict[str, Any]) -> dict[str, Any]:
+    raw_items = data.get("stores")
+    stores: list[dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items[:_MAX_LIST]:
+            if not isinstance(item, dict):
+                continue
+            row: dict[str, Any] = {}
+            entity_id = _entity_id(item)
+            if entity_id is not None:
+                row["id"] = entity_id
+            elif isinstance(item.get("id"), str):
+                row["id"] = item["id"]
+            if isinstance(item.get("name"), str):
+                row["name"] = item["name"]
+            if item.get("active") is True:
+                row["active"] = True
+            if row:
+                stores.append(row)
+    out: dict[str, Any] = {
+        "count": data["count"] if isinstance(data.get("count"), int) else len(stores),
+        "stores": stores,
+    }
+    if isinstance(data.get("activeStoreId"), str):
+        out["activeStoreId"] = data["activeStoreId"]
+    if isinstance(data.get("activeStoreName"), str):
+        out["activeStoreName"] = data["activeStoreName"]
+    return out
+
+
 def project_search_customer(data: dict[str, Any]) -> dict[str, Any]:
     raw_items = data.get("items")
     items: list[dict[str, Any]] = []
@@ -427,4 +532,7 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "stock_summary": project_stock_summary,
     "search_product": project_search_product,
     "search_customer": project_search_customer,
+    "list_stores": project_list_stores,
+    "customer_summary": project_customer_summary,
+    "invoice_summary": project_invoice_summary,
 }
