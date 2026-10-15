@@ -38,7 +38,6 @@ def test_firm_lines_rotate_and_prompt_varies() -> None:
         routing="neither",
         abuse_strikes=3,
     )
-    assert "bhai ji" in prompt.lower()
-    assert "seth ji" in prompt.lower()
+    assert "sparingly" in prompt.lower() or "rarely" in prompt.lower()
     assert "emoji" in prompt.lower()
     assert "dhandhe" in prompt.lower() or "dukaan" in prompt.lower()

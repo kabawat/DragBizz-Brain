@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.confirmations import (
+    CONFIRMATION_TYPE_ADD_STOCK,
     CONFIRMATION_TYPE_INVOICE_RELEASE,
     CONFIRMATION_TYPE_LEDGER_CREDIT,
     CONFIRMATION_TYPE_LEDGER_DEBIT,
@@ -12,6 +13,7 @@ from app.confirmations import (
     PendingConfirmationRecord,
 )
 from app.core.exceptions import AppError
+from app.integrations.retailer_client import RetailerClient, RetailerHttpError
 from app.observability.audit_trail import AuditTrail
 from app.observability.confirmation_audit import audit_confirmation
 from app.observability.metrics import MetricsRegistry
@@ -139,6 +141,8 @@ async def stage_from_sensitive_calls(
     sensitive_calls: list[ToolCall],
     audit_trail: AuditTrail | None = None,
     metrics: MetricsRegistry | None = None,
+    retailer: RetailerClient | None = None,
+    access_token: str | None = None,
 ) -> PendingConfirmationRecord | None:
     """Stage at most one SENSITIVE confirmation per turn."""
     if not sensitive_calls:
@@ -159,6 +163,18 @@ async def stage_from_sensitive_calls(
             call=call,
             audit_trail=audit_trail,
             metrics=metrics,
+        )
+    if call.name == CONFIRMATION_TYPE_ADD_STOCK:
+        return await _stage_add_stock_call(
+            store,
+            user_id=user_id,
+            store_id=store_id,
+            session_id=session_id,
+            call=call,
+            audit_trail=audit_trail,
+            metrics=metrics,
+            retailer=retailer,
+            access_token=access_token,
         )
     if call.name != "release_invoice":
         raise AppError(
@@ -208,6 +224,203 @@ def _positive_amount(value: Any) -> int | float | None:
     if isinstance(value, int):
         return value
     return float(value)
+
+
+def _non_negative_number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value < 0:
+        return None
+    return float(value)
+
+
+def _stock_qty_from_inventory_payload(payload: Any) -> float | None:
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    if not isinstance(data, dict):
+        return None
+    # Paginated list: { items: [ { stockSummary / availableQuantity } ] }
+    items = data.get("items") or data.get("inventories") or data.get("data")
+    if isinstance(items, list) and items:
+        first = items[0]
+        if isinstance(first, dict):
+            return _qty_from_inventory_row(first)
+    inventory = data.get("inventory")
+    if isinstance(inventory, dict):
+        return _qty_from_inventory_row(inventory)
+    return _qty_from_inventory_row(data)
+
+
+def _qty_from_inventory_row(row: dict[str, Any]) -> float | None:
+    summary = row.get("stockSummary")
+    if isinstance(summary, dict):
+        for key in ("availableQuantity", "totalQuantity"):
+            value = _non_negative_number(summary.get(key))
+            if value is not None:
+                return value
+    for key in ("availableQuantity", "totalQuantity", "stock"):
+        value = row.get(key)
+        if isinstance(value, dict):
+            nested = _non_negative_number(
+                value.get("availableQuantity") or value.get("totalQuantity")
+            )
+            if nested is not None:
+                return nested
+        qty = _non_negative_number(value)
+        if qty is not None:
+            return qty
+    return None
+
+
+async def _lookup_current_stock(
+    *,
+    retailer: RetailerClient | None,
+    access_token: str | None,
+    store_id: str,
+    product_id: str,
+) -> float | None:
+    if retailer is None or not access_token:
+        return None
+    try:
+        response = await retailer.get_inventory(
+            access_token=access_token,
+            store_id=store_id,
+            product_id=product_id,
+        )
+    except RetailerHttpError:
+        return None
+    return _stock_qty_from_inventory_payload(response.body)
+
+
+async def _stage_add_stock_call(
+    store: ConfirmationStore,
+    *,
+    user_id: str,
+    store_id: str,
+    session_id: str,
+    call: ToolCall,
+    audit_trail: AuditTrail | None = None,
+    metrics: MetricsRegistry | None = None,
+    retailer: RetailerClient | None = None,
+    access_token: str | None = None,
+) -> PendingConfirmationRecord:
+    raw_items = call.arguments.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message="add_stock requires a non-empty items array",
+            status_code=400,
+        )
+    if len(raw_items) > 10:
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message="add_stock supports at most 10 items per confirm",
+            status_code=400,
+        )
+
+    staged_items: list[dict[str, Any]] = []
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="each add_stock item must be an object",
+                status_code=400,
+            )
+        product_id = raw.get("productId")
+        if not isinstance(product_id, str) or not product_id.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="add_stock items require productId",
+                status_code=400,
+            )
+        quantity = _positive_amount(raw.get("quantity"))
+        if quantity is None:
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="add_stock items require quantity > 0",
+                status_code=400,
+            )
+        product_id = product_id.strip()
+        current = _non_negative_number(raw.get("currentStock"))
+        if current is None:
+            current = await _lookup_current_stock(
+                retailer=retailer,
+                access_token=access_token,
+                store_id=store_id,
+                product_id=product_id,
+            )
+        if current is None:
+            current = 0.0
+        purchase_price = _positive_amount(raw.get("purchasePrice"))
+        if purchase_price is None:
+            purchase_price = 1.0
+        line: dict[str, Any] = {
+            "productId": product_id,
+            "quantity": quantity,
+            "purchasePrice": purchase_price,
+            "currentStock": current,
+            "adding": quantity,
+            "finalStock": current + float(quantity),
+        }
+        name = raw.get("productName")
+        if isinstance(name, str) and name.strip():
+            line["productName"] = name.strip()
+        source = raw.get("sourceName")
+        if isinstance(source, str) and source.strip():
+            line["sourceName"] = source.strip()
+        staged_items.append(line)
+
+    draft_id = staged_items[0]["productId"]
+    summary: dict[str, Any] = {
+        "action": "add_stock",
+        "items": [
+            {
+                "productId": item["productId"],
+                "productName": item.get("productName"),
+                "sourceName": item.get("sourceName"),
+                "currentStock": item["currentStock"],
+                "adding": item["adding"],
+                "finalStock": item["finalStock"],
+            }
+            for item in staged_items
+        ],
+        "count": len(staged_items),
+    }
+    arguments: dict[str, Any] = {
+        "storeId": store_id,
+        "items": [
+            {
+                "productId": item["productId"],
+                "quantity": item["quantity"],
+                "purchasePrice": item["purchasePrice"],
+                "currentStock": item["currentStock"],
+                **(
+                    {"productName": item["productName"]}
+                    if "productName" in item
+                    else {}
+                ),
+                **(
+                    {"sourceName": item["sourceName"]}
+                    if "sourceName" in item
+                    else {}
+                ),
+            }
+            for item in staged_items
+        ],
+    }
+    record = await store.create(
+        user_id=user_id,
+        store_id=store_id,
+        session_id=session_id,
+        type=CONFIRMATION_TYPE_ADD_STOCK,
+        draft_id=draft_id,
+        summary=summary,
+        tool_name="add_stock",
+        arguments=arguments,
+    )
+    _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
+    return record
 
 
 async def _stage_ledger_call(

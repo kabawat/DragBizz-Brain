@@ -100,6 +100,54 @@ class RetailerClient:
             store_id=store_id,
         )
 
+    async def get_product_analytics(
+        self, *, access_token: str, store_id: str
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/analytics/products",
+            access_token=access_token,
+            store_id=store_id,
+        )
+
+    async def get_inventory(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        product_id: str,
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/stock",
+            access_token=access_token,
+            store_id=store_id,
+            params={"product": product_id, "limit": 1},
+        )
+
+    async def add_stock(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        product_id: str,
+        quantity: float,
+        purchase_price: float,
+    ) -> RetailerResponse:
+        return await self._request(
+            "POST",
+            "/stock",
+            access_token=access_token,
+            store_id=store_id,
+            json_body={
+                "productId": product_id,
+                "batchData": {
+                    "quantity": quantity,
+                    "purchasePrice": purchase_price,
+                },
+            },
+        )
+
     async def get_payments(
         self,
         *,

@@ -31,6 +31,15 @@ async def search_product(
             continue
         pricing = item.get("pricing") if isinstance(item.get("pricing"), dict) else {}
         gst = item.get("gstInfo") if isinstance(item.get("gstInfo"), dict) else {}
+        stock_raw = item.get("stock")
+        stock_qty: Any = stock_raw
+        if isinstance(stock_raw, dict):
+            for key in ("availableQuantity", "totalQuantity", "quantity"):
+                if isinstance(stock_raw.get(key), (int, float)) and not isinstance(
+                    stock_raw.get(key), bool
+                ):
+                    stock_qty = stock_raw[key]
+                    break
         items.append(
             {
                 "id": str(item.get("id") or ""),
@@ -39,7 +48,7 @@ async def search_product(
                 "sellingPrice": item.get(
                     "sellingPrice", pricing.get("sellingPrice")
                 ),
-                "stock": item.get("stock"),
+                "stock": stock_qty,
                 "taxRate": item.get("taxRate", gst.get("gstRate")),
                 "unit": item.get("unit") or item.get("uom") or pricing.get("uom"),
                 "status": item.get("status"),
@@ -91,6 +100,31 @@ async def stock_summary(
         if isinstance(payload.get("valueSummary"), dict):
             data["valueSummary"] = payload["valueSummary"]
     return ToolResult(tool="stock_summary", success=True, data=data)
+
+
+async def product_summary(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_product_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+    except RetailerHttpError as exc:
+        return _failure("product_summary", exc)
+
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    data: dict[str, Any] = {
+        "totals": {
+            key: totals[key]
+            for key in ("totalProducts", "activeProducts", "inactiveProducts")
+            if key in totals
+        }
+    }
+    return ToolResult(tool="product_summary", success=True, data=data)
 
 
 async def search_customer(
@@ -415,16 +449,41 @@ async def list_stores(
     stores: list[dict[str, Any]] = []
     active_id = context.store_id
     active_name: str | None = None
+    active_category: str | None = None
+    active_sub_categories: list[str] = []
     for item in raw_items:
         if not isinstance(item, dict):
             continue
         store_id = str(item.get("id") or item.get("_id") or "").strip()
         name = item.get("name")
         name_str = name.strip() if isinstance(name, str) else None
-        row: dict[str, Any] = {"id": store_id, "name": name_str}
+        category = item.get("category")
+        category_str = category.strip() if isinstance(category, str) else None
+        raw_subs = item.get("subCategories")
+        sub_categories: list[str] = []
+        if isinstance(raw_subs, list):
+            for sub in raw_subs:
+                if isinstance(sub, str) and sub.strip():
+                    sub_categories.append(sub.strip())
+        raw_tags = item.get("tags")
+        tags: list[str] = []
+        if isinstance(raw_tags, list):
+            for tag in raw_tags:
+                if isinstance(tag, str) and tag.strip():
+                    tags.append(tag.strip())
+        row: dict[str, Any] = {
+            "id": store_id,
+            "name": name_str,
+            "category": category_str,
+            "subCategories": sub_categories,
+        }
+        if tags:
+            row["tags"] = tags
         if store_id and store_id == active_id:
             row["active"] = True
             active_name = name_str
+            active_category = category_str
+            active_sub_categories = sub_categories
         stores.append(row)
 
     return ToolResult(
@@ -434,6 +493,8 @@ async def list_stores(
             "count": len(stores),
             "activeStoreId": active_id,
             "activeStoreName": active_name,
+            "activeStoreCategory": active_category,
+            "activeStoreSubCategories": active_sub_categories,
             "stores": stores,
         },
     )
@@ -451,6 +512,7 @@ READ_TOOL_HANDLERS = {
     "search_product": search_product,
     "today_sale": today_sale,
     "stock_summary": stock_summary,
+    "product_summary": product_summary,
     "search_customer": search_customer,
     "payment_history": payment_history,
     "list_stores": list_stores,

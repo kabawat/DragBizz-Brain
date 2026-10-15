@@ -49,6 +49,7 @@ _READ = frozenset(
         "search_product",
         "today_sale",
         "stock_summary",
+        "product_summary",
         "search_customer",
         "payment_history",
         "list_stores",
@@ -65,6 +66,7 @@ _WRITES = frozenset(
         "ledger_credit",
         "ledger_debit",
         "release_invoice",
+        "add_stock",
     }
 )
 
@@ -192,11 +194,40 @@ def test_store_name_and_count_expose_list_stores() -> None:
         "store ka naam kya hai",
         "mere pass total kitane store hain?",
         "how many stores do I have",
+        "mere store ki category kya hain ?",
+        "category ke according batao na",
+        "kya product stock karne chahiye",
     ):
         intent = _intent(text)
         assert intent.routing == "tools", text
         assert intent.tool_names == frozenset({"list_stores"}), text
         assert should_retrieve_docs(intent.routing) is False
+
+
+def test_stock_add_exposes_add_stock_and_search() -> None:
+    for text in (
+        "mujhe ek ka stock add karna hain",
+        "add stock 10 units",
+        "stock me 10 add kar do",
+        "mene xyz se 10 unit liye the",
+    ):
+        intent = _intent(text)
+        assert "add_stock" in intent.tool_names, text
+        assert "search_product" in intent.tool_names, text
+        assert user_requested_sensitive_action(text, "add_stock"), text
+
+
+def test_listed_product_count_uses_product_summary_not_stock() -> None:
+    for text in (
+        "mere pass total kitane product listed ain ?",
+        "total products kitne hain",
+        "kitne products listed hain",
+        "how many products do I have",
+    ):
+        intent = _intent(text)
+        assert intent.routing == "tools", text
+        assert "product_summary" in intent.tool_names, text
+        assert "stock_summary" not in intent.tool_names, text
 
 
 def test_customer_and_invoice_totals_expose_summary_tools() -> None:

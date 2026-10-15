@@ -10,6 +10,7 @@ Clock = Callable[[], float]
 CONFIRMATION_TYPE_INVOICE_RELEASE = "invoice_release"
 CONFIRMATION_TYPE_LEDGER_CREDIT = "ledger_credit"
 CONFIRMATION_TYPE_LEDGER_DEBIT = "ledger_debit"
+CONFIRMATION_TYPE_ADD_STOCK = "add_stock"
 
 ConfirmationStatus = Literal[
     "PENDING",

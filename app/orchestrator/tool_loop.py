@@ -135,6 +135,8 @@ def _sensitive_placeholder(
     customer_id = call.arguments.get("customerId")
     if isinstance(customer_id, str) and customer_id.strip():
         data["customerId"] = customer_id.strip()
+    if staged_for_call and staged is not None and staged.summary:
+        data["summary"] = dict(staged.summary)
     return ToolResult(
         tool=call.name,
         success=True,
@@ -397,6 +399,8 @@ async def run_tool_loop(
                 sensitive_calls=allowed_sensitive,
                 audit_trail=audit_trail,
                 metrics=metrics,
+                retailer=executor._retailer,
+                access_token=access_token,
             )
         for call in sensitive_calls:
             await _emit(
@@ -493,6 +497,8 @@ async def run_tool_loop(
                     sensitive_calls=[auto_ledger],
                     audit_trail=audit_trail,
                     metrics=metrics,
+                    retailer=executor._retailer,
+                    access_token=access_token,
                 )
                 projected = project_tool_result(
                     _sensitive_placeholder(auto_ledger, staged_sensitive)

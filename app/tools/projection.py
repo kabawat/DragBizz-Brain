@@ -285,6 +285,46 @@ def project_ledger_write(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def project_add_stock(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("status") == "pending_confirmation":
+        out: dict[str, Any] = {"status": "pending_confirmation"}
+        if isinstance(data.get("confirmationId"), str):
+            out["confirmationId"] = data["confirmationId"]
+        if isinstance(data.get("draftId"), str):
+            out["draftId"] = data["draftId"]
+        summary = data.get("summary")
+        if isinstance(summary, dict):
+            out["summary"] = summary
+        return out
+    out = {}
+    if isinstance(data.get("count"), int):
+        out["count"] = data["count"]
+    raw_items = data.get("items")
+    items: list[dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items[:_MAX_LIST]:
+            if not isinstance(item, dict):
+                continue
+            row: dict[str, Any] = {}
+            if isinstance(item.get("productId"), str):
+                row["productId"] = item["productId"]
+            for key in (
+                "productName",
+                "sourceName",
+                "quantity",
+                "currentStock",
+                "finalStock",
+                "batchNo",
+            ):
+                if key in item:
+                    row[key] = item[key]
+            if row:
+                items.append(row)
+    if items:
+        out["items"] = items
+    return out
+
+
 def project_today_sale(data: dict[str, Any]) -> dict[str, Any]:
     return _pick(data, ("revenue", "profit", "sales"))
 
@@ -301,6 +341,18 @@ def project_stock_summary(data: dict[str, Any]) -> dict[str, Any]:
         picked = _pick(values, _STOCK_VALUE_KEYS)
         if picked:
             out["valueSummary"] = picked
+    return out
+
+
+def project_product_summary(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    totals = data.get("totals")
+    if isinstance(totals, dict):
+        picked = _pick(
+            totals, ("totalProducts", "activeProducts", "inactiveProducts")
+        )
+        if picked:
+            out["totals"] = picked
     return out
 
 
@@ -475,6 +527,22 @@ def project_list_stores(data: dict[str, Any]) -> dict[str, Any]:
                 row["id"] = item["id"]
             if isinstance(item.get("name"), str):
                 row["name"] = item["name"]
+            if isinstance(item.get("category"), str):
+                row["category"] = item["category"]
+            subs = item.get("subCategories")
+            if isinstance(subs, list):
+                clean_subs = [
+                    sub for sub in subs if isinstance(sub, str) and sub.strip()
+                ]
+                if clean_subs:
+                    row["subCategories"] = clean_subs[:12]
+            tags = item.get("tags")
+            if isinstance(tags, list):
+                clean_tags = [
+                    tag for tag in tags if isinstance(tag, str) and tag.strip()
+                ]
+                if clean_tags:
+                    row["tags"] = clean_tags[:12]
             if item.get("active") is True:
                 row["active"] = True
             if row:
@@ -487,6 +555,13 @@ def project_list_stores(data: dict[str, Any]) -> dict[str, Any]:
         out["activeStoreId"] = data["activeStoreId"]
     if isinstance(data.get("activeStoreName"), str):
         out["activeStoreName"] = data["activeStoreName"]
+    if isinstance(data.get("activeStoreCategory"), str):
+        out["activeStoreCategory"] = data["activeStoreCategory"]
+    active_subs = data.get("activeStoreSubCategories")
+    if isinstance(active_subs, list):
+        clean = [sub for sub in active_subs if isinstance(sub, str) and sub.strip()]
+        if clean:
+            out["activeStoreSubCategories"] = clean[:12]
     return out
 
 
@@ -528,8 +603,10 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "update_customer": project_customer_write,
     "ledger_credit": project_ledger_write,
     "ledger_debit": project_ledger_write,
+    "add_stock": project_add_stock,
     "today_sale": project_today_sale,
     "stock_summary": project_stock_summary,
+    "product_summary": project_product_summary,
     "search_product": project_search_product,
     "search_customer": project_search_customer,
     "list_stores": project_list_stores,

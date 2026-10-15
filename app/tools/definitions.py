@@ -52,7 +52,27 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="stock_summary",
-        description="Live stock totals (SKUs, qty, low/out of stock).",
+        description=(
+            "Inventory/stock totals only (qty on hand, low/out of stock). "
+            "Not the count of listed products — use product_summary for "
+            "how many products are created/listed."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"storeId": _STORE_ID_PROP},
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="product_summary",
+        description=(
+            "How many products are listed/created in the catalog "
+            "(total, active, inactive) — includes products with zero "
+            "stock. Use for 'total products' / 'kitne product listed'."
+        ),
         risk=ToolRisk.READ,
         allows_parallel=True,
         parameters={
@@ -105,9 +125,10 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="list_stores",
         description=(
-            "List the user's accessible stores (name, id) and mark which "
-            "one is active. Use for store name, store count, or which "
-            "stores they have."
+            "List accessible stores with name, category, subCategories, "
+            "and which is active. Use for store name, category, count, "
+            "or which products/categories fit THIS store — never guess "
+            "category from the store name alone."
         ),
         risk=ToolRisk.READ,
         allows_parallel=True,
@@ -368,5 +389,76 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         ),
         risk=ToolRisk.SENSITIVE,
         parameters=_LEDGER_PARAMETERS,
+    ),
+    ToolDefinition(
+        name="add_stock",
+        description=(
+            "Stage stock-in for one or more products (needs user confirm). "
+            "Resolve each productId via search_product first. Supports "
+            "multi-line intake (product A from person X, product B from "
+            "person Y) in one call via items[]. Optional sourceName is "
+            "the person/supplier name for display only. Does not post "
+            "until confirmed. Preview shows currentStock, adding, "
+            "finalStock per line."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "productId": {
+                                **_OBJECT_ID_PROP,
+                                "description": "Product ObjectId from search",
+                            },
+                            "quantity": {
+                                "type": "number",
+                                "minimum": 0.01,
+                                "description": "Units to add",
+                            },
+                            "productName": {
+                                "type": "string",
+                                "maxLength": 200,
+                                "description": "Display name from search",
+                            },
+                            "sourceName": {
+                                "type": "string",
+                                "maxLength": 120,
+                                "description": (
+                                    "Who stock came from (person/supplier "
+                                    "name). Display only — not a supplier id."
+                                ),
+                            },
+                            "currentStock": {
+                                "type": "number",
+                                "minimum": 0,
+                                "description": (
+                                    "Current available qty from "
+                                    "search_product.stock if known"
+                                ),
+                            },
+                            "purchasePrice": {
+                                "type": "number",
+                                "minimum": 0.01,
+                                "description": (
+                                    "Cost per unit. Use product cost/"
+                                    "sellingPrice when user did not give one."
+                                ),
+                            },
+                        },
+                        "required": ["productId", "quantity"],
+                    },
+                },
+            },
+            "required": ["storeId", "items"],
+        },
     ),
 )

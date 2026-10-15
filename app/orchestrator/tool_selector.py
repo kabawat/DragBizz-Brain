@@ -17,6 +17,7 @@ _READ_TOOLS = frozenset(
         "search_product",
         "today_sale",
         "stock_summary",
+        "product_summary",
         "search_customer",
         "payment_history",
         "list_stores",
@@ -29,6 +30,7 @@ _FAMILY_READS: dict[str, frozenset[str]] = {
     "sale": frozenset({"today_sale", "invoice_summary"}),
     "stock": frozenset({"stock_summary", "search_product"}),
     "product": frozenset({"search_product"}),
+    "product_stats": frozenset({"product_summary"}),
     "payment": frozenset({"payment_history", "search_customer"}),
     # Lookup/create flows need search only; payment history is payment-family.
     "customer": frozenset({"search_customer"}),
@@ -160,6 +162,33 @@ _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
         ("release invoice", "release the draft", "release draft"),
         frozenset({"release_invoice"}),
     ),
+    (
+        (
+            "stock add",
+            "add stock",
+            "stock badhao",
+            "stock badha",
+            "stock daalo",
+            "stock dalo",
+            "stock daal",
+            "stock me add",
+            "stock mein add",
+            "stock me daal",
+            "stock mein daal",
+            "inventory add",
+            "add inventory",
+            "unit add",
+            "units add",
+            "units daalo",
+            "units dalo",
+            "stock in",
+            "stock intake",
+            "maal aaya",
+            "maal add",
+            "stock update",
+        ),
+        frozenset({"add_stock", "search_product"}),
+    ),
 )
 
 _FAMILY_CUES: dict[str, tuple[str, ...]] = {
@@ -191,6 +220,31 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "price batao",
         "product search",
         "sku",
+    ),
+    "product_stats": (
+        "total product",
+        "total products",
+        "kitne product",
+        "kitane product",
+        "kitna product",
+        "kitne products",
+        "kitane products",
+        "how many product",
+        "how many products",
+        "product listed",
+        "products listed",
+        "listed product",
+        "listed products",
+        "product count",
+        "products count",
+        "product total",
+        "products total",
+        "catalog me",
+        "catalogue me",
+        "kitne sku",
+        "kitane sku",
+        "total sku",
+        "total skus",
     ),
     "payment": (
         "payments",
@@ -314,6 +368,28 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "saare stores",
         "all stores",
         "active store",
+        "store ki category",
+        "store category",
+        "store ka category",
+        "meri category",
+        "mere store ki category",
+        "category kya",
+        "category batao",
+        "category ke according",
+        "category ke accrding",
+        "category according",
+        "kaunse product",
+        "konsa product",
+        "kya product",
+        "product suggest",
+        "products suggest",
+        "product suggestion",
+        "kya stock karu",
+        "kya stock karna",
+        "store karne chahiye",
+        "stock karne chahiye",
+        "kya rakhu",
+        "kya rakhna",
     ),
     "customer_stats": (
         "total customer",
@@ -489,6 +565,34 @@ _SENSITIVE_ACTION_CUES: dict[str, tuple[str, ...]] = {
         "udhar",
         "debit",
     ),
+    "add_stock": (
+        "stock add",
+        "add stock",
+        "stock badhao",
+        "stock badha",
+        "stock daalo",
+        "stock dalo",
+        "stock daal",
+        "stock me add",
+        "stock mein add",
+        "stock me daal",
+        "stock mein daal",
+        "inventory add",
+        "add inventory",
+        "unit add",
+        "units add",
+        "units daalo",
+        "units dalo",
+        "stock in",
+        "stock intake",
+        "maal aaya",
+        "maal add",
+        "stock update",
+        "liye the",
+        "liya tha",
+        "se liye",
+        "se liya",
+    ),
 }
 _SENSITIVE_ACTION_RES = {
     name: re.compile("|".join(re.escape(cue) for cue in cues), re.IGNORECASE)
@@ -509,6 +613,15 @@ _LEDGER_CREDIT_FLEX_RE = re.compile(
     r"|(?:jama|payment|paid)\s+(?:\S+\s+){0,4}\b(?:khata|khate)\b",
     re.IGNORECASE,
 )
+# Amount/name may sit between "stock me" and "add" ("stock me 10 add kar do").
+_STOCK_ADD_FLEX_RE = re.compile(
+    r"stock\s+me(?:in)?\s+(?:\S+\s+){0,6}(?:add|daal|dalo|badha)\b"
+    r"|(?:add|daal|dalo|badha)\s+(?:\S+\s+){0,4}\bstock\b"
+    r"|\b(?:unit|units)\s+(?:\S+\s+){0,4}(?:add|daal|dalo)\b"
+    r"|\b(?:liye|liya)\s+(?:the|tha|thi)\b"
+    r"|\bse\s+liye?\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -526,6 +639,8 @@ def _exposure_tools(text: str) -> set[str]:
         names.add("ledger_debit")
     if _LEDGER_CREDIT_FLEX_RE.search(text):
         names.add("ledger_credit")
+    if _STOCK_ADD_FLEX_RE.search(text):
+        names.update({"add_stock", "search_product"})
     return names
 
 
@@ -589,6 +704,8 @@ def user_requested_sensitive_action(question: str, tool_name: str) -> bool:
         return True
     if tool_name == "ledger_credit" and _LEDGER_CREDIT_FLEX_RE.search(text):
         return True
+    if tool_name == "add_stock" and _STOCK_ADD_FLEX_RE.search(text):
+        return True
     pattern = _SENSITIVE_ACTION_RES.get(tool_name)
     if pattern is None:
         return False
@@ -647,4 +764,6 @@ def narrow_field_fill_tools(tool_names: frozenset[str]) -> frozenset[str]:
         companions.update({"search_customer", "search_product"})
     if writes & {"ledger_credit", "ledger_debit"}:
         companions.update({"search_customer", "payment_history"})
+    if writes & {"add_stock"}:
+        companions.add("search_product")
     return frozenset(writes | (companions & tool_names))
