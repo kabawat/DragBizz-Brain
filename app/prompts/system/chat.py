@@ -95,10 +95,14 @@ _CUSTOMER_LIVE = (
     "you could not load them; do not invent numbers.\n"
     "- ledger.truncated → mention download buttons only if downloads is "
     "present. Multiple matches → list name+phone and ask which.\n"
-    "- payment_history is store-wide payments, not one customer ledger.\n"
-    "- create/update_customer: name/phone/email only (not GST/address/"
-    "ledger amounts). Never delete a customer. Bulk export/reminders: "
-    "short refusal (how-to may still use Documentation).\n"
+    "- payment_history is store-wide payments, not one customer ledger; "
+    "use get_customer_ledger / get_customer_payment for one customer.\n"
+    "- create_customer: name + phone or email. update_customer: name + "
+    "phone/email required; may also set note, companyDetails (GST), "
+    "addresses. Never delete a customer. Never bulk-create or import "
+    "opening-balance files — refuse those only. Merge, opening balance "
+    "(single), formal payment, collect link, and payment reminder are "
+    "allowed when those sensitive tools are offered.\n"
 )
 
 _HOWTO_LAYOUT = (
@@ -172,7 +176,8 @@ def build_chat_system_prompt(
             "payments, balances, store name/count, customer totals, "
             "invoice/bill totals) must come from tool calls only.\n"
             "- Store name/category/count → list_stores. Customer totals / "
-            "new customers → customer_summary. Invoice/bill totals, "
+            "new customers → customer_summary (set periodDays for "
+            "detailed growth/averages). Invoice/bill totals, "
             "today's invoices, or last 7/15/30 days → invoice_summary "
             "(set periodDays when a window is asked). Listed/created "
             "product count → product_summary (NOT stock_summary). "
@@ -245,6 +250,34 @@ def build_chat_system_prompt(
                 "confirm — never say you cannot add khata entries while "
                 "these tools are offered. Do not claim saved until the user "
                 "confirms in the app.\n"
+            )
+        if "merge_customers" in tool_names:
+            parts.append(
+                "- merge_customers: STAGE merge of duplicate into primary "
+                "(needs confirm). Resolve both ids via search_customer "
+                "first. Do not claim merged until user confirms.\n"
+            )
+        if "set_opening_balance" in tool_names:
+            parts.append(
+                "- set_opening_balance: STAGE opening khata for one "
+                "customer with no account yet (needs confirm). Never "
+                "import files or set bulk opening balances.\n"
+            )
+        if "record_customer_payment" in tool_names:
+            parts.append(
+                "- record_customer_payment: STAGE structured payment with "
+                "method/type (needs confirm). Prefer ledger_credit for "
+                "quick jama. Do not claim saved until confirmed.\n"
+            )
+        if "create_collect_link" in tool_names:
+            parts.append(
+                "- create_collect_link: STAGE payment collect link (needs "
+                "confirm). Resolve customerId first.\n"
+            )
+        if "send_payment_reminder" in tool_names:
+            parts.append(
+                "- send_payment_reminder: STAGE reminder (needs confirm). "
+                "Default channel EMAIL. Do not claim sent until confirmed.\n"
             )
         if "add_stock" in tool_names:
             parts.append(

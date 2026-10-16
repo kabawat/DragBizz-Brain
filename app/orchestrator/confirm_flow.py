@@ -6,8 +6,15 @@ import asyncio
 from collections.abc import Callable
 
 from app.confirmations import (
+    CONFIRMATION_TYPE_ADD_STOCK,
+    CONFIRMATION_TYPE_CREATE_COLLECT_LINK,
     CONFIRMATION_TYPE_LEDGER_CREDIT,
     CONFIRMATION_TYPE_LEDGER_DEBIT,
+    CONFIRMATION_TYPE_MERGE_CUSTOMERS,
+    CONFIRMATION_TYPE_RECORD_CUSTOMER_PAYMENT,
+    CONFIRMATION_TYPE_SEND_PAYMENT_REMINDER,
+    CONFIRMATION_TYPE_SET_OPENING_BALANCE,
+    CONFIRMATION_TYPE_UPDATE_CUSTOMER_PAYMENT,
     ConfirmationStore,
     PendingConfirmationRecord,
 )
@@ -306,6 +313,16 @@ async def handle_confirm(
 _LEDGER_TYPES = frozenset(
     {CONFIRMATION_TYPE_LEDGER_CREDIT, CONFIRMATION_TYPE_LEDGER_DEBIT}
 )
+_CUSTOMER_ACTION_TYPES = frozenset(
+    {
+        CONFIRMATION_TYPE_MERGE_CUSTOMERS,
+        CONFIRMATION_TYPE_SET_OPENING_BALANCE,
+        CONFIRMATION_TYPE_RECORD_CUSTOMER_PAYMENT,
+        CONFIRMATION_TYPE_UPDATE_CUSTOMER_PAYMENT,
+        CONFIRMATION_TYPE_CREATE_COLLECT_LINK,
+        CONFIRMATION_TYPE_SEND_PAYMENT_REMINDER,
+    }
+)
 
 
 def _is_ambiguous_failure(result: ToolResult | None) -> bool:
@@ -327,6 +344,16 @@ def _unknown_message(record: PendingConfirmationRecord) -> str:
             "Check the customer ledger before retrying. "
             "If you retry, the same confirmation will reuse the same business key."
         )
+    if record.type == CONFIRMATION_TYPE_ADD_STOCK:
+        return (
+            "Stock add status is unclear — it may or may not have completed. "
+            "Check inventory before retrying."
+        )
+    if record.type in _CUSTOMER_ACTION_TYPES:
+        return (
+            "Customer action status is unclear — it may or may not have "
+            "completed. Check the customer page before retrying."
+        )
     return (
         "Invoice release status is unclear — it may or may not have completed. "
         "Check the invoice in Invoices before retrying. "
@@ -339,6 +366,10 @@ def _reject_message(record: PendingConfirmationRecord) -> str:
         return (
             "Khata entry cancelled. Nothing was written to the customer ledger."
         )
+    if record.type == CONFIRMATION_TYPE_ADD_STOCK:
+        return "Stock add cancelled. No inventory was changed."
+    if record.type in _CUSTOMER_ACTION_TYPES:
+        return "Cancelled. No customer change was saved."
     return (
         "Release cancelled. The invoice draft is unchanged — "
         "no stock was deducted. "
@@ -385,6 +416,40 @@ def _approve_message(
             "Could not record the khata entry"
             + (f": {err}" if err else ".")
             + " Nothing was written."
+        )
+
+    if record.type == CONFIRMATION_TYPE_ADD_STOCK:
+        if result is not None and result.success:
+            return "Stock added successfully."
+        err = _result_error(result)
+        return (
+            "Could not add stock"
+            + (f": {err}" if err else ".")
+            + " Nothing was changed."
+        )
+
+    if record.type in _CUSTOMER_ACTION_TYPES:
+        labels = {
+            CONFIRMATION_TYPE_MERGE_CUSTOMERS: "Customers merged",
+            CONFIRMATION_TYPE_SET_OPENING_BALANCE: "Opening balance set",
+            CONFIRMATION_TYPE_RECORD_CUSTOMER_PAYMENT: "Payment recorded",
+            CONFIRMATION_TYPE_UPDATE_CUSTOMER_PAYMENT: "Payment notes updated",
+            CONFIRMATION_TYPE_CREATE_COLLECT_LINK: "Collect link created",
+            CONFIRMATION_TYPE_SEND_PAYMENT_REMINDER: "Payment reminder sent",
+        }
+        if result is not None and result.success:
+            open_path = None
+            if isinstance(result.data, dict):
+                open_path = result.data.get("openPath")
+            label = labels.get(record.type, "Done")
+            if isinstance(open_path, str) and open_path.strip():
+                return f"{label}. [Open customer]({open_path})"
+            return f"{label}."
+        err = _result_error(result)
+        return (
+            "Could not complete the customer action"
+            + (f": {err}" if err else ".")
+            + " Nothing was saved."
         )
 
     if result is not None and result.success:

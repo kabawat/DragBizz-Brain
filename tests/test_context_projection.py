@@ -438,7 +438,9 @@ def test_unknown_docs_budget_is_capped() -> None:
 
 def test_schema_token_ceilings() -> None:
     reads = list(READ_TOOL_DEFINITIONS)
-    assert _schema_tokens(reads) < 700
+    # Expanded customer coverage (ledger/accounts/payment/reminders) raises
+    # the full-read catalog; selector still exposes a subset per turn.
+    assert _schema_tokens(reads) < 2000
     chain_names = {
         "search_customer",
         "search_product",

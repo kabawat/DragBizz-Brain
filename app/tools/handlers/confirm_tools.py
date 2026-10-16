@@ -231,9 +231,355 @@ async def _ledger_write(
     return ToolResult(tool=tool, success=True, data=payload)
 
 
+async def merge_customers(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    primary_id = arguments.get("primaryId")
+    duplicate_id = arguments.get("duplicateId")
+    if not isinstance(primary_id, str) or not primary_id.strip():
+        return ToolResult(
+            tool="merge_customers",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "primaryId is required",
+            },
+        )
+    if not isinstance(duplicate_id, str) or not duplicate_id.strip():
+        return ToolResult(
+            tool="merge_customers",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "duplicateId is required",
+            },
+        )
+    primary_id = primary_id.strip()
+    duplicate_id = duplicate_id.strip()
+    if primary_id == duplicate_id:
+        return ToolResult(
+            tool="merge_customers",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "primaryId and duplicateId must differ",
+            },
+        )
+    try:
+        response = await context.retailer.merge_customers(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            primary_id=primary_id,
+            duplicate_id=duplicate_id,
+        )
+    except RetailerHttpError as exc:
+        return ToolResult(
+            tool="merge_customers",
+            success=False,
+            data={"code": exc.code, "message": exc.message},
+        )
+    data = response.body.get("data")
+    payload = data if isinstance(data, dict) else {"raw": data}
+    payload = {
+        **payload,
+        "primaryId": primary_id,
+        "duplicateId": duplicate_id,
+        "openPath": f"/dashboard/customers/{primary_id}",
+    }
+    return ToolResult(tool="merge_customers", success=True, data=payload)
+
+
+async def set_opening_balance(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    customer_id = arguments.get("customerId")
+    if not isinstance(customer_id, str) or not customer_id.strip():
+        return ToolResult(
+            tool="set_opening_balance",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "customerId is required",
+            },
+        )
+    try:
+        response = await context.retailer.create_customer_account(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            customer_id=customer_id.strip(),
+            total_due=_optional_non_negative(arguments.get("totalDue")),
+            total_paid=_optional_non_negative(arguments.get("totalPaid")),
+            total_amount=_optional_non_negative(arguments.get("totalAmount")),
+            notes=arguments.get("notes")
+            if isinstance(arguments.get("notes"), str)
+            else None,
+        )
+    except RetailerHttpError as exc:
+        return ToolResult(
+            tool="set_opening_balance",
+            success=False,
+            data={"code": exc.code, "message": exc.message},
+        )
+    data = response.body.get("data")
+    payload = data if isinstance(data, dict) else {"account": data}
+    payload = {
+        **payload,
+        "customerId": customer_id.strip(),
+        "openPath": f"/dashboard/customers/{customer_id.strip()}",
+    }
+    return ToolResult(tool="set_opening_balance", success=True, data=payload)
+
+
+async def record_customer_payment(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    customer_id = arguments.get("customerId")
+    payment_type = arguments.get("paymentType")
+    payment = arguments.get("payment")
+    if not isinstance(customer_id, str) or not customer_id.strip():
+        return ToolResult(
+            tool="record_customer_payment",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "customerId is required",
+            },
+        )
+    if not isinstance(payment_type, str) or not payment_type.strip():
+        return ToolResult(
+            tool="record_customer_payment",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "paymentType is required",
+            },
+        )
+    if not isinstance(payment, list) or not payment:
+        return ToolResult(
+            tool="record_customer_payment",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "payment must be a non-empty array",
+            },
+        )
+    idempotency_key = arguments.get("idempotencyKey")
+    try:
+        response = await context.retailer.create_customer_payment(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            customer_id=customer_id.strip(),
+            payment_type=payment_type.strip().upper(),
+            payment=list(payment),
+            invoice=arguments.get("invoiceId")
+            if isinstance(arguments.get("invoiceId"), str)
+            else None,
+            invoice_allocations=arguments.get("invoiceAllocations")
+            if isinstance(arguments.get("invoiceAllocations"), list)
+            else None,
+            notes=arguments.get("notes")
+            if isinstance(arguments.get("notes"), str)
+            else None,
+            idempotency_key=idempotency_key.strip()
+            if isinstance(idempotency_key, str) and idempotency_key.strip()
+            else None,
+        )
+    except RetailerHttpError as exc:
+        return ToolResult(
+            tool="record_customer_payment",
+            success=False,
+            data={"code": exc.code, "message": exc.message},
+        )
+    data = response.body.get("data")
+    payload = data if isinstance(data, dict) else {"payment": data}
+    total = sum(
+        float(row["amount"])
+        for row in payment
+        if isinstance(row, dict)
+        and isinstance(row.get("amount"), (int, float))
+        and not isinstance(row.get("amount"), bool)
+    )
+    payload = {
+        **payload,
+        "customerId": customer_id.strip(),
+        "amount": total,
+        "openPath": f"/dashboard/customers/{customer_id.strip()}",
+    }
+    return ToolResult(
+        tool="record_customer_payment", success=True, data=payload
+    )
+
+
+async def update_customer_payment(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    payment_id = arguments.get("paymentId")
+    notes = arguments.get("notes")
+    if not isinstance(payment_id, str) or not payment_id.strip():
+        return ToolResult(
+            tool="update_customer_payment",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "paymentId is required",
+            },
+        )
+    if not isinstance(notes, str):
+        return ToolResult(
+            tool="update_customer_payment",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "notes is required",
+            },
+        )
+    try:
+        response = await context.retailer.update_customer_payment(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            payment_id=payment_id.strip(),
+            notes=notes,
+        )
+    except RetailerHttpError as exc:
+        return ToolResult(
+            tool="update_customer_payment",
+            success=False,
+            data={"code": exc.code, "message": exc.message},
+        )
+    data = response.body.get("data")
+    payload = data if isinstance(data, dict) else {"payment": data}
+    return ToolResult(
+        tool="update_customer_payment", success=True, data=payload
+    )
+
+
+async def create_collect_link(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    customer_id = arguments.get("customerId")
+    if not isinstance(customer_id, str) or not customer_id.strip():
+        return ToolResult(
+            tool="create_collect_link",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "customerId is required",
+            },
+        )
+    amount = arguments.get("amount")
+    amount_val: float | None = None
+    if amount is not None:
+        if (
+            isinstance(amount, bool)
+            or not isinstance(amount, (int, float))
+            or amount <= 0
+        ):
+            return ToolResult(
+                tool="create_collect_link",
+                success=False,
+                data={
+                    "code": "TOOL_ARGS_INVALID",
+                    "message": "amount must be greater than 0",
+                },
+            )
+        amount_val = float(amount)
+    try:
+        response = await context.retailer.create_collect_link(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            customer_id=customer_id.strip(),
+            amount=amount_val,
+            notes=arguments.get("notes")
+            if isinstance(arguments.get("notes"), str)
+            else None,
+            description=arguments.get("description")
+            if isinstance(arguments.get("description"), str)
+            else None,
+        )
+    except RetailerHttpError as exc:
+        return ToolResult(
+            tool="create_collect_link",
+            success=False,
+            data={"code": exc.code, "message": exc.message},
+        )
+    data = response.body.get("data")
+    payload = data if isinstance(data, dict) else {"collectLink": data}
+    payload = {
+        **payload,
+        "customerId": customer_id.strip(),
+        "openPath": f"/dashboard/customers/{customer_id.strip()}",
+    }
+    if amount_val is not None:
+        payload["amount"] = amount_val
+    return ToolResult(tool="create_collect_link", success=True, data=payload)
+
+
+async def send_payment_reminder(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    customer_id = arguments.get("customerId")
+    if not isinstance(customer_id, str) or not customer_id.strip():
+        return ToolResult(
+            tool="send_payment_reminder",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "customerId is required",
+            },
+        )
+    channel = arguments.get("channel")
+    try:
+        response = await context.retailer.create_payment_reminder(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            customer_id=customer_id.strip(),
+            channel=channel.strip().upper()
+            if isinstance(channel, str) and channel.strip()
+            else None,
+            include_payment_link=arguments.get("includePaymentLink")
+            if isinstance(arguments.get("includePaymentLink"), bool)
+            else None,
+            notes=arguments.get("notes")
+            if isinstance(arguments.get("notes"), str)
+            else None,
+        )
+    except RetailerHttpError as exc:
+        return ToolResult(
+            tool="send_payment_reminder",
+            success=False,
+            data={"code": exc.code, "message": exc.message},
+        )
+    data = response.body.get("data")
+    payload = data if isinstance(data, dict) else {"reminder": data}
+    payload = {
+        **payload,
+        "customerId": customer_id.strip(),
+        "openPath": f"/dashboard/customers/{customer_id.strip()}",
+    }
+    return ToolResult(
+        tool="send_payment_reminder", success=True, data=payload
+    )
+
+
+def _optional_non_negative(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value < 0:
+        return None
+    return float(value)
+
+
 SENSITIVE_TOOL_HANDLERS = {
     "release_invoice": release_invoice,
     "ledger_credit": ledger_credit,
     "ledger_debit": ledger_debit,
     "add_stock": add_stock,
+    "merge_customers": merge_customers,
+    "set_opening_balance": set_opening_balance,
+    "record_customer_payment": record_customer_payment,
+    "update_customer_payment": update_customer_payment,
+    "create_collect_link": create_collect_link,
+    "send_payment_reminder": send_payment_reminder,
 }

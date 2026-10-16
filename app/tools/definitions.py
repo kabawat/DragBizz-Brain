@@ -143,14 +143,128 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         name="customer_summary",
         description=(
             "Store customer totals: total customers, today new, and new "
-            "customers in last 7/15/30 days (and longer windows)."
+            "customers in last 7/15/30 days (and longer windows). Set "
+            "periodDays for detailed period analytics (growth, averages)."
         ),
         risk=ToolRisk.READ,
         allows_parallel=True,
         parameters={
             "type": "object",
             "additionalProperties": False,
-            "properties": {"storeId": _STORE_ID_PROP},
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "periodDays": {
+                    "type": "integer",
+                    "enum": [7, 15, 30],
+                    "description": (
+                        "Optional lookback for detailed customer analytics. "
+                        "Omit for all-time totals + new-customer windows."
+                    ),
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="get_customer_ledger",
+        description=(
+            "Standalone khata ledger lines for one customer (running "
+            "balance, type, amount). Prefer this over search_customer "
+            "ledger slice when the user asks for ledger history."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Customer ObjectId",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Max ledger lines (default 50)",
+                },
+            },
+            "required": ["storeId", "customerId"],
+        },
+    ),
+    ToolDefinition(
+        name="list_customer_accounts",
+        description=(
+            "List customer khata accounts (dues/advance). Use hasDue=true "
+            "for customers with outstanding balance."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Optional filter to one customer",
+                },
+                "hasDue": {
+                    "type": "boolean",
+                    "description": "If true, only accounts with dues",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Max accounts (default 20)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="get_customer_payment",
+        description="Fetch one customer payment by payment ObjectId.",
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "paymentId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Payment ObjectId",
+                },
+            },
+            "required": ["storeId", "paymentId"],
+        },
+    ),
+    ToolDefinition(
+        name="list_payment_reminders",
+        description=(
+            "List payment reminders sent for this store (optional "
+            "customerId filter)."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Optional customer filter",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                },
+            },
             "required": ["storeId"],
         },
     ),
@@ -182,6 +296,41 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         },
     ),
 )
+
+_ADDRESS_FIELDS = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "label": {"type": "string", "maxLength": 100},
+        "addressLine1": {"type": "string", "maxLength": 300},
+        "city": {"type": "string", "maxLength": 100},
+        "stateCode": {
+            "type": "string",
+            "maxLength": 10,
+            "description": "Indian state code (e.g. MH, DL)",
+        },
+        "pincode": {"type": "string", "maxLength": 10},
+    },
+}
+
+_COMPANY_DETAILS_FIELDS = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "gstin": {
+            "type": "string",
+            "minLength": 15,
+            "maxLength": 15,
+            "description": "15-char GSTIN",
+        },
+        "companyName": {"type": "string", "maxLength": 200},
+        "gstDetail": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Required when gstin is set",
+        },
+    },
+}
 
 WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
@@ -215,7 +364,10 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="update_customer",
         description=(
-            "Update customer by real ObjectId (name + phone or email)."
+            "Update customer by real ObjectId. Always send name + phone "
+            "or email (Core requires them). Optional: note, "
+            "companyDetails (GST), addresses (billing/shipping). "
+            "Resolve via search_customer first. Not for delete/bulk."
         ),
         risk=ToolRisk.WRITE,
         parameters={
@@ -238,6 +390,20 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                     "minLength": 3,
                     "maxLength": 200,
                     "description": "Customer email (required if phone omitted)",
+                },
+                "note": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "description": "Freeform customer note",
+                },
+                "companyDetails": _COMPANY_DETAILS_FIELDS,
+                "addresses": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "billing": _ADDRESS_FIELDS,
+                        "shipping": _ADDRESS_FIELDS,
+                    },
                 },
             },
             "required": ["storeId", "customerId", "name"],
@@ -459,6 +625,231 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 },
             },
             "required": ["storeId", "items"],
+        },
+    ),
+    ToolDefinition(
+        name="merge_customers",
+        description=(
+            "Stage merge of duplicate customer into primary (needs "
+            "confirm). Pass real primaryId + duplicateId from "
+            "search_customer. Duplicate is soft-deactivated."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "primaryId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Customer to keep",
+                },
+                "duplicateId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Duplicate to merge away",
+                },
+            },
+            "required": ["storeId", "primaryId", "duplicateId"],
+        },
+    ),
+    ToolDefinition(
+        name="set_opening_balance",
+        description=(
+            "Stage opening khata balance for a customer who has no "
+            "account yet (needs confirm). Never use for file import "
+            "or bulk. Pass customerId + totalDue and/or totalPaid."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Customer ObjectId",
+                },
+                "totalDue": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Opening due amount INR",
+                },
+                "totalPaid": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Opening paid/advance INR",
+                },
+                "totalAmount": {
+                    "type": "number",
+                    "minimum": 0,
+                },
+                "notes": {"type": "string", "maxLength": 500},
+            },
+            "required": ["storeId", "customerId"],
+        },
+    ),
+    ToolDefinition(
+        name="record_customer_payment",
+        description=(
+            "Stage a structured customer payment (needs confirm). Use "
+            "for formal payment entries with method/type. For quick "
+            "khata jama prefer ledger_credit. paymentType: "
+            "LEDGER_PAYMENT | INVOICE_PAYMENT | ADJUSTMENT | REFUND."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Customer ObjectId",
+                },
+                "paymentType": {
+                    "type": "string",
+                    "enum": [
+                        "LEDGER_PAYMENT",
+                        "INVOICE_PAYMENT",
+                        "ADJUSTMENT",
+                        "REFUND",
+                    ],
+                },
+                "payment": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 5,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "method": {
+                                "type": "string",
+                                "enum": [
+                                    "CASH",
+                                    "UPI",
+                                    "BANK_TRANSFER",
+                                    "CHEQUE",
+                                    "CREDIT",
+                                ],
+                            },
+                            "amount": {
+                                "type": "number",
+                                "minimum": 0.01,
+                            },
+                        },
+                        "required": ["method", "amount"],
+                    },
+                },
+                "invoiceId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Required for INVOICE_PAYMENT if no allocations",
+                },
+                "invoiceAllocations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "invoice": _OBJECT_ID_PROP,
+                            "amount": {
+                                "type": "number",
+                                "minimum": 0.01,
+                            },
+                        },
+                        "required": ["invoice", "amount"],
+                    },
+                },
+                "notes": {"type": "string", "maxLength": 500},
+            },
+            "required": [
+                "storeId",
+                "customerId",
+                "paymentType",
+                "payment",
+            ],
+        },
+    ),
+    ToolDefinition(
+        name="update_customer_payment",
+        description=(
+            "Stage update of payment notes only (needs confirm). "
+            "Cannot change amount/method."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "paymentId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Payment ObjectId",
+                },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Updated notes",
+                },
+            },
+            "required": ["storeId", "paymentId", "notes"],
+        },
+    ),
+    ToolDefinition(
+        name="create_collect_link",
+        description=(
+            "Stage a payment collect link for a customer (needs "
+            "confirm). Optional amount; omit to collect full due."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Customer ObjectId",
+                },
+                "amount": {
+                    "type": "number",
+                    "minimum": 0.01,
+                    "description": "Collect amount INR (optional)",
+                },
+                "notes": {"type": "string", "maxLength": 500},
+                "description": {"type": "string", "maxLength": 500},
+            },
+            "required": ["storeId", "customerId"],
+        },
+    ),
+    ToolDefinition(
+        name="send_payment_reminder",
+        description=(
+            "Stage a payment reminder to a customer (needs confirm). "
+            "channel defaults to EMAIL (SMS/WHATSAPP may be unavailable)."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Customer ObjectId",
+                },
+                "channel": {
+                    "type": "string",
+                    "enum": ["EMAIL", "SMS", "WHATSAPP"],
+                    "description": "Delivery channel (default EMAIL)",
+                },
+                "includePaymentLink": {
+                    "type": "boolean",
+                    "description": "Include collect link (default true)",
+                },
+                "notes": {"type": "string", "maxLength": 500},
+            },
+            "required": ["storeId", "customerId"],
         },
     ),
 )

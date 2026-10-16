@@ -65,6 +65,22 @@ class RetailerClient:
             store_id=store_id,
         )
 
+    async def get_customer_detailed_analytics(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        period_days: int,
+        analytics_type: str = "overview",
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/analytics/customers/detailed",
+            access_token=access_token,
+            store_id=store_id,
+            params={"period": str(period_days), "type": analytics_type},
+        )
+
     async def get_invoice_analytics(
         self, *, access_token: str, store_id: str
     ) -> RetailerResponse:
@@ -154,13 +170,225 @@ class RetailerClient:
         access_token: str,
         store_id: str,
         limit: int = 20,
+        customer_id: str | None = None,
     ) -> RetailerResponse:
+        params: dict[str, Any] = {"limit": limit}
+        if customer_id is not None:
+            params["customerId"] = customer_id
         return await self._request(
             "GET",
             "/customer-account/payments",
             access_token=access_token,
             store_id=store_id,
+            params=params,
+        )
+
+    async def get_payment(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        payment_id: str,
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            f"/customer-account/payments/{payment_id}",
+            access_token=access_token,
+            store_id=store_id,
+        )
+
+    async def create_customer_payment(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str,
+        payment_type: str,
+        payment: list[dict[str, Any]],
+        invoice: str | None = None,
+        invoice_allocations: list[dict[str, Any]] | None = None,
+        allocate_to_invoices: bool | None = None,
+        notes: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {
+            "customer": customer_id,
+            "paymentType": payment_type,
+            "payment": payment,
+        }
+        if invoice is not None:
+            body["invoice"] = invoice
+        if invoice_allocations is not None:
+            body["invoiceAllocations"] = invoice_allocations
+        if allocate_to_invoices is not None:
+            body["allocateToInvoices"] = allocate_to_invoices
+        if notes is not None:
+            body["notes"] = notes
+        if idempotency_key is not None:
+            body["idempotencyKey"] = idempotency_key
+        return await self._request(
+            "POST",
+            "/customer-account/payments",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def update_customer_payment(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        payment_id: str,
+        notes: str | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {}
+        if notes is not None:
+            body["notes"] = notes
+        return await self._request(
+            "PUT",
+            f"/customer-account/payments/{payment_id}",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def create_collect_link(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str,
+        amount: float | None = None,
+        notes: str | None = None,
+        description: str | None = None,
+        allocate_to_invoices: bool | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {"customer": customer_id}
+        if amount is not None:
+            body["amount"] = amount
+        if notes is not None:
+            body["notes"] = notes
+        if description is not None:
+            body["description"] = description
+        if allocate_to_invoices is not None:
+            body["allocateToInvoices"] = allocate_to_invoices
+        return await self._request(
+            "POST",
+            "/customer-account/payments/collect-link",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def create_payment_reminder(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str,
+        channel: str | None = None,
+        include_payment_link: bool | None = None,
+        notes: str | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {"customer": customer_id}
+        if channel is not None:
+            body["channel"] = channel
+        if include_payment_link is not None:
+            body["includePaymentLink"] = include_payment_link
+        if notes is not None:
+            body["notes"] = notes
+        return await self._request(
+            "POST",
+            "/customer-account/reminders",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def list_payment_reminders(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str | None = None,
+        limit: int = 20,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {"limit": limit}
+        if customer_id is not None:
+            params["customerId"] = customer_id
+        return await self._request(
+            "GET",
+            "/customer-account/reminders",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
+    async def get_customer_ledger(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str,
+        limit: int = 50,
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            f"/customer-account/{customer_id}/ledger",
+            access_token=access_token,
+            store_id=store_id,
             params={"limit": limit},
+        )
+
+    async def list_customer_accounts(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str | None = None,
+        has_due: bool | None = None,
+        limit: int = 20,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {"limit": limit}
+        if customer_id is not None:
+            params["customerId"] = customer_id
+        if has_due is not None:
+            params["hasDue"] = "true" if has_due else "false"
+        return await self._request(
+            "GET",
+            "/customer-account",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
+    async def create_customer_account(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str,
+        total_due: float | None = None,
+        total_paid: float | None = None,
+        total_amount: float | None = None,
+        notes: str | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {"customer": customer_id}
+        if total_due is not None:
+            body["totalDue"] = total_due
+        if total_paid is not None:
+            body["totalPaid"] = total_paid
+        if total_amount is not None:
+            body["totalAmount"] = total_amount
+        if notes is not None:
+            body["notes"] = notes
+        return await self._request(
+            "POST",
+            "/customer-account/",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
         )
 
     async def get_customers(
@@ -249,15 +477,47 @@ class RetailerClient:
         name: str,
         phone: str | None = None,
         email: str | None = None,
+        note: str | None = None,
+        company_details: dict[str, Any] | None = None,
+        addresses: dict[str, Any] | None = None,
     ) -> RetailerResponse:
         body: dict[str, Any] = {"store": store_id, "name": name}
         if phone is not None:
             body["phone"] = phone
         if email is not None:
             body["email"] = email
+        if note is not None:
+            body["note"] = note
+        if company_details is not None:
+            body["companyDetails"] = company_details
+        if addresses is not None:
+            body["addresses"] = addresses
         return await self._request(
             "PUT",
             f"/customer/{customer_id}",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+    async def merge_customers(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        primary_id: str,
+        duplicate_id: str,
+        field_overrides: dict[str, Any] | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {
+            "primaryId": primary_id,
+            "duplicateId": duplicate_id,
+        }
+        if field_overrides is not None:
+            body["fieldOverrides"] = field_overrides
+        return await self._request(
+            "POST",
+            "/customer/merge",
             access_token=access_token,
             store_id=store_id,
             json_body=body,

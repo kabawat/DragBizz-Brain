@@ -96,6 +96,36 @@ async def update_customer(
     missing = _require_phone_or_email("update_customer", arguments)
     if missing is not None:
         return missing
+    company_details = arguments.get("companyDetails")
+    if company_details is not None and not isinstance(company_details, dict):
+        return ToolResult(
+            tool="update_customer",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "companyDetails must be an object",
+            },
+        )
+    addresses = arguments.get("addresses")
+    if addresses is not None and not isinstance(addresses, dict):
+        return ToolResult(
+            tool="update_customer",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "addresses must be an object",
+            },
+        )
+    note = arguments.get("note")
+    if note is not None and not isinstance(note, str):
+        return ToolResult(
+            tool="update_customer",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "note must be a string",
+            },
+        )
     try:
         response = await context.retailer.update_customer(
             access_token=context.access_token,
@@ -104,6 +134,9 @@ async def update_customer(
             name=arguments["name"],
             phone=arguments.get("phone"),
             email=arguments.get("email"),
+            note=note,
+            company_details=company_details,
+            addresses=addresses,
         )
     except RetailerHttpError as exc:
         return _failure("update_customer", exc)

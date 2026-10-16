@@ -157,7 +157,10 @@ def test_benchmark_representative_flows(capsys) -> None:
             routing="tools",
         )
     )
-    rows.append(("customer_system_prompt", 1, 800, cust_sys, max(0, 800 - cust_sys)))
+    # Customer live rules grew with merge/OB/payment/collect/reminder coverage.
+    rows.append(
+        ("customer_system_prompt", 1, 1100, cust_sys, max(0, 1100 - cust_sys))
+    )
 
     print("\nPhase7 token benchmark (Estimated chars//4, not provider billing):")
     print(

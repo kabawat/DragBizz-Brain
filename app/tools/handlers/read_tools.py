@@ -339,7 +339,179 @@ async def customer_summary(
             )
             if key in new_customers
         }
+
+    period_days = arguments.get("periodDays")
+    if isinstance(period_days, int) and period_days in {7, 15, 30}:
+        try:
+            detailed = await context.retailer.get_customer_detailed_analytics(
+                access_token=context.access_token,
+                store_id=context.store_id,
+                period_days=period_days,
+            )
+        except RetailerHttpError as exc:
+            return _failure("customer_summary", exc)
+        detail_payload = (
+            detailed.body.get("data") if isinstance(detailed.body, dict) else {}
+        )
+        if isinstance(detail_payload, dict):
+            period_out: dict[str, Any] = {"days": period_days}
+            summary = detail_payload.get("summary")
+            if isinstance(summary, dict):
+                period_out["summary"] = {
+                    key: summary[key]
+                    for key in (
+                        "totalCustomers",
+                        "todayCustomers",
+                        "periodCustomers",
+                        "growthRate",
+                        "avgDailyCustomers",
+                        "maxDailyCustomers",
+                        "minDailyCustomers",
+                    )
+                    if key in summary
+                }
+            period_meta = detail_payload.get("period")
+            if isinstance(period_meta, dict):
+                for key in ("startDate", "endDate"):
+                    if isinstance(period_meta.get(key), str):
+                        period_out[key] = period_meta[key]
+            detail_new = detail_payload.get("newCustomers")
+            if isinstance(detail_new, dict) and detail_new:
+                period_out["newCustomers"] = {
+                    key: detail_new[key]
+                    for key in (
+                        "last1Day",
+                        "last7Days",
+                        "last15Days",
+                        "last30Days",
+                        "last3Months",
+                        "last6Months",
+                        "last12Months",
+                    )
+                    if key in detail_new
+                }
+            data["period"] = period_out
+
     return ToolResult(tool="customer_summary", success=True, data=data)
+
+
+async def get_customer_ledger(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    customer_id = arguments.get("customerId")
+    if not isinstance(customer_id, str) or not customer_id.strip():
+        return ToolResult(
+            tool="get_customer_ledger",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "customerId is required",
+            },
+        )
+    limit = arguments.get("limit")
+    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 100 else 50
+    try:
+        response = await context.retailer.get_customer_ledger(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            customer_id=customer_id.strip(),
+            limit=limit_val,
+        )
+    except RetailerHttpError as exc:
+        return _failure("get_customer_ledger", exc)
+
+    body = response.body
+    data: dict[str, Any] = {
+        "customerId": customer_id.strip(),
+        "items": body.get("data") or [],
+    }
+    pagination = body.get("pagination") or (
+        body.get("meta", {}).get("pagination")
+        if isinstance(body.get("meta"), dict)
+        else None
+    )
+    if pagination is not None:
+        data["pagination"] = pagination
+    return ToolResult(tool="get_customer_ledger", success=True, data=data)
+
+
+async def list_customer_accounts(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    limit = arguments.get("limit")
+    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 100 else 20
+    customer_id = arguments.get("customerId")
+    has_due = arguments.get("hasDue")
+    try:
+        response = await context.retailer.list_customer_accounts(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            customer_id=customer_id.strip()
+            if isinstance(customer_id, str) and customer_id.strip()
+            else None,
+            has_due=has_due if isinstance(has_due, bool) else None,
+            limit=limit_val,
+        )
+    except RetailerHttpError as exc:
+        return _failure("list_customer_accounts", exc)
+
+    body = response.body
+    data: dict[str, Any] = {"items": body.get("data") or []}
+    if body.get("pagination") is not None:
+        data["pagination"] = body["pagination"]
+    return ToolResult(tool="list_customer_accounts", success=True, data=data)
+
+
+async def get_customer_payment(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    payment_id = arguments.get("paymentId")
+    if not isinstance(payment_id, str) or not payment_id.strip():
+        return ToolResult(
+            tool="get_customer_payment",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "paymentId is required",
+            },
+        )
+    try:
+        response = await context.retailer.get_payment(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            payment_id=payment_id.strip(),
+        )
+    except RetailerHttpError as exc:
+        return _failure("get_customer_payment", exc)
+
+    data = response.body.get("data")
+    payload = data if isinstance(data, dict) else {"payment": data}
+    return ToolResult(tool="get_customer_payment", success=True, data=payload)
+
+
+async def list_payment_reminders(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    limit = arguments.get("limit")
+    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 100 else 20
+    customer_id = arguments.get("customerId")
+    try:
+        response = await context.retailer.list_payment_reminders(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            customer_id=customer_id.strip()
+            if isinstance(customer_id, str) and customer_id.strip()
+            else None,
+            limit=limit_val,
+        )
+    except RetailerHttpError as exc:
+        return _failure("list_payment_reminders", exc)
+
+    body = response.body
+    data: dict[str, Any] = {"items": body.get("data") or []}
+    if body.get("pagination") is not None:
+        data["pagination"] = body["pagination"]
+    return ToolResult(tool="list_payment_reminders", success=True, data=data)
 
 
 async def invoice_summary(
@@ -517,5 +689,9 @@ READ_TOOL_HANDLERS = {
     "payment_history": payment_history,
     "list_stores": list_stores,
     "customer_summary": customer_summary,
+    "get_customer_ledger": get_customer_ledger,
+    "list_customer_accounts": list_customer_accounts,
+    "get_customer_payment": get_customer_payment,
+    "list_payment_reminders": list_payment_reminders,
     "invoice_summary": invoice_summary,
 }

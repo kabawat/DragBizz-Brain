@@ -458,6 +458,266 @@ def project_customer_summary(data: dict[str, Any]) -> dict[str, Any]:
         )
         if picked:
             out["newCustomers"] = picked
+    period = data.get("period")
+    if isinstance(period, dict):
+        period_out: dict[str, Any] = {}
+        if isinstance(period.get("days"), int):
+            period_out["days"] = period["days"]
+        for key in ("startDate", "endDate"):
+            if isinstance(period.get(key), str):
+                period_out[key] = period[key]
+        summary = period.get("summary")
+        if isinstance(summary, dict):
+            picked = _pick(
+                summary,
+                (
+                    "totalCustomers",
+                    "todayCustomers",
+                    "periodCustomers",
+                    "growthRate",
+                    "avgDailyCustomers",
+                    "maxDailyCustomers",
+                    "minDailyCustomers",
+                ),
+            )
+            if picked:
+                period_out["summary"] = picked
+        period_new = period.get("newCustomers")
+        if isinstance(period_new, dict):
+            picked = _pick(
+                period_new,
+                (
+                    "last1Day",
+                    "last7Days",
+                    "last15Days",
+                    "last30Days",
+                    "last3Months",
+                    "last6Months",
+                    "last12Months",
+                ),
+            )
+            if picked:
+                period_out["newCustomers"] = picked
+        if period_out:
+            out["period"] = period_out
+    return out
+
+
+def project_customer_ledger(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    if isinstance(data.get("customerId"), str):
+        out["customerId"] = data["customerId"]
+    raw_items = data.get("items")
+    items: list[dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items[:_MAX_LEDGER_ENTRIES]:
+            if not isinstance(item, dict):
+                continue
+            row: dict[str, Any] = {}
+            entity_id = _entity_id(item)
+            if entity_id is not None:
+                row["id"] = entity_id
+            for key in (
+                "transactionNumber",
+                "type",
+                "source",
+                "paymentMode",
+                "reference",
+                "notes",
+                "transactionDate",
+            ):
+                if isinstance(item.get(key), str):
+                    row[key] = item[key]
+            for key in ("amount", "runningBalance"):
+                if _is_number(item.get(key)):
+                    row[key] = item[key]
+            if row:
+                items.append(row)
+    out["items"] = items
+    return out
+
+
+def project_customer_accounts(data: dict[str, Any]) -> dict[str, Any]:
+    raw_items = data.get("items")
+    items: list[dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items[:_MAX_LIST]:
+            if not isinstance(item, dict):
+                continue
+            row: dict[str, Any] = {}
+            entity_id = _entity_id(item)
+            if entity_id is not None:
+                row["id"] = entity_id
+            customer = item.get("customer")
+            if isinstance(customer, dict):
+                cust: dict[str, Any] = {}
+                cust_id = _entity_id(customer)
+                if cust_id is not None:
+                    cust["id"] = cust_id
+                for key in ("name", "phone", "email"):
+                    if isinstance(customer.get(key), str):
+                        cust[key] = customer[key]
+                if cust:
+                    row["customer"] = cust
+            elif isinstance(item.get("customer"), str):
+                row["customerId"] = item["customer"]
+            for key in (
+                "totalDue",
+                "totalPaid",
+                "totalAmount",
+                "accountStatus",
+            ):
+                if key in item:
+                    row[key] = item[key]
+            if row:
+                items.append(row)
+    return {"items": items}
+
+
+def project_payment_detail(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    entity_id = _entity_id(data) or _entity_id(data.get("payment"))
+    if entity_id is not None:
+        out["id"] = entity_id
+    source = data.get("payment") if isinstance(data.get("payment"), dict) else data
+    if isinstance(source, dict):
+        for key in (
+            "paymentType",
+            "paymentStatus",
+            "notes",
+            "paymentDate",
+        ):
+            if isinstance(source.get(key), str):
+                out[key] = source[key]
+        if _is_number(source.get("totalAmount")):
+            out["totalAmount"] = source["totalAmount"]
+        customer = source.get("customer")
+        if isinstance(customer, str):
+            out["customerId"] = customer
+        elif isinstance(customer, dict):
+            cust_id = _entity_id(customer)
+            if cust_id is not None:
+                out["customerId"] = cust_id
+    return out
+
+
+def project_payment_reminders(data: dict[str, Any]) -> dict[str, Any]:
+    raw_items = data.get("items")
+    items: list[dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items[:_MAX_LIST]:
+            if not isinstance(item, dict):
+                continue
+            row: dict[str, Any] = {}
+            entity_id = _entity_id(item)
+            if entity_id is not None:
+                row["id"] = entity_id
+            for key in ("channel", "status", "notes"):
+                if isinstance(item.get(key), str):
+                    row[key] = item[key]
+            customer = item.get("customer")
+            if isinstance(customer, str):
+                row["customerId"] = customer
+            elif isinstance(customer, dict):
+                cust_id = _entity_id(customer)
+                if cust_id is not None:
+                    row["customerId"] = cust_id
+            if row:
+                items.append(row)
+    return {"items": items}
+
+
+def project_merge_customers(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("status") == "pending_confirmation":
+        return _project_pending(data)
+    out: dict[str, Any] = {}
+    for key in ("primaryId", "duplicateId", "openPath"):
+        if isinstance(data.get(key), str):
+            out[key] = data[key]
+    customer = data.get("customer")
+    if isinstance(customer, dict):
+        projected = project_customer_write({"customer": customer})
+        if projected:
+            out["customer"] = projected.get("customer") or {
+                k: projected[k] for k in ("id", "name", "phone", "email") if k in projected
+            }
+    return out
+
+
+def project_opening_balance(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("status") == "pending_confirmation":
+        return _project_pending(data)
+    out: dict[str, Any] = {}
+    if isinstance(data.get("customerId"), str):
+        out["customerId"] = data["customerId"]
+    if isinstance(data.get("openPath"), str):
+        out["openPath"] = data["openPath"]
+    for key in ("totalDue", "totalPaid", "totalAmount"):
+        if _is_number(data.get(key)):
+            out[key] = data[key]
+    entity_id = _entity_id(data) or _entity_id(data.get("account"))
+    if entity_id is not None:
+        out["id"] = entity_id
+    return out
+
+
+def project_customer_payment_write(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("status") == "pending_confirmation":
+        return _project_pending(data)
+    out = project_payment_detail(data)
+    if isinstance(data.get("customerId"), str):
+        out["customerId"] = data["customerId"]
+    if _is_number(data.get("amount")):
+        out["amount"] = data["amount"]
+    if isinstance(data.get("openPath"), str):
+        out["openPath"] = data["openPath"]
+    return out
+
+
+def project_collect_link(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("status") == "pending_confirmation":
+        return _project_pending(data)
+    out: dict[str, Any] = {}
+    entity_id = _entity_id(data)
+    if entity_id is not None:
+        out["id"] = entity_id
+    for key in (
+        "customerId",
+        "openPath",
+        "status",
+        "gatewayShortUrl",
+        "publicToken",
+        "collectType",
+    ):
+        if isinstance(data.get(key), str):
+            out[key] = data[key]
+    if _is_number(data.get("amount")):
+        out["amount"] = data["amount"]
+    return out
+
+
+def project_payment_reminder_write(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("status") == "pending_confirmation":
+        return _project_pending(data)
+    out: dict[str, Any] = {}
+    entity_id = _entity_id(data) or _entity_id(data.get("reminder"))
+    if entity_id is not None:
+        out["id"] = entity_id
+    for key in ("customerId", "openPath", "channel", "status"):
+        if isinstance(data.get(key), str):
+            out[key] = data[key]
+    return out
+
+
+def _project_pending(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {"status": "pending_confirmation"}
+    if isinstance(data.get("confirmationId"), str):
+        out["confirmationId"] = data["confirmationId"]
+    if isinstance(data.get("draftId"), str):
+        out["draftId"] = data["draftId"]
+    summary = data.get("summary")
+    if isinstance(summary, dict):
+        out["summary"] = summary
     return out
 
 
@@ -604,6 +864,12 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "ledger_credit": project_ledger_write,
     "ledger_debit": project_ledger_write,
     "add_stock": project_add_stock,
+    "merge_customers": project_merge_customers,
+    "set_opening_balance": project_opening_balance,
+    "record_customer_payment": project_customer_payment_write,
+    "update_customer_payment": project_customer_payment_write,
+    "create_collect_link": project_collect_link,
+    "send_payment_reminder": project_payment_reminder_write,
     "today_sale": project_today_sale,
     "stock_summary": project_stock_summary,
     "product_summary": project_product_summary,
@@ -611,5 +877,9 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "search_customer": project_search_customer,
     "list_stores": project_list_stores,
     "customer_summary": project_customer_summary,
+    "get_customer_ledger": project_customer_ledger,
+    "list_customer_accounts": project_customer_accounts,
+    "get_customer_payment": project_payment_detail,
+    "list_payment_reminders": project_payment_reminders,
     "invoice_summary": project_invoice_summary,
 }

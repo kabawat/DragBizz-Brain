@@ -22,6 +22,10 @@ _READ_TOOLS = frozenset(
         "payment_history",
         "list_stores",
         "customer_summary",
+        "get_customer_ledger",
+        "list_customer_accounts",
+        "get_customer_payment",
+        "list_payment_reminders",
         "invoice_summary",
     }
 )
@@ -32,9 +36,17 @@ _FAMILY_READS: dict[str, frozenset[str]] = {
     "product": frozenset({"search_product"}),
     "product_stats": frozenset({"product_summary"}),
     "payment": frozenset({"payment_history", "search_customer"}),
+    "payment_detail": frozenset({"get_customer_payment", "payment_history"}),
+    "payment_reminders": frozenset(
+        {"list_payment_reminders", "search_customer"}
+    ),
     # Lookup/create flows need search only; payment history is payment-family.
     "customer": frozenset({"search_customer"}),
-    "customer_stats": frozenset({"customer_summary"}),
+    "customer_ledger": frozenset({"get_customer_ledger", "search_customer"}),
+    "customer_accounts": frozenset(
+        {"list_customer_accounts", "search_customer"}
+    ),
+    "customer_stats": frozenset({"customer_summary"})-,
     "invoice": frozenset({"search_customer", "search_product"}),
     "invoice_stats": frozenset({"invoice_summary", "today_sale"}),
     "store": frozenset({"list_stores"}),
@@ -83,8 +95,94 @@ _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
             "number badlo",
             "update details",
             "details update",
+            "update address",
+            "address update",
+            "address badlo",
+            "address add",
+            "add address",
+            "update gst",
+            "gst update",
+            "gst add",
+            "add gst",
+            "gstin add",
+            "add gstin",
+            "company name",
+            "update note",
+            "note add",
+            "add note",
         ),
         frozenset({"update_customer"}),
+    ),
+    (
+        (
+            "merge customer",
+            "merge customers",
+            "customer merge",
+            "duplicate merge",
+            "merge duplicate",
+            "customers merge",
+            "merge karo",
+            "merge kar do",
+        ),
+        frozenset({"merge_customers", "search_customer"}),
+    ),
+    (
+        (
+            "opening balance",
+            "set opening balance",
+            "opening balance set",
+            "khata opening",
+            "opening khata",
+            "shuruati balance",
+            "opening due",
+        ),
+        frozenset({"set_opening_balance", "search_customer"}),
+    ),
+    (
+        (
+            "formal payment",
+            "structured payment",
+            "invoice payment",
+            "payment entry",
+            "record payment formal",
+            "upi payment record",
+            "cash payment record",
+            "bank payment record",
+        ),
+        frozenset({"record_customer_payment", "search_customer"}),
+    ),
+    (
+        (
+            "update payment note",
+            "payment note update",
+            "payment notes",
+            "edit payment",
+        ),
+        frozenset({"update_customer_payment"}),
+    ),
+    (
+        (
+            "collect link",
+            "payment link",
+            "payment collect",
+            "collect payment link",
+            "create collect link",
+            "payment link banao",
+            "collect link banao",
+        ),
+        frozenset({"create_collect_link", "search_customer"}),
+    ),
+    (
+        (
+            "payment reminder",
+            "send reminder",
+            "reminder bhejo",
+            "reminder send",
+            "due reminder",
+            "payment yaad dilao",
+            "khata reminder",
+        ),
+        frozenset({"send_payment_reminder", "search_customer"}),
     ),
     (
         (
@@ -254,6 +352,20 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "payment aaye",
         "payments aaye",
     ),
+    "payment_detail": (
+        "payment detail",
+        "payment details",
+        "ek payment",
+        "payment id",
+        "get payment",
+    ),
+    "payment_reminders": (
+        "payment reminders",
+        "list reminders",
+        "reminder list",
+        "reminders dikhao",
+        "reminder history",
+    ),
     "customer": (
         "customer",
         "khata",
@@ -270,7 +382,9 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "ki number",
         "mobile number",
         "phone number",
-
+        "opening balance",
+        "merge customer",
+        "merge customers",
         "naya customer",
         "customer banao",
         "customer bana",
@@ -305,6 +419,12 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "number badlo",
         "update details",
         "details update",
+        "update address",
+        "address update",
+        "update gst",
+        "gst update",
+        "gst add",
+        "add gst",
         "ledger credit",
         "ledger debit",
         "udhaar add",
@@ -326,6 +446,24 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "payment add",
         "payment mila",
         "khata jama",
+    ),
+    "customer_ledger": (
+        "customer ledger",
+        "khata ledger",
+        "ledger dikhao",
+        "ledger lines",
+        "ledger history",
+        "khata history",
+        "transaction history",
+    ),
+    "customer_accounts": (
+        "due list",
+        "dues list",
+        "accounts due",
+        "due customers",
+        "jin ke due",
+        "due wale",
+        "customers with due",
     ),
     "invoice": (
         "bill banao",
@@ -593,6 +731,58 @@ _SENSITIVE_ACTION_CUES: dict[str, tuple[str, ...]] = {
         "se liye",
         "se liya",
     ),
+    "merge_customers": (
+        "merge customer",
+        "merge customers",
+        "customer merge",
+        "duplicate merge",
+        "merge duplicate",
+        "customers merge",
+        "merge karo",
+        "merge kar do",
+    ),
+    "set_opening_balance": (
+        "opening balance",
+        "set opening balance",
+        "opening balance set",
+        "khata opening",
+        "opening khata",
+        "shuruati balance",
+        "opening due",
+    ),
+    "record_customer_payment": (
+        "formal payment",
+        "structured payment",
+        "invoice payment",
+        "payment entry",
+        "upi payment record",
+        "cash payment record",
+        "bank payment record",
+    ),
+    "update_customer_payment": (
+        "update payment note",
+        "payment note update",
+        "payment notes",
+        "edit payment",
+    ),
+    "create_collect_link": (
+        "collect link",
+        "payment link",
+        "payment collect",
+        "collect payment link",
+        "create collect link",
+        "payment link banao",
+        "collect link banao",
+    ),
+    "send_payment_reminder": (
+        "payment reminder",
+        "send reminder",
+        "reminder bhejo",
+        "reminder send",
+        "due reminder",
+        "payment yaad dilao",
+        "khata reminder",
+    ),
 }
 _SENSITIVE_ACTION_RES = {
     name: re.compile("|".join(re.escape(cue) for cue in cues), re.IGNORECASE)
@@ -764,6 +954,16 @@ def narrow_field_fill_tools(tool_names: frozenset[str]) -> frozenset[str]:
         companions.update({"search_customer", "search_product"})
     if writes & {"ledger_credit", "ledger_debit"}:
         companions.update({"search_customer", "payment_history"})
+    if writes & {
+        "merge_customers",
+        "set_opening_balance",
+        "record_customer_payment",
+        "create_collect_link",
+        "send_payment_reminder",
+    }:
+        companions.add("search_customer")
+    if writes & {"update_customer_payment"}:
+        companions.update({"payment_history", "get_customer_payment"})
     if writes & {"add_stock"}:
         companions.add("search_product")
     return frozenset(writes | (companions & tool_names))

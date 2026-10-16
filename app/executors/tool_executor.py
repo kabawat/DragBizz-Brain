@@ -235,7 +235,11 @@ class ToolExecutor:
                 continue
 
             arguments = dict(call.arguments)
-            if call.name in {"ledger_credit", "ledger_debit"}:
+            if call.name in {
+                "ledger_credit",
+                "ledger_debit",
+                "record_customer_payment",
+            }:
                 arguments["idempotencyKey"] = key
             result = await handler(arguments, context)
             await self._idempotency.put(key, result)

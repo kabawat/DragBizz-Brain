@@ -54,6 +54,10 @@ _READ = frozenset(
         "payment_history",
         "list_stores",
         "customer_summary",
+        "get_customer_ledger",
+        "list_customer_accounts",
+        "get_customer_payment",
+        "list_payment_reminders",
         "invoice_summary",
     }
 )
@@ -67,6 +71,12 @@ _WRITES = frozenset(
         "ledger_debit",
         "release_invoice",
         "add_stock",
+        "merge_customers",
+        "set_opening_balance",
+        "record_customer_payment",
+        "update_customer_payment",
+        "create_collect_link",
+        "send_payment_reminder",
     }
 )
 
@@ -126,6 +136,45 @@ class RecordingRetailer:
     async def create_ledger_transaction(self, **kwargs):
         self.calls.append(("ledger", kwargs))
         return RetailerResponse(status_code=200, body={"data": {"id": "tx1"}})
+
+    async def merge_customers(self, **kwargs):
+        self.calls.append(("merge", kwargs))
+        return RetailerResponse(
+            status_code=200,
+            body={
+                "data": {
+                    "primary_id": kwargs.get("primary_id"),
+                    "duplicate_id": kwargs.get("duplicate_id"),
+                    "customer": {"id": kwargs.get("primary_id"), "name": "A"},
+                }
+            },
+        )
+
+    async def create_customer_account(self, **kwargs):
+        self.calls.append(("opening_balance", kwargs))
+        return RetailerResponse(
+            status_code=201,
+            body={"data": {"id": "acc1", "totalDue": kwargs.get("total_due")}},
+        )
+
+    async def create_customer_payment(self, **kwargs):
+        self.calls.append(("payment", kwargs))
+        return RetailerResponse(
+            status_code=201, body={"data": {"id": "pay1"}}
+        )
+
+    async def create_collect_link(self, **kwargs):
+        self.calls.append(("collect_link", kwargs))
+        return RetailerResponse(
+            status_code=201,
+            body={"data": {"id": "link1", "gatewayShortUrl": "https://x"}},
+        )
+
+    async def create_payment_reminder(self, **kwargs):
+        self.calls.append(("reminder", kwargs))
+        return RetailerResponse(
+            status_code=201, body={"data": {"id": "rem1"}}
+        )
 
 
 class StickyGateway:
@@ -339,6 +388,50 @@ def test_customer_jama_exposes_ledger_credit() -> None:
     assert "ledger_credit" in intent.tool_names
     assert "search_customer" in intent.tool_names
     assert user_requested_sensitive_action(text, "ledger_credit")
+
+
+def test_merge_customers_exposes_and_gates_sensitive() -> None:
+    text = "ye do customers merge kar do"
+    intent = _intent(text)
+    assert "merge_customers" in intent.tool_names
+    assert "search_customer" in intent.tool_names
+    assert user_requested_sensitive_action(text, "merge_customers")
+
+
+def test_opening_balance_exposes_sensitive() -> None:
+    text = "vikram ka opening balance set karo 500"
+    intent = _intent(text)
+    assert "set_opening_balance" in intent.tool_names
+    assert user_requested_sensitive_action(text, "set_opening_balance")
+
+
+def test_collect_link_and_reminder_exposure() -> None:
+    link_text = "payment collect link banao"
+    link_intent = _intent(link_text)
+    assert "create_collect_link" in link_intent.tool_names
+    assert user_requested_sensitive_action(link_text, "create_collect_link")
+
+    rem_text = "payment reminder bhejo"
+    rem_intent = _intent(rem_text)
+    assert "send_payment_reminder" in rem_intent.tool_names
+    assert user_requested_sensitive_action(rem_text, "send_payment_reminder")
+
+
+def test_customer_ledger_and_due_list_reads() -> None:
+    ledger = _intent("vikram ka customer ledger dikhao")
+    assert "get_customer_ledger" in ledger.tool_names
+    assert "search_customer" in ledger.tool_names
+    assert _WRITES.isdisjoint(ledger.tool_names)
+
+    dues = _intent("due list dikhao")
+    assert "list_customer_accounts" in dues.tool_names
+    assert _WRITES.isdisjoint(dues.tool_names)
+
+
+def test_gst_address_update_exposes_update_customer() -> None:
+    for text in ("update gst", "address update karo", "gst add kar do"):
+        intent = _intent(text)
+        assert "update_customer" in intent.tool_names, text
 
 
 def test_customer_account_ask_keeps_search() -> None:
@@ -722,3 +815,73 @@ async def _confirm_reject() -> None:
     )
     assert retailer.calls == []
     assert "cancelled" in response.message.lower()
+
+
+def test_merge_confirm_stages_then_executes() -> None:
+    asyncio.run(_merge_confirm())
+
+
+async def _merge_confirm() -> None:
+    retailer = RecordingRetailer()
+    registry = _registry()
+    confirmations = InMemoryConfirmationStore()
+    executor = ToolExecutor(registry=registry, retailer=retailer)
+    primary = CUSTOMER
+    duplicate = "c" * 24
+    intent = _intent("customers merge kar do")
+    tools = list(registry.definitions_for(intent.tool_names))
+    call = ToolCall(
+        id="call-merge",
+        name="merge_customers",
+        arguments={
+            "storeId": STORE,
+            "primaryId": primary,
+            "duplicateId": duplicate,
+        },
+    )
+    outcome = await run_tool_loop(
+        gateway=StickyGateway(
+            GenerationResponse(
+                provider="test", model="m", content="done", tool_calls=[]
+            )
+        ),
+        validator=ToolCallValidator(registry),
+        registry=registry,
+        executor=executor,
+        confirmations=confirmations,
+        settings=_settings(),
+        generation=_generation(call),
+        messages=[ChatMessage(role="user", content="customers merge kar do")],
+        tools=tools,
+        language="hi-IN",
+        store_id=STORE,
+        access_token="token",
+        session_id=SESSION,
+        user_id="user-1",
+    )
+    staged = outcome.staged_sensitive
+    assert staged is not None
+    assert staged.tool_name == "merge_customers"
+    assert retailer.calls == []
+
+    response = await handle_confirm(
+        ConfirmRequest(
+            sessionId=SESSION,
+            storeId=STORE,
+            confirmationId=staged.confirmation_id,
+            draftId=primary,
+            action="approve",
+        ),
+        user_id="user-1",
+        request_id="req-merge",
+        store_id=STORE,
+        access_token="token",
+        confirmations=confirmations,
+        sessions=InMemorySessionStore(),
+        executor=executor,
+        guard_output=_guard,
+    )
+    assert response.tool_calls[0].name == "merge_customers"
+    assert len(retailer.calls) == 1
+    assert retailer.calls[0][0] == "merge"
+    assert "merged" in response.message.lower()

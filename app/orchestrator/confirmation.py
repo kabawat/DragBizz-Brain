@@ -6,11 +6,28 @@ from typing import Any
 
 from app.confirmations import (
     CONFIRMATION_TYPE_ADD_STOCK,
+    CONFIRMATION_TYPE_CREATE_COLLECT_LINK,
     CONFIRMATION_TYPE_INVOICE_RELEASE,
     CONFIRMATION_TYPE_LEDGER_CREDIT,
     CONFIRMATION_TYPE_LEDGER_DEBIT,
+    CONFIRMATION_TYPE_MERGE_CUSTOMERS,
+    CONFIRMATION_TYPE_RECORD_CUSTOMER_PAYMENT,
+    CONFIRMATION_TYPE_SEND_PAYMENT_REMINDER,
+    CONFIRMATION_TYPE_SET_OPENING_BALANCE,
+    CONFIRMATION_TYPE_UPDATE_CUSTOMER_PAYMENT,
     ConfirmationStore,
     PendingConfirmationRecord,
+)
+
+_CUSTOMER_SENSITIVE_TOOLS = frozenset(
+    {
+        CONFIRMATION_TYPE_MERGE_CUSTOMERS,
+        CONFIRMATION_TYPE_SET_OPENING_BALANCE,
+        CONFIRMATION_TYPE_RECORD_CUSTOMER_PAYMENT,
+        CONFIRMATION_TYPE_UPDATE_CUSTOMER_PAYMENT,
+        CONFIRMATION_TYPE_CREATE_COLLECT_LINK,
+        CONFIRMATION_TYPE_SEND_PAYMENT_REMINDER,
+    }
 )
 from app.core.exceptions import AppError
 from app.integrations.retailer_client import RetailerClient, RetailerHttpError
@@ -175,6 +192,16 @@ async def stage_from_sensitive_calls(
             metrics=metrics,
             retailer=retailer,
             access_token=access_token,
+        )
+    if call.name in _CUSTOMER_SENSITIVE_TOOLS:
+        return await _stage_customer_sensitive_call(
+            store,
+            user_id=user_id,
+            store_id=store_id,
+            session_id=session_id,
+            call=call,
+            audit_trail=audit_trail,
+            metrics=metrics,
         )
     if call.name != "release_invoice":
         raise AppError(
@@ -418,6 +445,203 @@ async def _stage_add_stock_call(
         summary=summary,
         tool_name="add_stock",
         arguments=arguments,
+    )
+    _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
+    return record
+
+
+async def _stage_customer_sensitive_call(
+    store: ConfirmationStore,
+    *,
+    user_id: str,
+    store_id: str,
+    session_id: str,
+    call: ToolCall,
+    audit_trail: AuditTrail | None = None,
+    metrics: MetricsRegistry | None = None,
+) -> PendingConfirmationRecord:
+    """Stage merge / opening balance / payment / collect / reminder."""
+    args = dict(call.arguments)
+    args["storeId"] = store_id
+    summary: dict[str, Any] = {"currency": "INR"}
+    draft_id: str
+
+    if call.name == CONFIRMATION_TYPE_MERGE_CUSTOMERS:
+        primary_id = args.get("primaryId")
+        duplicate_id = args.get("duplicateId")
+        if not isinstance(primary_id, str) or not primary_id.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="merge_customers requires primaryId",
+                status_code=400,
+            )
+        if not isinstance(duplicate_id, str) or not duplicate_id.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="merge_customers requires duplicateId",
+                status_code=400,
+            )
+        primary_id = primary_id.strip()
+        duplicate_id = duplicate_id.strip()
+        if primary_id == duplicate_id:
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="primaryId and duplicateId must differ",
+                status_code=400,
+            )
+        args["primaryId"] = primary_id
+        args["duplicateId"] = duplicate_id
+        draft_id = primary_id
+        summary.update(
+            {
+                "action": "merge",
+                "primaryId": primary_id,
+                "duplicateId": duplicate_id,
+                "openPath": f"/dashboard/customers/{primary_id}",
+            }
+        )
+    elif call.name == CONFIRMATION_TYPE_SET_OPENING_BALANCE:
+        customer_id = args.get("customerId")
+        if not isinstance(customer_id, str) or not customer_id.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="set_opening_balance requires customerId",
+                status_code=400,
+            )
+        customer_id = customer_id.strip()
+        args["customerId"] = customer_id
+        draft_id = customer_id
+        summary.update(
+            {
+                "action": "opening_balance",
+                "customerId": customer_id,
+                "openPath": f"/dashboard/customers/{customer_id}",
+            }
+        )
+        for key in ("totalDue", "totalPaid", "totalAmount"):
+            amount = _non_negative_number(args.get(key))
+            if amount is not None:
+                args[key] = amount
+                summary[key] = amount
+        notes = args.get("notes")
+        if isinstance(notes, str) and notes.strip():
+            args["notes"] = notes.strip()
+    elif call.name == CONFIRMATION_TYPE_RECORD_CUSTOMER_PAYMENT:
+        customer_id = args.get("customerId")
+        payment = args.get("payment")
+        payment_type = args.get("paymentType")
+        if not isinstance(customer_id, str) or not customer_id.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="record_customer_payment requires customerId",
+                status_code=400,
+            )
+        if not isinstance(payment_type, str) or not payment_type.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="record_customer_payment requires paymentType",
+                status_code=400,
+            )
+        if not isinstance(payment, list) or not payment:
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="record_customer_payment requires payment[]",
+                status_code=400,
+            )
+        customer_id = customer_id.strip()
+        args["customerId"] = customer_id
+        args["paymentType"] = payment_type.strip().upper()
+        total = 0.0
+        for row in payment:
+            if not isinstance(row, dict):
+                continue
+            amt = _positive_amount(row.get("amount"))
+            if amt is not None:
+                total += float(amt)
+        draft_id = customer_id
+        summary.update(
+            {
+                "action": "payment",
+                "customerId": customer_id,
+                "paymentType": args["paymentType"],
+                "total": total,
+                "openPath": f"/dashboard/customers/{customer_id}",
+            }
+        )
+    elif call.name == CONFIRMATION_TYPE_UPDATE_CUSTOMER_PAYMENT:
+        payment_id = args.get("paymentId")
+        notes = args.get("notes")
+        if not isinstance(payment_id, str) or not payment_id.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="update_customer_payment requires paymentId",
+                status_code=400,
+            )
+        if not isinstance(notes, str):
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="update_customer_payment requires notes",
+                status_code=400,
+            )
+        payment_id = payment_id.strip()
+        args["paymentId"] = payment_id
+        args["notes"] = notes
+        draft_id = payment_id
+        summary.update({"action": "update_payment", "paymentId": payment_id})
+    elif call.name == CONFIRMATION_TYPE_CREATE_COLLECT_LINK:
+        customer_id = args.get("customerId")
+        if not isinstance(customer_id, str) or not customer_id.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="create_collect_link requires customerId",
+                status_code=400,
+            )
+        customer_id = customer_id.strip()
+        args["customerId"] = customer_id
+        draft_id = customer_id
+        amount = _positive_amount(args.get("amount"))
+        summary.update(
+            {
+                "action": "collect_link",
+                "customerId": customer_id,
+                "openPath": f"/dashboard/customers/{customer_id}",
+            }
+        )
+        if amount is not None:
+            args["amount"] = amount
+            summary["total"] = amount
+    else:  # send_payment_reminder
+        customer_id = args.get("customerId")
+        if not isinstance(customer_id, str) or not customer_id.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="send_payment_reminder requires customerId",
+                status_code=400,
+            )
+        customer_id = customer_id.strip()
+        args["customerId"] = customer_id
+        draft_id = customer_id
+        channel = args.get("channel")
+        if isinstance(channel, str) and channel.strip():
+            args["channel"] = channel.strip().upper()
+        summary.update(
+            {
+                "action": "payment_reminder",
+                "customerId": customer_id,
+                "channel": args.get("channel", "EMAIL"),
+                "openPath": f"/dashboard/customers/{customer_id}",
+            }
+        )
+
+    record = await store.create(
+        user_id=user_id,
+        store_id=store_id,
+        session_id=session_id,
+        type=call.name,
+        draft_id=draft_id,
+        summary=summary,
+        tool_name=call.name,
+        arguments=args,
     )
     _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
     return record
