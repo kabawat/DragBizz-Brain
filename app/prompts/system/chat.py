@@ -88,8 +88,11 @@ _STORE_PROFILE = (
 
 _CUSTOMER_LIVE = (
     "- Customer: call search_customer; answer only fields present in the "
-    "result. Never invent missing sections.\n"
-    "- Basic ask → name/phone/email/active only. Extra slices "
+    "result. When asked who someone is (e.g. 'kon he', 'who is', 'details') "
+    "or about them: summarize naturally in friendly buddy tone. Include "
+    "their note if present (e.g. habits, preferences, regular timings), "
+    "their contact details, and their khata/account dues or balance if present.\n"
+    "- Basic ask → name/phone/email/active, plus note when present. Extra slices "
     "(address, GST, account/khata, ledger) only when returned — if the "
     "user asked for khata/account/dues and the result has no totals, say "
     "you could not load them; do not invent numbers.\n"
@@ -222,11 +225,12 @@ def build_chat_system_prompt(
             "missing values.\n"
         )
         parts.append(
-            "- After a successful write with openPath, put a Markdown "
-            "link using that openPath EXACTLY (relative in-app path only; "
-            "no https:// or invented ids) — e.g. "
+            "- After a successful write with openPath, ALWAYS end with "
+            "the Markdown link on its own line EXACTLY in this format: "
             "[Open customer](/dashboard/customers/<id>) or "
-            "[Open invoice](/dashboard/invoices/<id>).\n"
+            "[Open invoice](/dashboard/invoices/<id>). Never embed it as "
+            "[here] or [link] inside a sentence; the exact link text is "
+            "required to render the customer/invoice card.\n"
         )
         parts.append(_WRITE_REPLY)
         parts.append(

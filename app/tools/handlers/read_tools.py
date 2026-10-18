@@ -167,7 +167,8 @@ _LEDGER_PREVIEW = 40
 _DOWNLOAD_FORMATS = ("csv", "xlsx", "json")
 _FULL_PROFILE_RE = re.compile(
     r"poori details|full details|complete details|all details|"
-    r"sab details|sab kuch|pura profile|poora profile|entire profile",
+    r"sab details|sab kuch|pura profile|poora profile|entire profile|"
+    r"kon he|kaun hai|kaun he|kon hai|who is|ke baare me|ke bare me",
     re.IGNORECASE,
 )
 _ADDRESS_RE = re.compile(
@@ -278,6 +279,9 @@ def _customer_row(item: dict[str, Any], *, slices: frozenset[str]) -> dict[str, 
         "email": item.get("email"),
         "isActive": item.get("isActive"),
     }
+    note = item.get("note")
+    if isinstance(note, str) and note.strip():
+        row["note"] = note.strip()
     if "gst" in slices:
         row["gstDetail"] = item.get("gstDetail")
         row["companyDetails"] = item.get("companyDetails")

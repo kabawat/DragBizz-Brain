@@ -399,6 +399,9 @@ def _project_customer_row(item: dict[str, Any]) -> dict[str, Any]:
     for key in ("name", "phone", "email", "isActive"):
         if key in item:
             row[key] = item[key]
+    note = item.get("note")
+    if isinstance(note, str) and note.strip():
+        row["note"] = note.strip()[:200]
     account = item.get("account")
     if isinstance(account, dict):
         picked = _pick(account, ("totalDue", "totalPaid"))
