@@ -46,7 +46,7 @@ _FAMILY_READS: dict[str, frozenset[str]] = {
     "customer_accounts": frozenset(
         {"list_customer_accounts", "search_customer"}
     ),
-    "customer_stats": frozenset({"customer_summary"})-,
+    "customer_stats": frozenset({"customer_summary"}),
     "invoice": frozenset({"search_customer", "search_product"}),
     "invoice_stats": frozenset({"invoice_summary", "today_sale"}),
     "store": frozenset({"list_stores"}),
