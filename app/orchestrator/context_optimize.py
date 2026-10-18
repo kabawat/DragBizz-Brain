@@ -84,8 +84,28 @@ def compact_result_for_model(result: ToolResult) -> ToolResult:
         "search_product",
         "payment_history",
         "search_customer",
+        "stock_items",
+        "list_invoices",
+        "list_expenses",
+        "list_sales_orders",
+        "list_purchase_orders",
+        "top_customers",
     }:
         _truncate_list_field(out, "items", _MODEL_MAX_LIST)
+        _truncate_list_field(out, "invoices", _MODEL_MAX_LIST)
+        _truncate_list_field(out, "expenses", _MODEL_MAX_LIST)
+        _truncate_list_field(out, "orders", _MODEL_MAX_LIST)
+    if result.tool in {"invoice_detailed_analytics", "customer_detailed_analytics"}:
+        for list_key in (
+            "statusBreakdown",
+            "paymentBreakdown",
+            "trends",
+            "hourly",
+            "dailyTrends",
+        ):
+            val = out.get(list_key)
+            if isinstance(val, list):
+                _truncate_list_field(out, list_key, _MODEL_MAX_LIST)
     if result.tool == "search_customer":
         ledger = out.get("ledger")
         if isinstance(ledger, dict):

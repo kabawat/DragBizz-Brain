@@ -717,3 +717,43 @@ async def test_create_expense_full_flow() -> None:
     assert "Kharcha record ho gaya hai: ₹20000 (Store Rent)" in chat_resp.message
     assert "/dashboard/expenses" in chat_resp.message
 
+
+def test_business_advisor_and_sales_trends_intent() -> None:
+    from app.orchestrator.tool_selector import resolve_turn_intent
+    from app.tools.definitions import READ_TOOL_DEFINITIONS
+
+    available = {t.name for t in READ_TOOL_DEFINITIONS}
+
+    q1 = (
+        "yeh karo: Sales Trends: Pichle 7 ya 30 dino ki sales dekh kar "
+        "samajh sakte hain ki kab demand zyada rehti hai."
+    )
+    intent1 = resolve_turn_intent(q1, available=available)
+    assert intent1.routing in {"tools", "both"}
+    assert "invoice_summary" in intent1.tool_names
+    assert "stock_summary" in intent1.tool_names
+
+    q2 = "sales dekhe and fir uska stock bhi and all check karke guide de"
+    intent2 = resolve_turn_intent(q2, available=available)
+    assert intent2.routing in {"tools", "both"}
+    assert "invoice_summary" in intent2.tool_names
+    assert "stock_summary" in intent2.tool_names
+
+
+def test_budget_allow_synthesis() -> None:
+    from app.limits.request_budget import BudgetExceeded, RequestBudget
+
+    budget = RequestBudget(max_model_calls=2)
+    budget.begin_model_call()
+    budget.begin_model_call()
+    assert budget.model_calls == 2
+
+    # Normal model call raises BudgetExceeded
+    with pytest.raises(BudgetExceeded):
+        budget.begin_model_call(allow_synthesis=False)
+
+    # Synthesis model call is permitted
+    budget.begin_model_call(allow_synthesis=True)
+    assert budget.model_calls == 3
+
+

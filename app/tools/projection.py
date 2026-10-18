@@ -1322,9 +1322,19 @@ def project_invoice_detailed_analytics(
     data: dict[str, Any],
 ) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    for key in ("summary", "today", "period", "trends", "hourly"):
+    for key in (
+        "summary",
+        "today",
+        "period",
+        "growth",
+        "previous",
+        "statusBreakdown",
+        "paymentBreakdown",
+        "trends",
+        "hourly",
+    ):
         val = data.get(key)
-        if isinstance(val, dict):
+        if isinstance(val, (dict, list)):
             out[key] = val
     return out or dict(data)
 

@@ -323,7 +323,7 @@ class AiGateway:
         fallback: bool,
     ) -> GenerationResponse:
         if budget is not None:
-            budget.begin_model_call()
+            budget.begin_model_call(allow_synthesis=(call_type == "synthesize"))
         response = await self._call(
             provider, request, retry=retry, fallback=fallback
         )

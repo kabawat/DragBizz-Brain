@@ -132,6 +132,14 @@ _STORE_READS_RULE = (
     "names. If list is capped or empty, state so concisely without guessing.\n"
 )
 
+_BUSINESS_GUIDE_RULE = (
+    "- Store guidance & trends (sales trends, stock health, business growth): "
+    "Check sales (invoice_summary / today_sale) and stock health (stock_summary). "
+    "Connect sales trends with stock risks: quote real period revenue, highlight "
+    "low/out-of-stock items, and give 2–3 practical next steps (reorder items, "
+    "prepare for demand). Never invent fake numbers or routes.\n"
+)
+
 
 def build_chat_system_prompt(
     *,
@@ -236,6 +244,11 @@ def build_chat_system_prompt(
             "list_staff",
         }:
             parts.append(_STORE_READS_RULE)
+        if (
+            tool_names & {"invoice_summary", "today_sale", "invoice_detailed_analytics"}
+            and tool_names & {"stock_summary", "stock_items"}
+        ):
+            parts.append(_BUSINESS_GUIDE_RULE)
     else:
         parts.append(
             "- Never invent live store numbers (sales, stock, prices, "

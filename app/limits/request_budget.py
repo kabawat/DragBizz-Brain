@@ -19,11 +19,11 @@ class BudgetExceeded(AppError):
 
 @dataclass
 class RequestBudget:
-    max_model_calls: int = 4
-    max_tool_calls: int = 8
-    max_estimated_input_tokens: int = 12_000
+    max_model_calls: int = 6
+    max_tool_calls: int = 15
+    max_estimated_input_tokens: int = 30_000
     max_estimated_output_tokens: int = 4_000
-    deadline_seconds: float = 55.0
+    deadline_seconds: float = 90.0
     model_calls: int = 0
     tool_calls: int = 0
     input_tokens: int = 0
@@ -37,14 +37,15 @@ class RequestBudget:
         if self.remaining_seconds() <= 0:
             raise BudgetExceeded("Request deadline reached")
 
-    def begin_model_call(self) -> None:
+    def begin_model_call(self, *, allow_synthesis: bool = False) -> None:
         self.check_deadline()
-        if self.model_calls >= self.max_model_calls:
-            raise BudgetExceeded("Maximum model calls for this request reached")
-        if self.input_tokens >= self.max_estimated_input_tokens:
-            raise BudgetExceeded("Maximum input tokens for this request reached")
-        if self.output_tokens >= self.max_estimated_output_tokens:
-            raise BudgetExceeded("Maximum output tokens for this request reached")
+        if not allow_synthesis:
+            if self.model_calls >= self.max_model_calls:
+                raise BudgetExceeded("Maximum model calls for this request reached")
+            if self.input_tokens >= self.max_estimated_input_tokens:
+                raise BudgetExceeded("Maximum input tokens for this request reached")
+            if self.output_tokens >= self.max_estimated_output_tokens:
+                raise BudgetExceeded("Maximum output tokens for this request reached")
         self.model_calls += 1
 
     def record_tokens(

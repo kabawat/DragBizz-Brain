@@ -554,17 +554,33 @@ async def run_tool_loop(
         conversation, removed = compact_conversation_for_next_round(conversation)
         compacted_tokens += removed
 
-        generation = await gateway.continue_or_synthesize(
-            conversation,
-            continue_tools,
-            language=language,
-            allow_tools=allow_more_tools,
-            temperature=settings.chat.temperature,
-            max_tokens=settings.chat.synthesis_max_tokens,
-            budget=budget,
-            token_usage=token_usage,
-            round=round_index + 1,
-        )
+        try:
+            generation = await gateway.continue_or_synthesize(
+                conversation,
+                continue_tools,
+                language=language,
+                allow_tools=allow_more_tools,
+                temperature=settings.chat.temperature,
+                max_tokens=settings.chat.synthesis_max_tokens,
+                budget=budget,
+                token_usage=token_usage,
+                round=round_index + 1,
+            )
+        except BudgetExceeded:
+            if allow_more_tools:
+                generation = await gateway.continue_or_synthesize(
+                    conversation,
+                    [],
+                    language=language,
+                    allow_tools=False,
+                    temperature=settings.chat.temperature,
+                    max_tokens=settings.chat.synthesis_max_tokens,
+                    budget=budget,
+                    token_usage=token_usage,
+                    round=round_index + 1,
+                )
+            else:
+                raise
         generations.append(generation)
         if not allow_more_tools:
             break

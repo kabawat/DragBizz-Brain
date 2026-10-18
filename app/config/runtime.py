@@ -109,19 +109,19 @@ class LimitSettings(BaseSettings):
         validation_alias="AI_CONCURRENCY_LEASE_SECONDS",
     )
     max_model_calls: int = Field(
-        default=4,
+        default=6,
         ge=1,
         le=20,
         validation_alias="AI_MAX_MODEL_CALLS",
     )
     max_tool_calls: int = Field(
-        default=8,
+        default=15,
         ge=1,
         le=40,
         validation_alias="AI_MAX_TOOL_CALLS",
     )
     max_estimated_input_tokens: int = Field(
-        default=12_000,
+        default=30_000,
         ge=1_000,
         le=200_000,
         validation_alias="AI_MAX_ESTIMATED_INPUT_TOKENS",
@@ -133,7 +133,7 @@ class LimitSettings(BaseSettings):
         validation_alias="AI_MAX_ESTIMATED_OUTPUT_TOKENS",
     )
     request_deadline_seconds: float = Field(
-        default=55.0,
+        default=90.0,
         gt=1,
         le=300,
         validation_alias="AI_REQUEST_DEADLINE_SECONDS",
