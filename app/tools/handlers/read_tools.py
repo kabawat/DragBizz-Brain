@@ -1359,29 +1359,74 @@ async def supplier_summary(
     except RetailerHttpError as exc:
         return _failure("supplier_summary", exc)
 
-    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    payload = (
+        response.body.get("data") if isinstance(response.body, dict) else {}
+    )
     if not isinstance(payload, dict):
         payload = {}
 
-    counts = payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
-    amounts = payload.get("amounts") if isinstance(payload.get("amounts"), dict) else {}
+    totals = (
+        payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    )
+    counts = (
+        payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
+    )
+    merged_counts = {**totals, **counts}
+
+    bill_amounts: dict[str, Any] = (
+        payload.get("amounts")
+        if isinstance(payload.get("amounts"), dict)
+        else {}
+    )
+    bill_counts: dict[str, Any] = {}
+    if not bill_amounts:
+        try:
+            bill_res = await context.retailer.get_bill_analytics(
+                access_token=context.access_token,
+                store_id=context.store_id,
+            )
+            b_data = (
+                bill_res.body.get("data")
+                if isinstance(bill_res.body, dict)
+                else {}
+            )
+            if isinstance(b_data, dict):
+                raw_amt = b_data.get("amounts")
+                if isinstance(raw_amt, dict):
+                    bill_amounts = {
+                        k: raw_amt[k]
+                        for k in ("totalPayable", "totalPaid", "totalDue")
+                        if k in raw_amt
+                    }
+                raw_cnt = b_data.get("counts")
+                if isinstance(raw_cnt, dict):
+                    bill_counts = {
+                        k: raw_cnt[k]
+                        for k in ("totalBills", "pendingBills", "overdueBills")
+                        if k in raw_cnt
+                    }
+        except Exception:
+            pass
 
     return ToolResult(
         tool="supplier_summary",
         success=True,
         data={
             "counts": {
-                k: counts[k]
-                for k in ("totalSuppliers", "activeSuppliers", "withDues")
-                if k in counts
+                k: merged_counts[k]
+                for k in (
+                    "totalSuppliers",
+                    "activeSuppliers",
+                    "inactiveSuppliers",
+                    "withDues",
+                )
+                if k in merged_counts
             },
-            "amounts": {
-                k: amounts[k]
-                for k in ("totalPayable", "totalPaid", "totalDue")
-                if k in amounts
-            },
+            "amounts": bill_amounts,
+            "bills": bill_counts,
         },
     )
+
 
 
 async def list_purchase_orders(

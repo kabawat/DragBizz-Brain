@@ -328,6 +328,31 @@ def project_add_stock(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def project_create_expense(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("status") == "pending_confirmation":
+        out: dict[str, Any] = {"status": "pending_confirmation"}
+        if isinstance(data.get("confirmationId"), str):
+            out["confirmationId"] = data["confirmationId"]
+        if isinstance(data.get("draftId"), str):
+            out["draftId"] = data["draftId"]
+        summary = data.get("summary")
+        if isinstance(summary, dict):
+            out["summary"] = summary
+        return out
+    return _pick(
+        data,
+        (
+            "id",
+            "title",
+            "amount",
+            "category",
+            "date",
+            "paymentMode",
+            "openPath",
+        ),
+    )
+
+
 def project_today_sale(data: dict[str, Any]) -> dict[str, Any]:
     return _pick(data, ("revenue", "profit", "sales"))
 
@@ -1160,14 +1185,26 @@ def project_supplier_summary(data: dict[str, Any]) -> dict[str, Any]:
     counts = data.get("counts")
     if isinstance(counts, dict):
         out["counts"] = _pick(
-            counts, ("totalSuppliers", "activeSuppliers", "withDues")
+            counts,
+            (
+                "totalSuppliers",
+                "activeSuppliers",
+                "inactiveSuppliers",
+                "withDues",
+            ),
         )
     amounts = data.get("amounts")
     if isinstance(amounts, dict):
         out["amounts"] = _pick(
             amounts, ("totalPayable", "totalPaid", "totalDue")
         )
+    bills = data.get("bills")
+    if isinstance(bills, dict):
+        out["bills"] = _pick(
+            bills, ("totalBills", "pendingBills", "overdueBills")
+        )
     return out
+
 
 
 def project_list_purchase_orders(data: dict[str, Any]) -> dict[str, Any]:
@@ -1336,4 +1373,6 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "list_staff": project_list_staff,
     "customer_detailed_analytics": project_customer_detailed_analytics,
     "invoice_detailed_analytics": project_invoice_detailed_analytics,
+    "create_expense": project_create_expense,
 }
+

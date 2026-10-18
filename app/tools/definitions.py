@@ -1257,4 +1257,58 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "required": ["storeId", "customerId"],
         },
     ),
+    ToolDefinition(
+        name="create_expense",
+        description=(
+            "Record a new expense for the store (e.g. rent, electricity, "
+            "tea/refreshments, salaries, maintenance, delivery, supplies). "
+            "Requires user confirmation before execution."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "title": {
+                    "type": "string",
+                    "description": (
+                        "Short description of expense (e.g. 'Store Rent', "
+                        "'Electricity bill', 'Chai nashta')"
+                    ),
+                },
+                "amount": {
+                    "type": "number",
+                    "minimum": 0.01,
+                    "description": "Expense amount in INR (> 0)",
+                },
+                "category": {
+                    "type": "string",
+                    "description": (
+                        "Expense category (e.g. 'Rent', 'Utilities', "
+                        "'Food & Refreshment', 'Salaries', 'Maintenance', "
+                        "'Supplies', 'Transport', 'Other')"
+                    ),
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Optional ISO date (YYYY-MM-DD)",
+                },
+                "paymentMode": {
+                    "type": "string",
+                    "description": (
+                        "Optional payment mode: 'CASH', 'UPI', "
+                        "'BANK_TRANSFER', 'CARD', 'OTHER'"
+                    ),
+                },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Optional memo or notes",
+                },
+            },
+            "required": ["storeId", "title", "amount", "category"],
+        },
+    ),
 )
+

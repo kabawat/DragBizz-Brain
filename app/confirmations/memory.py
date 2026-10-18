@@ -12,7 +12,11 @@ from app.confirmations.helpers import (
     _business_key,
     _updated_record,
 )
-from app.confirmations.models import Clock, ConfirmationStatus, PendingConfirmationRecord
+from app.confirmations.models import (
+    Clock,
+    ConfirmationStatus,
+    PendingConfirmationRecord,
+)
 from app.core.exceptions import AppError
 
 

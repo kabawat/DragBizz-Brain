@@ -332,6 +332,18 @@ def build_chat_system_prompt(
                 "while add_stock is offered. Do not claim stock saved "
                 "until the user confirms in the app.\n"
             )
+        if "create_expense" in tool_names:
+            parts.append(
+                "- create_expense: STAGE expense creation (needs confirm). "
+                "When the user asks to add or record an expense (e.g. rent, "
+                "electricity, tea/refreshments, salary, maintenance, supplies), "
+                "call create_expense with title, amount, category, and date. "
+                "Examples of category: 'Rent', 'Utilities', 'Food & Refreshment', "
+                "'Salaries', 'Maintenance', 'Supplies', 'Transport', 'Other'. "
+                "Never say you cannot record or add an expense while create_expense "
+                "is offered. Do not claim the expense is saved until confirmed.\n"
+            )
+
 
     if has_create_customer:
         parts.append(

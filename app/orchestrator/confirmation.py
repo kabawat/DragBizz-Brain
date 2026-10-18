@@ -7,6 +7,7 @@ from typing import Any
 from app.confirmations import (
     CONFIRMATION_TYPE_ADD_STOCK,
     CONFIRMATION_TYPE_CREATE_COLLECT_LINK,
+    CONFIRMATION_TYPE_CREATE_EXPENSE,
     CONFIRMATION_TYPE_INVOICE_RELEASE,
     CONFIRMATION_TYPE_LEDGER_CREDIT,
     CONFIRMATION_TYPE_LEDGER_DEBIT,
@@ -18,6 +19,13 @@ from app.confirmations import (
     ConfirmationStore,
     PendingConfirmationRecord,
 )
+from app.core.exceptions import AppError
+from app.integrations.retailer_client import RetailerClient, RetailerHttpError
+from app.observability.audit_trail import AuditTrail
+from app.observability.confirmation_audit import audit_confirmation
+from app.observability.metrics import MetricsRegistry
+from app.schemas.chat import PendingConfirmation
+from app.schemas.tool import ToolCall, ToolResult
 
 _CUSTOMER_SENSITIVE_TOOLS = frozenset(
     {
@@ -29,13 +37,6 @@ _CUSTOMER_SENSITIVE_TOOLS = frozenset(
         CONFIRMATION_TYPE_SEND_PAYMENT_REMINDER,
     }
 )
-from app.core.exceptions import AppError
-from app.integrations.retailer_client import RetailerClient, RetailerHttpError
-from app.observability.audit_trail import AuditTrail
-from app.observability.confirmation_audit import audit_confirmation
-from app.observability.metrics import MetricsRegistry
-from app.schemas.chat import PendingConfirmation
-from app.schemas.tool import ToolCall, ToolResult
 
 
 def _audit_pending(
@@ -195,6 +196,16 @@ async def stage_from_sensitive_calls(
         )
     if call.name in _CUSTOMER_SENSITIVE_TOOLS:
         return await _stage_customer_sensitive_call(
+            store,
+            user_id=user_id,
+            store_id=store_id,
+            session_id=session_id,
+            call=call,
+            audit_trail=audit_trail,
+            metrics=metrics,
+        )
+    if call.name == CONFIRMATION_TYPE_CREATE_EXPENSE:
+        return await _stage_create_expense_call(
             store,
             user_id=user_id,
             store_id=store_id,
@@ -703,3 +714,70 @@ async def _stage_ledger_call(
     )
     _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
     return record
+
+
+async def _stage_create_expense_call(
+    store: ConfirmationStore,
+    *,
+    user_id: str,
+    store_id: str,
+    session_id: str,
+    call: ToolCall,
+    audit_trail: AuditTrail | None = None,
+    metrics: MetricsRegistry | None = None,
+) -> PendingConfirmationRecord:
+    import uuid
+
+    args = dict(call.arguments)
+    title = args.get("title")
+    if not isinstance(title, str) or not title.strip():
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message="create_expense requires title",
+            status_code=400,
+        )
+    amount = _positive_amount(args.get("amount"))
+    if amount is None:
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message="create_expense requires amount > 0",
+            status_code=400,
+        )
+    category = args.get("category")
+    if not isinstance(category, str) or not category.strip():
+        category = "Other"
+
+    title = title.strip()
+    category = category.strip()
+    args["title"] = title
+    args["amount"] = amount
+    args["category"] = category
+    args["storeId"] = store_id
+
+    draft_id = f"exp_{uuid.uuid4().hex[:8]}"
+
+    summary: dict[str, Any] = {
+        "action": "create_expense",
+        "title": title,
+        "amount": amount,
+        "category": category,
+        "currency": "INR",
+        "openPath": "/dashboard/expenses",
+    }
+    date_val = args.get("date")
+    if isinstance(date_val, str) and date_val.strip():
+        summary["date"] = date_val.strip()
+
+    record = await store.create(
+        user_id=user_id,
+        store_id=store_id,
+        session_id=session_id,
+        type=CONFIRMATION_TYPE_CREATE_EXPENSE,
+        draft_id=draft_id,
+        summary=summary,
+        tool_name=call.name,
+        arguments=args,
+    )
+    _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
+    return record
+

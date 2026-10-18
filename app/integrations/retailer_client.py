@@ -743,6 +743,38 @@ class RetailerClient:
             params=params,
         )
 
+    async def create_expense(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        title: str,
+        amount: float,
+        category: str,
+        date: str | None = None,
+        payment_mode: str | None = None,
+        notes: str | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {
+            "title": title,
+            "amount": amount,
+            "category": category,
+        }
+        if date:
+            body["date"] = date
+        if payment_mode:
+            body["paymentMode"] = payment_mode
+        if notes:
+            body["notes"] = notes
+        return await self._request(
+            "POST",
+            "/expense",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
+
     async def get_cashbook_summary(
         self,
         *,

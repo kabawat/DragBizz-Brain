@@ -560,3 +560,157 @@ def test_chat_system_prompt_includes_store_reads_rule() -> None:
         routing="tools",
     )
     assert "Store data (invoices, stock rows, expenses" in prompt
+
+
+@pytest.mark.asyncio
+async def test_supplier_summary_core_shape_and_bill_enrichment() -> None:
+    """Core returns totals: {totalSuppliers, activeSuppliers, inactiveSuppliers}."""
+    mock_retailer = AsyncMock()
+    # Live Core GET /analytics/suppliers shape
+    mock_retailer.get_supplier_analytics.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "message": "Supplier analytics fetched successfully",
+            "data": {
+                "store": STORE_ID,
+                "totals": {
+                    "totalSuppliers": 10,
+                    "activeSuppliers": 10,
+                    "inactiveSuppliers": 0,
+                },
+                "metadata": {},
+            },
+        },
+    )
+    # Bill analytics for dues
+    mock_retailer.get_bill_analytics.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "counts": {
+                    "totalBills": 8,
+                    "paidBills": 5,
+                    "pendingBills": 3,
+                    "overdueBills": 1,
+                },
+                "amounts": {
+                    "totalPayable": 45000.0,
+                    "totalPaid": 30000.0,
+                    "totalDue": 15000.0,
+                },
+            }
+        },
+    )
+    ctx = _dummy_context(mock_retailer)
+
+    res = await supplier_summary({"storeId": STORE_ID}, ctx)
+    assert res.success is True
+    assert res.data["counts"]["totalSuppliers"] == 10
+    assert res.data["counts"]["activeSuppliers"] == 10
+    assert res.data["counts"]["inactiveSuppliers"] == 0
+    assert res.data["amounts"]["totalDue"] == 15000.0
+    assert res.data["bills"]["pendingBills"] == 3
+
+    projected = project_supplier_summary(res.data)
+    assert projected["counts"]["totalSuppliers"] == 10
+    assert projected["counts"]["activeSuppliers"] == 10
+    assert projected["amounts"]["totalDue"] == 15000.0
+    assert projected["bills"]["overdueBills"] == 1
+
+
+@pytest.mark.asyncio
+async def test_create_expense_full_flow() -> None:
+    from app.confirmations import InMemoryConfirmationStore
+    from app.orchestrator.confirm_flow import handle_confirm
+    from app.orchestrator.confirmation import stage_from_sensitive_calls
+    from app.orchestrator.tool_selector import user_requested_sensitive_action
+    from app.schemas.chat import ConfirmRequest
+    from app.schemas.tool import ToolCall
+    from app.sessions import InMemorySessionStore
+    from app.tools.handlers.confirm_tools import create_expense
+    from app.tools.projection import project_create_expense
+
+
+    # 1. Selector routing & sensitive check
+    q = "add karo kharcha aaj ka store ka rent diya he 20 hajar"
+    available = frozenset({"create_expense", "expense_summary", "list_expenses"})
+    intent = resolve_turn_intent(q, available=available)
+    assert "create_expense" in intent.tool_names
+    assert user_requested_sensitive_action(q, "create_expense") is True
+
+    # 2. Tool handler execution (when confirmed)
+    mock_retailer = AsyncMock()
+    mock_retailer.create_expense.return_value = RetailerResponse(
+        status_code=200,
+        body={"data": {"_id": "exp_123", "title": "Store Rent", "amount": 20000.0}},
+    )
+    ctx = _dummy_context(mock_retailer)
+    res = await create_expense(
+        {
+            "storeId": STORE_ID,
+            "title": "Store Rent",
+            "amount": 20000.0,
+            "category": "Rent",
+        },
+        ctx,
+    )
+    assert res.success is True
+    assert res.data["title"] == "Store Rent"
+    assert res.data["amount"] == 20000.0
+
+    # 3. Projection
+    projected = project_create_expense(res.data)
+    assert projected["title"] == "Store Rent"
+    assert projected["amount"] == 20000.0
+    assert projected["openPath"] == "/dashboard/expenses"
+
+    # 4. Confirmation Staging
+    store = InMemoryConfirmationStore()
+    call = ToolCall(
+        id="call-exp-1",
+        name="create_expense",
+        arguments={
+            "storeId": STORE_ID,
+            "title": "Store Rent",
+            "amount": 20000.0,
+            "category": "Rent",
+        },
+    )
+    record = await stage_from_sensitive_calls(
+        store,
+        user_id="user_1",
+        store_id=STORE_ID,
+        session_id="sess_1",
+        sensitive_calls=[call],
+    )
+    assert record is not None
+    assert record.type == "create_expense"
+    assert record.summary["title"] == "Store Rent"
+    assert record.summary["amount"] == 20000.0
+
+    # 5. Confirm Flow Approval
+    executor = AsyncMock()
+    executor.execute_confirmations.return_value = [res]
+    sessions = InMemorySessionStore()
+
+    confirm_req = ConfirmRequest(
+        action="approve",
+        store_id=STORE_ID,
+        session_id="sess_1",
+        confirmation_id=record.confirmation_id,
+        draft_id=record.draft_id,
+    )
+    chat_resp = await handle_confirm(
+        confirm_req,
+        user_id="user_1",
+        request_id="req_1",
+        store_id=STORE_ID,
+        access_token="tok_1",
+        confirmations=store,
+        sessions=sessions,
+        executor=executor,
+        guard_output=lambda msg, **_: msg,
+    )
+    assert "Kharcha record ho gaya hai: ₹20000 (Store Rent)" in chat_resp.message
+    assert "/dashboard/expenses" in chat_resp.message
+

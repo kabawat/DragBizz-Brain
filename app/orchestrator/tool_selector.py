@@ -991,6 +991,22 @@ _SENSITIVE_ACTION_CUES: dict[str, tuple[str, ...]] = {
         "payment yaad dilao",
         "khata reminder",
     ),
+    "create_expense": (
+        "add kharcha",
+        "kharcha add",
+        "add expense",
+        "expense add",
+        "kharcha record",
+        "record expense",
+        "kharcha dalo",
+        "kharcha daalo",
+        "kharcha likho",
+        "kharcha banao",
+        "rent diya",
+        "kiraya diya",
+        "bill bhara",
+        "kharcha hua",
+    ),
 }
 _SENSITIVE_ACTION_RES = {
     name: re.compile("|".join(re.escape(cue) for cue in cues), re.IGNORECASE)
@@ -1026,6 +1042,13 @@ _STOCK_ADD_FLEX_RE = re.compile(
     r"|\bse\s+liye?\b",
     re.IGNORECASE,
 )
+_EXPENSE_ADD_FLEX_RE = re.compile(
+    r"\b(?:add|daal|dalo|likho|record)\s+(?:karo\s+)?(?:aaj\s+ka\s+)?(?:kharcha|expense)\b"
+    r"|\b(?:kharcha|expense)\s+(?:me(?:in)?\s+)?(?:\S+\s+){0,6}(?:add|daal|dalo|likho|record)\b"
+    r"|\b(?:rent|kiraya)\s+(?:diya|bhara|pay)\b"
+    r"|\b(?:store|dukaan|shop)\s+ka\s+rent\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -1047,7 +1070,10 @@ def _exposure_tools(text: str) -> set[str]:
         names.add("top_customers")
     if _STOCK_ADD_FLEX_RE.search(text):
         names.update({"add_stock", "search_product"})
+    if _EXPENSE_ADD_FLEX_RE.search(text):
+        names.add("create_expense")
     return names
+
 
 
 def _prior_exposure_tools(prior_user_texts: Sequence[str] | None) -> set[str]:
@@ -1158,6 +1184,8 @@ def user_requested_sensitive_action(question: str, tool_name: str) -> bool:
     if tool_name == "ledger_credit" and _LEDGER_CREDIT_FLEX_RE.search(text):
         return True
     if tool_name == "add_stock" and _STOCK_ADD_FLEX_RE.search(text):
+        return True
+    if tool_name == "create_expense" and _EXPENSE_ADD_FLEX_RE.search(text):
         return True
     pattern = _SENSITIVE_ACTION_RES.get(tool_name)
     if pattern is None:

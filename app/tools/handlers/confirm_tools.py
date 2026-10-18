@@ -571,6 +571,70 @@ def _optional_non_negative(value: Any) -> float | None:
     return float(value)
 
 
+async def create_expense(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    title = arguments.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return ToolResult(
+            tool="create_expense",
+            success=False,
+            data={"code": "TOOL_ARGS_INVALID", "message": "title is required"},
+        )
+    amount = arguments.get("amount")
+    if (
+        isinstance(amount, bool)
+        or not isinstance(amount, (int, float))
+        or amount <= 0
+    ):
+        return ToolResult(
+            tool="create_expense",
+            success=False,
+            data={"code": "TOOL_ARGS_INVALID", "message": "amount must be > 0"},
+        )
+    category = arguments.get("category")
+    if not isinstance(category, str) or not category.strip():
+        category = "Other"
+
+    try:
+        response = await context.retailer.create_expense(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            title=title.strip(),
+            amount=float(amount),
+            category=category.strip(),
+            date=arguments.get("date")
+            if isinstance(arguments.get("date"), str)
+            else None,
+            payment_mode=arguments.get("paymentMode")
+            if isinstance(arguments.get("paymentMode"), str)
+            else None,
+            notes=arguments.get("notes")
+            if isinstance(arguments.get("notes"), str)
+            else None,
+        )
+    except RetailerHttpError as exc:
+        return ToolResult(
+            tool="create_expense",
+            success=False,
+            data={"code": exc.code, "message": exc.message},
+        )
+    data = response.body.get("data") if isinstance(response.body, dict) else {}
+    payload = data if isinstance(data, dict) else {}
+    expense_id = payload.get("id") or payload.get("_id") or ""
+    return ToolResult(
+        tool="create_expense",
+        success=True,
+        data={
+            "id": expense_id,
+            "title": title.strip(),
+            "amount": float(amount),
+            "category": category.strip(),
+            "openPath": "/dashboard/expenses",
+        },
+    )
+
+
 SENSITIVE_TOOL_HANDLERS = {
     "release_invoice": release_invoice,
     "ledger_credit": ledger_credit,
@@ -582,4 +646,6 @@ SENSITIVE_TOOL_HANDLERS = {
     "update_customer_payment": update_customer_payment,
     "create_collect_link": create_collect_link,
     "send_payment_reminder": send_payment_reminder,
+    "create_expense": create_expense,
 }
+

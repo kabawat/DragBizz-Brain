@@ -8,6 +8,7 @@ from collections.abc import Callable
 from app.confirmations import (
     CONFIRMATION_TYPE_ADD_STOCK,
     CONFIRMATION_TYPE_CREATE_COLLECT_LINK,
+    CONFIRMATION_TYPE_CREATE_EXPENSE,
     CONFIRMATION_TYPE_LEDGER_CREDIT,
     CONFIRMATION_TYPE_LEDGER_DEBIT,
     CONFIRMATION_TYPE_MERGE_CUSTOMERS,
@@ -349,6 +350,8 @@ def _unknown_message(record: PendingConfirmationRecord) -> str:
             "Stock add status is unclear — it may or may not have completed. "
             "Check inventory before retrying."
         )
+    if record.type == CONFIRMATION_TYPE_CREATE_EXPENSE:
+        return "Expense creation status is unclear. Check Expenses before retrying."
     if record.type in _CUSTOMER_ACTION_TYPES:
         return (
             "Customer action status is unclear — it may or may not have "
@@ -368,6 +371,8 @@ def _reject_message(record: PendingConfirmationRecord) -> str:
         )
     if record.type == CONFIRMATION_TYPE_ADD_STOCK:
         return "Stock add cancelled. No inventory was changed."
+    if record.type == CONFIRMATION_TYPE_CREATE_EXPENSE:
+        return "Kharcha record cancel kar diya gaya. Koi entry save nahi hui."
     if record.type in _CUSTOMER_ACTION_TYPES:
         return "Cancelled. No customer change was saved."
     return (
@@ -375,6 +380,7 @@ def _reject_message(record: PendingConfirmationRecord) -> str:
         "no stock was deducted. "
         f"[Open invoice](/dashboard/invoices/{record.draft_id})"
     )
+
 
 
 def _money(value: object) -> float | None:
@@ -426,6 +432,22 @@ def _approve_message(
             "Could not add stock"
             + (f": {err}" if err else ".")
             + " Nothing was changed."
+        )
+
+    if record.type == CONFIRMATION_TYPE_CREATE_EXPENSE:
+        if result is not None and result.success:
+            amt = _format_inr(record.summary.get("amount"))
+            title = record.summary.get("title") or "expense"
+            amt_str = f"₹{amt} " if amt else ""
+            return (
+                f"Kharcha record ho gaya hai: {amt_str}({title}). "
+                "[Expenses dekhein](/dashboard/expenses)"
+            )
+        err = _result_error(result)
+        return (
+            "Kharcha record nahi ho paya"
+            + (f": {err}" if err else ".")
+            + " Koi entry save nahi hui."
         )
 
     if record.type in _CUSTOMER_ACTION_TYPES:
