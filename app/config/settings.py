@@ -8,6 +8,7 @@ from app.config.base import _group_config
 from app.config.providers import (
     ChatSettings,
     CheaperInferenceSettings,
+    GoogleAISettings,
     OpenAISettings,
 )
 from app.config.rag import RagSettings
@@ -27,6 +28,7 @@ class Settings(BaseSettings):
         validation_alias="AI_ACTIVE_PROVIDER",
     )
     openai: OpenAISettings = Field(default_factory=OpenAISettings)
+    google: GoogleAISettings = Field(default_factory=GoogleAISettings)
     chat: ChatSettings = Field(default_factory=ChatSettings)
     cheaper_inference: CheaperInferenceSettings = Field(
         default_factory=CheaperInferenceSettings
@@ -61,6 +63,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Cheaper Inference base URL must use HTTPS in production"
             )
+
+        if (
+            self.server.environment == "production"
+            and self.google.api_key
+            and not self.google.base_url.startswith("https://")
+        ):
+            raise ValueError("Google AI base URL must use HTTPS in production")
 
         if self.server.environment == "production":
             if not self.limits.redis_url:

@@ -27,8 +27,11 @@ Set the values you need in `.env` before starting the service:
 
 | Variable | Purpose |
 |---|---|
-| `AI_OPENAI_API_KEY` | OpenAI embeddings and chat fallback |
-| `CHEAPER_INFERENCE_API_KEY` | Optional primary chat provider |
+| `AI_ACTIVE_PROVIDER` | `google_ai`, `openai_compatible`, or `cheaper_inference` |
+| `AI_GOOGLE_API_KEY` | Gemini chat when `AI_ACTIVE_PROVIDER=google_ai` |
+| `AI_GOOGLE_MODEL` | Default `gemini-3.1-flash-lite` |
+| `AI_OPENAI_API_KEY` | Embeddings, and chat when the active provider is OpenAI |
+| `CHEAPER_INFERENCE_API_KEY` | Fallback chat provider |
 | `AI_BASE_URL` | Base URL for the `/auth` and `/retailer` APIs |
 | `AI_QDRANT_URL` | Qdrant URL; use `http://localhost:6333` locally |
 | `AI_REDIS_URL` | Optional Redis URL; empty uses in-process storage |

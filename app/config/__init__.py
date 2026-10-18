@@ -1,6 +1,7 @@
 from app.config.providers import (
     ChatSettings,
     CheaperInferenceSettings,
+    GoogleAISettings,
     OpenAISettings,
 )
 from app.config.rag import RagSettings
@@ -12,6 +13,7 @@ from app.config.settings import Settings, get_settings
 __all__ = [
     "ChatSettings",
     "CheaperInferenceSettings",
+    "GoogleAISettings",
     "GuardSettings",
     "JwtSettings",
     "LimitSettings",

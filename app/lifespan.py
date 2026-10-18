@@ -29,6 +29,7 @@ from app.providers.openai_compatible import (
     OPENAI_PROVIDER_NAME,
     OpenAICompatibleProvider,
     build_cheaper_provider,
+    build_google_provider,
 )
 from app.rag.embedding_service import EmbeddingService
 from app.rag.retrieval_cache import build_rag_cache
@@ -196,6 +197,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         model_router.register(OpenAICompatibleProvider(settings, http_client))
     else:
         logger.warning("AI_OPENAI_API_KEY is not set; OpenAI provider unavailable")
+    google = build_google_provider(settings, http_client)
+    if google is not None:
+        model_router.register(google)
     cheaper = build_cheaper_provider(settings, http_client)
     if cheaper is not None:
         model_router.register(cheaper)

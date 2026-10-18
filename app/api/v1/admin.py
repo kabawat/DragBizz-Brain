@@ -18,6 +18,10 @@ from app.core.security import get_current_user
 from app.observability.metrics import MetricsRegistry
 from app.orchestrator.model_config import ModelSelection, ModelSelectionStore
 from app.orchestrator.model_router import ModelRouter
+from app.providers.openai_compatible import (
+    CHEAPER_PROVIDER_NAME,
+    GOOGLE_PROVIDER_NAME,
+)
 from app.schemas.admin import (
     ModelSelectionRequest,
     ModelSelectionResponse,
@@ -61,8 +65,18 @@ def _metrics(request: Request) -> MetricsRegistry:
     return request.app.state.metrics
 
 
+def _configured_model(settings: Settings, provider: str) -> str:
+    if provider == GOOGLE_PROVIDER_NAME:
+        return settings.google.model
+    if provider == CHEAPER_PROVIDER_NAME:
+        return settings.cheaper_inference.model
+    return settings.openai.model
+
+
 def _allowed_models(settings: Settings) -> list[str]:
     models = {settings.openai.model, *settings.openai.allowed_models}
+    if settings.google.api_key and settings.google.model:
+        models.add(settings.google.model)
     if settings.cheaper_inference.api_key and settings.cheaper_inference.model:
         models.add(settings.cheaper_inference.model)
     return sorted(models)
@@ -85,7 +99,7 @@ async def _selection_response(
         )
     return ModelSelectionResponse(
         provider=model_router.get_active().name,
-        model=settings.openai.model,
+        model=_configured_model(settings, model_router.get_active().name),
         available_providers=list(model_router.available_providers()),
         allowed_models=_allowed_models(settings),
     )
@@ -129,7 +143,8 @@ async def set_model_selection(
             code="ADMIN_MODEL_NOT_ALLOWED",
             message=(
                 f"Model '{body.model}' is not in the allowed model list "
-                "(AI_OPENAI_ALLOWED_MODELS)"
+                "(AI_OPENAI_ALLOWED_MODELS, AI_GOOGLE_MODEL, "
+                "or CHEAPER_INFERENCE_MODEL)"
             ),
             status_code=400,
         )

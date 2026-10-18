@@ -13,6 +13,7 @@ from app.schemas.chat import ChatMessage, GenerationRequest, GenerationResponse
 from app.schemas.tool import ToolCall, ToolDefinition
 
 OPENAI_PROVIDER_NAME = "openai_compatible"
+GOOGLE_PROVIDER_NAME = "google_ai"
 CHEAPER_PROVIDER_NAME = "cheaper_inference"
 
 # Statuses that mean the provider did not return a usable completion.
@@ -207,6 +208,21 @@ def _stream_delta_text(chunk: dict[str, Any]) -> str:
     return ""
 
 
+def build_google_provider(
+    settings: Settings, http_client: httpx.AsyncClient
+) -> OpenAICompatibleProvider | None:
+    if not settings.google.api_key:
+        return None
+    return OpenAICompatibleProvider(
+        settings,
+        http_client,
+        name=GOOGLE_PROVIDER_NAME,
+        api_key=settings.google.api_key,
+        base_url=settings.google.base_url,
+        default_model=settings.google.model,
+    )
+
+
 def build_cheaper_provider(
     settings: Settings, http_client: httpx.AsyncClient
 ) -> OpenAICompatibleProvider | None:
@@ -236,16 +252,24 @@ def _to_openai_message(message: ChatMessage) -> dict[str, Any]:
     }
     if message.role == "assistant" and message.tool_calls:
         payload["tool_calls"] = [
-            {
-                "id": call.id,
-                "type": "function",
-                "function": {
-                    "name": call.name,
-                    "arguments": json.dumps(call.arguments, ensure_ascii=False),
-                },
-            }
-            for call in message.tool_calls
+            _to_openai_tool_call(call) for call in message.tool_calls
         ]
+    return payload
+
+
+def _to_openai_tool_call(call: ToolCall) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "id": call.id,
+        "type": "function",
+        "function": {
+            "name": call.name,
+            "arguments": json.dumps(call.arguments, ensure_ascii=False),
+        },
+    }
+    if call.thought_signature:
+        payload["extra_content"] = {
+            "google": {"thought_signature": call.thought_signature}
+        }
     return payload
 
 
@@ -286,6 +310,7 @@ def _parse_completion(
                     id=str(raw.get("id") or function["name"]),
                     name=function["name"],
                     arguments=arguments,
+                    thought_signature=_thought_signature(raw),
                 )
             )
         except AppError:
@@ -317,6 +342,21 @@ def _parse_completion(
         input_tokens=usage.get("prompt_tokens"),
         output_tokens=usage.get("completion_tokens"),
     )
+
+
+def _thought_signature(raw: object) -> str | None:
+    if not isinstance(raw, dict):
+        return None
+    extra = raw.get("extra_content")
+    if not isinstance(extra, dict):
+        return None
+    google = extra.get("google")
+    if not isinstance(google, dict):
+        return None
+    signature = google.get("thought_signature")
+    if isinstance(signature, str) and signature:
+        return signature
+    return None
 
 
 def _parse_arguments(raw: object) -> dict[str, Any]:

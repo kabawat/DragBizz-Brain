@@ -24,6 +24,11 @@ class ToolCall(BaseModel):
     id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=64)
     arguments: dict[str, Any] = Field(default_factory=dict)
+    # Gemini 3 rejects the next tool round unless this is echoed back.
+    # Excluded from API responses and persisted history.
+    thought_signature: str | None = Field(
+        default=None, exclude=True, max_length=16_384
+    )
 
 
 class ToolResult(BaseModel):

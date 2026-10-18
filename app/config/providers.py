@@ -74,6 +74,46 @@ class ChatSettings(BaseSettings):
     )
 
 
+class GoogleAISettings(BaseSettings):
+    """Gemini via the OpenAI-compatible endpoint.
+
+    Switch chat with AI_ACTIVE_PROVIDER=google_ai or openai_compatible.
+    Embeddings stay on OpenAI so the existing Qdrant index remains valid.
+    """
+
+    model_config = _group_config()
+
+    api_key: str | None = Field(default=None, validation_alias="AI_GOOGLE_API_KEY")
+    base_url: str = Field(
+        default="https://generativelanguage.googleapis.com/v1beta/openai",
+        validation_alias="AI_GOOGLE_BASE_URL",
+    )
+    model: str = Field(
+        default="gemini-3.1-flash-lite",
+        validation_alias="AI_GOOGLE_MODEL",
+    )
+    input_usd_per_million_tokens: float = Field(
+        default=0.25,
+        ge=0,
+        validation_alias="AI_GOOGLE_INPUT_USD_PER_MILLION_TOKENS",
+    )
+    output_usd_per_million_tokens: float = Field(
+        default=1.50,
+        ge=0,
+        validation_alias="AI_GOOGLE_OUTPUT_USD_PER_MILLION_TOKENS",
+    )
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def empty_key_as_none(cls, value: object) -> object:
+        return _empty_as_none(value)
+
+    @field_validator("base_url")
+    @classmethod
+    def strip_slash(cls, value: str) -> str:
+        return _strip_slash(value)
+
+
 class CheaperInferenceSettings(BaseSettings):
     model_config = _group_config()
 

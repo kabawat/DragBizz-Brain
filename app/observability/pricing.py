@@ -127,6 +127,12 @@ def pricing_from_settings(settings) -> PricingConfig:
     }
     if settings.cheaper_inference.model:
         rates[("cheaper_inference", settings.cheaper_inference.model)] = default
+    if settings.google.model:
+        rates[("google_ai", settings.google.model)] = ModelRate(
+            input_usd_per_million=settings.google.input_usd_per_million_tokens,
+            output_usd_per_million=settings.google.output_usd_per_million_tokens,
+            authoritative=True,
+        )
     version = getattr(settings.limits, "pricing_version", None) or "v1"
     embedding_rate = getattr(settings.limits, "embedding_usd_per_million_tokens", 0.02)
     return PricingConfig(

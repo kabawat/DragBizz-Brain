@@ -19,6 +19,7 @@ from app.prompts.synthesis import (
 )
 from app.providers.openai_compatible import (
     CHEAPER_PROVIDER_NAME,
+    GOOGLE_PROVIDER_NAME,
     OPENAI_PROVIDER_NAME,
 )
 from app.schemas.chat import ChatMessage, GenerationRequest, GenerationResponse
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 _FALLBACK_PROVIDER = {
     OPENAI_PROVIDER_NAME: CHEAPER_PROVIDER_NAME,
+    GOOGLE_PROVIDER_NAME: CHEAPER_PROVIDER_NAME,
     CHEAPER_PROVIDER_NAME: OPENAI_PROVIDER_NAME,
 }
 
