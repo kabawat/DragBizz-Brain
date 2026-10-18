@@ -76,6 +76,22 @@ logger = logging.getLogger(__name__)
 StreamEmitFn = Callable[[str, dict[str, Any]], Awaitable[None] | None]
 
 
+def _extract_prior_numbers(prior_turns: list[Any]) -> set[str]:
+    numbers: set[str] = set()
+    for turn in prior_turns:
+        tool_ctx = getattr(turn, "tool_context", None)
+        if tool_ctx:
+            for match in _NUMBER_RE.finditer(tool_ctx):
+                numbers.add(_normalize_amount(match.group(0)))
+        asst_text = getattr(turn, "assistant_text", None)
+        if asst_text:
+            for match in _CURRENCY_RE.finditer(asst_text):
+                raw = match.group(1) or match.group(2)
+                if raw:
+                    numbers.add(_normalize_amount(raw))
+    return numbers
+
+
 class ChatService:
     def __init__(
         self,
@@ -549,22 +565,6 @@ class ChatService:
         if mode != "enforce":
             return None
         return get_refusal_message(body.language)
-
-def _extract_prior_numbers(prior_turns: list[Any]) -> set[str]:
-    numbers: set[str] = set()
-    for turn in prior_turns:
-        tool_ctx = getattr(turn, "tool_context", None)
-        if tool_ctx:
-            for match in _NUMBER_RE.finditer(tool_ctx):
-                numbers.add(_normalize_amount(match.group(0)))
-        asst_text = getattr(turn, "assistant_text", None)
-        if asst_text:
-            for match in _CURRENCY_RE.finditer(asst_text):
-                raw = match.group(1) or match.group(2)
-                if raw:
-                    numbers.add(_normalize_amount(raw))
-    return numbers
-
 
     def _guard_output(
         self,
