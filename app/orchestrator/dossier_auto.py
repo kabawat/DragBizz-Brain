@@ -39,70 +39,94 @@ def dossier_reply(data: dict[str, Any], *, language: str) -> str | None:
     name = name.strip() or "customer"
     phone = item.get("phone") if isinstance(item.get("phone"), str) else ""
     phone = phone.strip()
-    head = f"{name}, {phone}." if phone else f"{name}."
-    parts = [head]
+    lines = [f"**{name}**"]
+    if phone:
+        lines.append(phone)
+    lines.append("")
     memo = item.get("memo")
     if isinstance(memo, str) and memo.strip():
-        parts.append(f'Saved note: "{memo.strip()}".')
+        lines.append(f'Saved note: "{memo.strip()}"')
+        lines.append("")
     account = item.get("account") if isinstance(item.get("account"), dict) else {}
     due = account.get("totalDue") if isinstance(account, dict) else None
     if isinstance(due, (int, float)) and not isinstance(due, bool):
         if due == 0:
-            parts.append("Abhi koi due nahi hai." if hindi else "No dues right now.")
+            lines.append(
+                "Abhi koi due nahi hai." if hindi else "No dues right now."
+            )
         else:
-            shown = int(due) if float(due) == int(due) else due
-            parts.append(f"Due ₹{shown}.")
+            lines.append(f"Due **{_rupee(due)}**")
+        lines.append("")
     status = data.get("billsStatus")
     bills = data.get("bills") if isinstance(data.get("bills"), list) else []
     if status == "empty":
-        parts.append(
+        lines.append(
             "Pichle 10 bills mein koi bill nahi."
             if hindi
             else "No bills in the last 10."
         )
     elif status == "unavailable":
-        parts.append(
+        lines.append(
             "Bills load nahi ho paaye." if hindi else "Bills could not be loaded."
         )
     elif bills:
-        rendered = [_bill_line(bill) for bill in bills if isinstance(bill, dict)]
-        rendered = [line for line in rendered if line]
+        rendered: list[str] = []
+        for bill in bills:
+            if not isinstance(bill, dict):
+                continue
+            block = _bill_block(bill)
+            if block:
+                rendered.append(block)
         if rendered:
-            parts.append("Recent bills: " + "; ".join(rendered) + ".")
-    return " ".join(parts)
+            lines.append("## Recent bills")
+            lines.append("")
+            lines.append("\n\n".join(rendered))
+    return "\n".join(lines).strip()
 
 
-def _bill_line(bill: dict[str, Any]) -> str:
-    bits: list[str] = []
-    number = bill.get("invoiceNumber")
-    if isinstance(number, str) and number.strip():
-        bits.append(number.strip())
-    when = bill.get("date")
-    if isinstance(when, str) and when.strip():
-        bits.append(when.strip()[:10])
+def _rupee(value: float | int) -> str:
+    shown = int(value) if float(value) == int(value) else value
+    return f"₹{shown}"
+
+
+def _bill_block(bill: dict[str, Any]) -> str:
+    head: list[str] = []
     total = bill.get("totalAmount")
     if isinstance(total, (int, float)) and not isinstance(total, bool):
-        shown = int(total) if float(total) == int(total) else total
-        bits.append(f"₹{shown}")
-    items = bill.get("items")
+        head.append(f"**{_rupee(total)}**")
+    when = bill.get("date")
+    if isinstance(when, str) and when.strip():
+        head.append(when.strip()[:10])
+    rows = [f"- {name}" for name in _item_names(bill.get("items"))]
+    number = bill.get("invoiceNumber")
+    invoice = number.strip() if isinstance(number, str) else ""
+    parts: list[str] = []
+    if head:
+        parts.append("### " + " · ".join(head))
+    if rows:
+        parts.append("\n".join(rows))
+    if invoice:
+        parts.append(invoice)
+    return "\n\n".join(parts)
+
+
+def _item_names(raw: Any) -> list[str]:
+    if not isinstance(raw, list):
+        return []
     names: list[str] = []
-    if isinstance(items, list):
-        for line in items:
-            if not isinstance(line, dict):
-                continue
-            name = line.get("name")
-            if not isinstance(name, str) or not name.strip():
-                continue
-            qty = line.get("qty")
-            if isinstance(qty, (int, float)) and not isinstance(qty, bool):
-                qty_shown = int(qty) if float(qty) == int(qty) else qty
-                names.append(f"{name.strip()} x{qty_shown}")
-            else:
-                names.append(name.strip())
-    text = " ".join(bits)
-    if names:
-        text = f"{text} ({', '.join(names)})" if text else ", ".join(names)
-    return text
+    for line in raw:
+        if not isinstance(line, dict):
+            continue
+        name = line.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        qty = line.get("qty")
+        if isinstance(qty, (int, float)) and not isinstance(qty, bool):
+            qty_shown = int(qty) if float(qty) == int(qty) else qty
+            names.append(f"{name.strip()} x{qty_shown}")
+        else:
+            names.append(name.strip())
+    return names
 
 
 async def try_fast_dossier_turn(

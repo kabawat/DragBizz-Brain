@@ -274,8 +274,10 @@ def test_fast_dossier_quotes_bills_not_personality() -> None:
     second = asyncio.run(_once())
     assert first is not None and second is not None
     assert first.message == second.message
-    assert "Paneer" in first.message
-    assert "INV-9" in first.message
+    assert first.message.startswith("**Kishanlal Bansal**")
+    assert "\n## Recent bills\n" in first.message
+    assert "### **₹120** · 2026-10-02" in first.message
+    assert "- Paneer x2" in first.message
     assert "evening regular" in first.message
     lowered = first.message.lower()
     assert "loves" not in lowered
