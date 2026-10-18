@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.confirmations.categories import normalize_expense_category
 from app.integrations.retailer_client import RetailerHttpError
 from app.schemas.tool import ToolResult
 from app.tools.context import ToolContext
@@ -592,9 +593,9 @@ async def create_expense(
             success=False,
             data={"code": "TOOL_ARGS_INVALID", "message": "amount must be > 0"},
         )
-    category = arguments.get("category")
-    if not isinstance(category, str) or not category.strip():
-        category = "Other"
+    category_key, _ = normalize_expense_category(
+        arguments.get("category"), title=title.strip()
+    )
 
     try:
         response = await context.retailer.create_expense(
@@ -602,7 +603,7 @@ async def create_expense(
             store_id=context.store_id,
             title=title.strip(),
             amount=float(amount),
-            category=category.strip(),
+            category=category_key,
             date=arguments.get("date")
             if isinstance(arguments.get("date"), str)
             else None,
@@ -629,7 +630,7 @@ async def create_expense(
             "id": expense_id,
             "title": title.strip(),
             "amount": float(amount),
-            "category": category.strip(),
+            "category": category_key,
             "openPath": "/dashboard/expenses",
         },
     )

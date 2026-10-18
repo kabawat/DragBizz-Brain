@@ -18,6 +18,7 @@ from app.confirmations import (
     CONFIRMATION_TYPE_UPDATE_CUSTOMER_PAYMENT,
     ConfirmationStore,
     PendingConfirmationRecord,
+    normalize_expense_category,
 )
 from app.core.exceptions import AppError
 from app.integrations.retailer_client import RetailerClient, RetailerHttpError
@@ -743,26 +744,26 @@ async def _stage_create_expense_call(
             message="create_expense requires amount > 0",
             status_code=400,
         )
-    category = args.get("category")
-    if not isinstance(category, str) or not category.strip():
-        category = "Other"
-
     title = title.strip()
-    category = category.strip()
+    category_key, category_label = normalize_expense_category(
+        args.get("category"), title=title
+    )
     args["title"] = title
     args["amount"] = amount
-    args["category"] = category
+    args["category"] = category_key
     args["storeId"] = store_id
 
     draft_id = f"exp_{uuid.uuid4().hex[:8]}"
 
     summary: dict[str, Any] = {
         "action": "create_expense",
+        "prompt": "Record this expense",
         "title": title,
         "amount": amount,
         "total": amount,
         "invoiceNumber": title,
-        "category": category,
+        "category": category_key,
+        "categoryLabel": category_label,
         "currency": "INR",
     }
     date_val = args.get("date")

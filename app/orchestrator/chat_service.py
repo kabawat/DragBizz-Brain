@@ -83,9 +83,18 @@ logger = logging.getLogger(__name__)
 StreamEmitFn = Callable[[str, dict[str, Any]], Awaitable[None] | None]
 
 
-def _extract_prior_numbers(prior_turns: list[Any]) -> set[str]:
+def _extract_prior_numbers(
+    prior_turns: list[Any], current_user_text: str = ""
+) -> set[str]:
     numbers: set[str] = set()
+    if current_user_text:
+        for match in _NUMBER_RE.finditer(current_user_text):
+            numbers.add(_normalize_amount(match.group(0)))
     for turn in prior_turns:
+        user_txt = getattr(turn, "user_text", None)
+        if user_txt:
+            for match in _NUMBER_RE.finditer(user_txt):
+                numbers.add(_normalize_amount(match.group(0)))
         tool_ctx = getattr(turn, "tool_context", None)
         if tool_ctx:
             for match in _NUMBER_RE.finditer(tool_ctx):
@@ -174,7 +183,9 @@ class ChatService:
             user_id=user_id,
             store_id=store_id,
         )
-        prior_numbers = _extract_prior_numbers(prior_turns)
+        prior_numbers = _extract_prior_numbers(
+            prior_turns, current_user_text=body.text
+        )
         intent = resolve_turn_intent(
             body.text,
             available=available,
@@ -493,6 +504,18 @@ class ChatService:
                     pending = pending_to_schema(staged_draft)
                     break
 
+        if pending is not None and pending.summary:
+            for val in pending.summary.values():
+                for m in _NUMBER_RE.finditer(str(val)):
+                    prior_numbers.add(_normalize_amount(m.group(0)))
+        if outcome.generation.tool_calls:
+            for tc in outcome.generation.tool_calls:
+                args_dict = getattr(tc, "arguments", {}) or {}
+                if isinstance(args_dict, dict):
+                    for val in args_dict.values():
+                        for m in _NUMBER_RE.finditer(str(val)):
+                            prior_numbers.add(_normalize_amount(m.group(0)))
+
         reply = normalize_dashboard_links(outcome.generation.content or "")
         message = self._guard_output(
             reply,
@@ -650,6 +673,22 @@ class ChatService:
         tool_results: list[Any],
         pending_confirmation: PendingConfirmation | None,
     ) -> ChatResponse:
+        if pending_confirmation is not None and pending_confirmation.summary:
+            for val in pending_confirmation.summary.values():
+                for m in _NUMBER_RE.finditer(str(val)):
+                    prior_numbers.add(_normalize_amount(m.group(0)))
+        if tool_calls:
+            for tc in tool_calls:
+                args = (
+                    getattr(tc, "arguments", {})
+                    if not isinstance(tc, dict)
+                    else tc.get("arguments", {})
+                )
+                if isinstance(args, dict):
+                    for val in args.values():
+                        for m in _NUMBER_RE.finditer(str(val)):
+                            prior_numbers.add(_normalize_amount(m.group(0)))
+
         guarded = self._guard_output(
             message,
             tool_results=tool_results,

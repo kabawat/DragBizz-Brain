@@ -757,3 +757,111 @@ def test_budget_allow_synthesis() -> None:
     assert budget.model_calls == 3
 
 
+@pytest.mark.asyncio
+async def test_create_expense_chai_category_and_stream_summary() -> None:
+    from app.confirmations import InMemoryConfirmationStore, normalize_expense_category
+    from app.orchestrator.confirmation import stage_from_sensitive_calls
+    from app.schemas.chat import ChatResponse, PendingConfirmation
+    from app.schemas.tool import ToolCall
+
+    # 1. Normalization tests
+    cat, label = normalize_expense_category("Food & Refreshment", "Chai ka kharcha")
+    assert cat == "daily-expenses"
+    assert label == "Tea & Snacks (Chai)"
+
+    cat2, label2 = normalize_expense_category("tea", "Chai nashta")
+    assert cat2 == "daily-expenses"
+    assert label2 == "Tea & Snacks (Chai)"
+
+    # 2. Stage expense confirmation
+    store = InMemoryConfirmationStore()
+    call = ToolCall(
+        id="call_exp_1",
+        name="create_expense",
+        arguments={
+            "storeId": STORE_ID,
+            "title": "Chai ka kharcha",
+            "amount": 100.0,
+            "category": "Food & Refreshment",
+        },
+    )
+    record = await stage_from_sensitive_calls(
+        store,
+        user_id="user_1",
+        store_id=STORE_ID,
+        session_id="sess_1",
+        sensitive_calls=[call],
+    )
+    assert record is not None
+    assert record.summary["action"] == "create_expense"
+    assert record.summary["prompt"] == "Record this expense"
+    assert record.summary["category"] == "daily-expenses"
+    assert record.summary["categoryLabel"] == "Tea & Snacks (Chai)"
+    assert record.summary["amount"] == 100.0
+    assert record.summary["total"] == 100.0
+
+    # 3. Stream serialization includes summary
+    pending = PendingConfirmation(
+        confirmation_id=record.confirmation_id,
+        type=record.type,
+        draft_id=record.draft_id,
+        summary=record.summary,
+        expires_at="2026-10-19T06:00:00Z",
+    )
+    chat_resp = ChatResponse(
+        message="Chai ka kharcha ₹100 add kar diya hai.",
+        session_id="sess_1",
+        request_id="req_1",
+        user_id="user_1",
+        provider="mock",
+        model="mock",
+        pending_confirmation=pending,
+    )
+    from app.orchestrator.chat_stream import stream_chat
+    from app.schemas.chat import ChatRequest
+
+    async def _mock_handle(*_, **__):
+        return chat_resp
+
+    req = ChatRequest(
+        text="add chai kharcha",
+        sessionId="sess_1",
+        storeId=STORE_ID,
+    )
+    events = [
+        e
+        async for e in stream_chat(
+            _mock_handle,
+            req,
+            user={"sub": "user_1"},
+            request_id="req_1",
+            store_id=STORE_ID,
+            access_token="tok",
+            metrics=None,
+        )
+    ]
+    completed_event = [e for e in events if e[0] == "request.completed"][0]
+    payload = completed_event[1]
+    summary_payload = payload["pendingConfirmation"]["summary"]
+    assert summary_payload["action"] == "create_expense"
+    assert summary_payload["category"] == "daily-expenses"
+    assert summary_payload["categoryLabel"] == "Tea & Snacks (Chai)"
+
+
+def test_output_guard_allows_user_and_staged_numbers() -> None:
+    from app.guards.output_guard import OutputGuard
+    from app.orchestrator.chat_service import _extract_prior_numbers
+
+    guard = OutputGuard()
+    # User asked for ₹100 chai expense
+    user_text = "add karo kharcha aaj ka chai ka 100 rupye"
+    prior_numbers = _extract_prior_numbers([], current_user_text=user_text)
+    assert "100" in prior_numbers
+
+    # Assistant reply with ₹100 should be allowed by guard
+    asst_reply = "Chai ka kharcha ₹100 add kar diya hai. Bas confirm kar dijiye."
+    decision = guard.evaluate(asst_reply, tool_results=[], prior_numbers=prior_numbers)
+    assert decision.allowed is True
+
+
+

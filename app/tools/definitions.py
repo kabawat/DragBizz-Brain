@@ -1285,9 +1285,14 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 "category": {
                     "type": "string",
                     "description": (
-                        "Expense category (e.g. 'Rent', 'Utilities', "
-                        "'Food & Refreshment', 'Salaries', 'Maintenance', "
-                        "'Supplies', 'Transport', 'Other')"
+                        "Expense category value. Valid values: "
+                        "'daily-expenses' (Tea & Snacks / Chai / nashta / food), "
+                        "'rent' (Rent / Kiraya), 'transport' (Delivery / Transport / "
+                        "Fuel / Dhulai), 'staff-wages' (Salary / Wages / Pagar), "
+                        "'utilities' (Electricity / Water / Bijli), "
+                        "'shop-supplies' (Bags / Packaging), 'office-supplies' "
+                        "(Stationery), 'maintenance' (Repairs), 'marketing', "
+                        "'miscellaneous'"
                     ),
                 },
                 "date": {

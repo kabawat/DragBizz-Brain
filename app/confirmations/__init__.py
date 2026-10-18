@@ -1,3 +1,7 @@
+from app.confirmations.categories import (
+    EXPENSE_CATEGORY_MAP,
+    normalize_expense_category,
+)
 from app.confirmations.store import (
     CONFIRMATION_TYPE_ADD_STOCK,
     CONFIRMATION_TYPE_CREATE_COLLECT_LINK,
@@ -29,7 +33,10 @@ __all__ = [
     "CONFIRMATION_TYPE_SET_OPENING_BALANCE",
     "CONFIRMATION_TYPE_UPDATE_CUSTOMER_PAYMENT",
     "ConfirmationStore",
+    "EXPENSE_CATEGORY_MAP",
     "InMemoryConfirmationStore",
     "PendingConfirmationRecord",
     "RedisConfirmationStore",
+    "normalize_expense_category",
 ]
+

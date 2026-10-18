@@ -122,6 +122,7 @@ async def stream_chat(
             "confirmationId": pending.confirmation_id,
             "draftId": pending.draft_id,
             "type": pending.type,
+            "summary": pending.summary,
             "expiresAt": pending.expires_at,
         }
     if metrics is not None:
