@@ -6,6 +6,7 @@ question cannot paraphrase a saved note into a biography.
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -121,17 +122,11 @@ def _choice_reply(data: dict[str, Any], *, hindi: bool) -> str:
                 f"No customer named **{name}**. "
                 f"{count} matched by email. Which one?"
             )
-        cap = "Search pehle 100 tak hai." if hindi else "Showing the first 100."
     elif hindi:
-        head = f"**{name}** se {count} customers mile. Kaun sa?"
-        cap = "Search pehle 100 tak hai."
+        head = f"**{name}** naam se {count} customers mile. Kaun sa?"
     else:
-        head = f"**{name}** matched {count} customers. Which one?"
-        cap = "Showing the first 100."
+        head = f"**{name}** matched {count} customers by name. Which one?"
     lines = [head, ""]
-    if count >= 100:
-        lines.append(cap)
-        lines.append("")
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -193,6 +188,87 @@ def _item_names(raw: Any) -> list[str]:
         else:
             names.append(name.strip())
     return names
+
+
+_NAME_LIST_RE = re.compile(
+    r"\b([1-9]\d?)\s+customers?\b.{0,48}\b(?:names?|naam)\b",
+    re.IGNORECASE,
+)
+
+
+def name_list_count(question: str) -> int | None:
+    match = _NAME_LIST_RE.search(question.strip())
+    if match is None:
+        return None
+    count = int(match.group(1))
+    return count if count <= 20 else None
+
+
+def _name_list_reply(items: list[Any], count: int, *, hindi: bool) -> str:
+    shown = items[:count]
+    if hindi:
+        head = f"**{len(shown)} customer** ke naam:"
+    else:
+        head = f"**{len(shown)} customer** names:"
+    lines = [head, ""]
+    for item in shown:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("name") if isinstance(item.get("name"), str) else ""
+        label = label.strip() or "customer"
+        phone = item.get("phone") if isinstance(item.get("phone"), str) else ""
+        phone = phone.strip()
+        lines.append(f"- {label} · {phone}" if phone else f"- {label}")
+    return "\n".join(lines).strip()
+
+
+async def try_fast_name_list(
+    *,
+    question: str,
+    language: str,
+    store_id: str,
+    access_token: str,
+    session_id: str,
+    user_id: str,
+    allowed_names: frozenset[str],
+    executor: ToolExecutor,
+) -> FastDossierOutcome | None:
+    """List customer names only. No dues, so a count cannot fail the amount check."""
+    if "search_customer" not in allowed_names:
+        return None
+    count = name_list_count(question)
+    if count is None:
+        return None
+    call = ToolCall(
+        id=f"auto_names_{uuid.uuid4().hex[:10]}",
+        name="search_customer",
+        arguments={"storeId": store_id, "query": ""},
+    )
+    results = await executor.execute_reads(
+        [call],
+        access_token=access_token,
+        store_id=store_id,
+        allowed_names=allowed_names,
+        session_id=session_id,
+        user_id=user_id,
+        question=question,
+    )
+    projected = project_tool_result(results[0])
+    if not projected.success or not isinstance(projected.data, dict):
+        return None
+    items = projected.data.get("items")
+    if not isinstance(items, list) or not items:
+        return None
+    message = _name_list_reply(
+        items,
+        count,
+        hindi=language.lower().startswith("hi"),
+    )
+    return FastDossierOutcome(
+        message=message,
+        tool_calls=[call],
+        tool_results=[projected],
+    )
 
 
 async def try_fast_dossier_turn(

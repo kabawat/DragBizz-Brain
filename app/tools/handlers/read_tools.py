@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import re
 from typing import Any
 
@@ -135,33 +136,25 @@ async def search_customer(
         raw_query = arguments["query"].strip()
         phone_match = re.search(r"\b[6-9]\d{9}\b", raw_query)
         effective_query = phone_match.group(0) if phone_match else raw_query
-        response = await context.retailer.get_customers(
-            access_token=context.access_token,
-            store_id=context.store_id,
+        raw_items = await _collect_customers(
+            context,
             query=effective_query,
-            limit=_CUSTOMER_SEARCH_LIMIT,
             include_addresses="address" in slices,
             include_account="khata" in slices or "ledger" in slices,
         )
     except RetailerHttpError as exc:
         return _failure("search_customer", exc)
 
-    raw_items = response.body.get("data") or []
     if not raw_items and effective_query != raw_query:
         clean_name = re.sub(r"\(?[6-9]\d{9}\)?", "", raw_query).strip()
         if clean_name:
-            try:
-                fallback_resp = await context.retailer.get_customers(
-                    access_token=context.access_token,
-                    store_id=context.store_id,
+            with contextlib.suppress(RetailerHttpError):
+                raw_items = await _collect_customers(
+                    context,
                     query=clean_name,
-                    limit=_CUSTOMER_SEARCH_LIMIT,
                     include_addresses="address" in slices,
                     include_account="khata" in slices or "ledger" in slices,
                 )
-                raw_items = fallback_resp.body.get("data") or []
-            except RetailerHttpError:
-                pass
     ranked_items, match_by = _rank_customers(
         [item for item in raw_items if isinstance(item, dict)],
         effective_query,
@@ -185,23 +178,70 @@ async def search_customer(
 _DOSSIER_BILL_CAP = 10
 _DOSSIER_LINE_CAP = 5
 _CUSTOMER_SEARCH_LIMIT = 100
+_CUSTOMER_PAGE_CAP = 5
+
+
+def _customer_cursor(body: dict[str, Any]) -> str | None:
+    meta = body.get("meta")
+    pagination = meta.get("pagination") if isinstance(meta, dict) else None
+    if not isinstance(pagination, dict):
+        raw = body.get("pagination")
+        pagination = raw if isinstance(raw, dict) else None
+    if not isinstance(pagination, dict):
+        return None
+    has_next = pagination.get("hasNextPage", pagination.get("hasNext"))
+    if has_next is False:
+        return None
+    cursor = pagination.get("nextCursor")
+    if isinstance(cursor, str) and cursor.strip():
+        return cursor.strip()
+    return None
+
+
+async def _collect_customers(
+    context: ToolContext,
+    *,
+    query: str,
+    include_account: bool,
+    include_addresses: bool = False,
+) -> list[dict[str, Any]]:
+    """Page the name/email search so a later name is not hidden by emails."""
+    collected: list[dict[str, Any]] = []
+    cursor: str | None = None
+    seen: set[str] = set()
+    for _ in range(_CUSTOMER_PAGE_CAP):
+        response = await context.retailer.get_customers(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            query=query,
+            limit=_CUSTOMER_SEARCH_LIMIT,
+            include_addresses=include_addresses,
+            include_account=include_account,
+            next_cursor=cursor,
+        )
+        body = response.body if isinstance(response.body, dict) else {}
+        page = body.get("data") or []
+        if isinstance(page, list):
+            collected.extend(item for item in page if isinstance(item, dict))
+        nxt = _customer_cursor(body)
+        if not nxt or nxt in seen:
+            break
+        seen.add(nxt)
+        cursor = nxt
+    return collected
 
 
 async def customer_dossier(
     arguments: dict[str, Any], context: ToolContext
 ) -> ToolResult:
     try:
-        response = await context.retailer.get_customers(
-            access_token=context.access_token,
-            store_id=context.store_id,
+        raw_items = await _collect_customers(
+            context,
             query=arguments["query"],
-            limit=_CUSTOMER_SEARCH_LIMIT,
             include_account=True,
         )
     except RetailerHttpError as exc:
         return _failure("customer_dossier", exc)
-
-    raw_items = response.body.get("data") or []
     items = [
         _dossier_customer(item) for item in raw_items if isinstance(item, dict)
     ]
@@ -261,11 +301,13 @@ def _rank_customers(
         return value.strip().casefold() if isinstance(value, str) else ""
 
     exact_name = [item for item in items if text(item, "name") == needle]
-    if exact_name:
-        return exact_name, "name"
-    partial_name = [item for item in items if needle in text(item, "name")]
-    if partial_name:
-        return partial_name, "name"
+    partial_name = [
+        item
+        for item in items
+        if item not in exact_name and needle in text(item, "name")
+    ]
+    if exact_name or partial_name:
+        return exact_name + partial_name, "name"
     phone_needle = query.strip()
     exact_phone = [
         item

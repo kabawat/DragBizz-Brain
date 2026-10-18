@@ -420,8 +420,13 @@ class RetailerClient:
         limit: int = 10,
         include_addresses: bool = False,
         include_account: bool = False,
+        next_cursor: str | None = None,
     ) -> RetailerResponse:
-        params: dict[str, Any] = {"search": query, "limit": limit}
+        params: dict[str, Any] = {"limit": limit}
+        if query.strip():
+            params["search"] = query
+        if next_cursor:
+            params["nextCursor"] = next_cursor
         if include_addresses:
             params["includeAddresses"] = "true"
         if include_account:

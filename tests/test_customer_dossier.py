@@ -6,8 +6,12 @@ import asyncio
 
 from app.executors.tool_executor import ToolExecutor
 from app.integrations.retailer_client import RetailerHttpError, RetailerResponse
-from app.orchestrator.dossier_auto import try_fast_dossier_turn
-from app.orchestrator.tool_selector import resolve_turn_intent
+from app.orchestrator.dossier_auto import (
+    name_list_count,
+    try_fast_dossier_turn,
+    try_fast_name_list,
+)
+from app.orchestrator.tool_selector import extract_who_is_query, resolve_turn_intent
 from app.prompts.system.chat import build_chat_system_prompt
 from app.schemas.tool import ToolResult
 from app.tools.context import ToolContext
@@ -149,13 +153,12 @@ def test_dossier_two_matches_skip_invoices() -> None:
     assert "memo" not in result.data["items"][0]
 
 
-def test_dossier_exact_name_ignores_similar() -> None:
-    exact_id = CUSTOMER
+def test_dossier_lists_every_name_match() -> None:
     retailer = _Retailer(
         [
             {"id": "d" * 24, "name": "Vikram Sharma", "phone": "9812345678"},
             {
-                "id": exact_id,
+                "id": CUSTOMER,
                 "name": "vikram",
                 "phone": "7877952898",
                 "note": "udhari vala",
@@ -173,10 +176,106 @@ def test_dossier_exact_name_ignores_similar() -> None:
     result = asyncio.run(
         customer_dossier({"query": "Vikram"}, _context(retailer))
     )
+    assert result.data["matchBy"] == "name"
+    assert result.data["billsStatus"] == "ambiguous"
+    assert result.data["matchCount"] == 2
+    assert retailer.invoice_calls == 0
+    names = {item["name"] for item in result.data["items"]}
+    assert names == {"vikram", "Vikram Sharma"}
+
+
+def test_name_list_returns_names_without_amounts() -> None:
+    assert name_list_count("koi 4 customer ke name bta") == 4
+    assert name_list_count("vikram kon he?") is None
+
+    class Names(_FastRetailer):
+        async def get_customers(self, **_kwargs):
+            return RetailerResponse(
+                status_code=200,
+                body={
+                    "data": [
+                        {"id": CUSTOMER, "name": "Aditi Kumar", "phone": "9811111111"},
+                        {"id": "d" * 24, "name": "Aarav Mishra"},
+                        {"id": "c" * 24, "name": "Naresh", "phone": "9602013850"},
+                        {"id": "e" * 24, "name": "Jayesh Patel"},
+                        {"id": "f" * 24, "name": "Extra"},
+                    ]
+                },
+            )
+
+    outcome = asyncio.run(
+        try_fast_name_list(
+            question="koi 4 customer ke name bta",
+            language="en",
+            store_id=STORE,
+            access_token="token",
+            session_id="sess",
+            user_id="user-1",
+            allowed_names=frozenset({"search_customer"}),
+            executor=ToolExecutor(registry=_registry(), retailer=Names()),
+        )
+    )
+    assert outcome is not None
+    assert "Aditi Kumar" in outcome.message
+    assert "Jayesh Patel" in outcome.message
+    assert "Extra" not in outcome.message
+    assert "₹" not in outcome.message
+
+
+def test_who_is_query_drops_quotes() -> None:
+    assert extract_who_is_query("vikram' kon he?") == "vikram"
+
+
+def test_dossier_pages_past_email_matches() -> None:
+    class Paged(_Retailer):
+        def __init__(self) -> None:
+            super().__init__([])
+            self.cursors: list[str | None] = []
+
+        async def get_customers(self, **kwargs):
+            cursor = kwargs.get("next_cursor")
+            self.cursors.append(cursor)
+            if not cursor:
+                return RetailerResponse(
+                    status_code=200,
+                    body={
+                        "data": [
+                            {
+                                "id": "d" * 24,
+                                "name": "Pratik Dave",
+                                "email": "vikrammalani07@example.com",
+                            }
+                        ],
+                        "meta": {
+                            "pagination": {
+                                "hasNextPage": True,
+                                "nextCursor": "cursor-2",
+                            }
+                        },
+                    },
+                )
+            return RetailerResponse(
+                status_code=200,
+                body={
+                    "data": [
+                        {
+                            "id": CUSTOMER,
+                            "name": "vikram",
+                            "phone": "7877952898",
+                        }
+                    ],
+                    "meta": {"pagination": {"hasNextPage": False}},
+                },
+            )
+
+    retailer = Paged()
+    result = asyncio.run(
+        customer_dossier({"query": "vikram"}, _context(retailer))
+    )
+    assert retailer.cursors == [None, "cursor-2"]
     assert result.data["matchCount"] == 1
-    assert result.data["items"][0]["id"] == exact_id
-    assert retailer.invoice_calls == 1
-    assert result.data["billsStatus"] == "ok"
+    assert result.data["items"][0]["name"] == "vikram"
+    assert result.data["billsStatus"] == "empty"
 
 
 def test_dossier_name_beats_email_matches() -> None:

@@ -869,7 +869,7 @@ def extract_who_is_query(question: str) -> str | None:
     if phone:
         return phone.group(1)
     cleaned = _WHO_IS_RE.sub(" ", text)
-    cleaned = re.sub(r"[?.,:;!]+", " ", cleaned)
+    cleaned = re.sub(r"[?.,:;!\"'`“”‘’]+", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
     while True:
         nxt = _WHO_IS_FILLER_RE.sub("", cleaned).strip()
