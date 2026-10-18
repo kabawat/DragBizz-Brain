@@ -1,0 +1,562 @@
+"""Tests for Phase 2: Dukaan ke baaki reads.
+
+Validates tool definitions, handlers, projections, and intent routing
+for stock_items, list_invoices, expenses, cashbook, suppliers,
+purchase orders, bills, GST, sales orders, staff, and detailed analytics.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.integrations.retailer_client import RetailerHttpError, RetailerResponse
+from app.orchestrator.tool_selector import resolve_turn_intent
+from app.prompts.system.chat import build_chat_system_prompt
+from app.schemas.tool import ToolRisk
+from app.tools.context import ToolContext
+from app.tools.definitions import READ_TOOL_DEFINITIONS
+from app.tools.handlers.read_tools import (
+    READ_TOOL_HANDLERS,
+    bill_summary,
+    cashbook_summary,
+    customer_detailed_analytics,
+    expense_summary,
+    gst_summary,
+    invoice_detailed_analytics,
+    list_expenses,
+    list_invoices,
+    list_purchase_orders,
+    list_sales_orders,
+    list_staff,
+    search_supplier,
+    stock_items,
+    supplier_summary,
+)
+from app.tools.projection import (
+    TOOL_PROJECTORS,
+    project_bill_summary,
+    project_cashbook_summary,
+    project_customer_detailed_analytics,
+    project_expense_summary,
+    project_gst_summary,
+    project_invoice_detailed_analytics,
+    project_list_expenses,
+    project_list_invoices,
+    project_list_purchase_orders,
+    project_list_sales_orders,
+    project_list_staff,
+    project_search_supplier,
+    project_stock_items,
+    project_supplier_summary,
+)
+
+STORE_ID = "507f1f77bcf86cd799439011"
+PHASE2_TOOL_NAMES = {
+    "stock_items",
+    "list_invoices",
+    "expense_summary",
+    "list_expenses",
+    "cashbook_summary",
+    "search_supplier",
+    "supplier_summary",
+    "list_purchase_orders",
+    "bill_summary",
+    "gst_summary",
+    "list_sales_orders",
+    "list_staff",
+    "customer_detailed_analytics",
+    "invoice_detailed_analytics",
+}
+
+
+def _dummy_context(retailer: Any) -> ToolContext:
+    return ToolContext(
+        store_id=STORE_ID,
+        access_token="test-token",
+        retailer=retailer,
+        question="test question",
+    )
+
+
+def test_phase2_tool_definitions_registered() -> None:
+    defined_names = {t.name for t in READ_TOOL_DEFINITIONS}
+    for name in PHASE2_TOOL_NAMES:
+        assert name in defined_names
+        assert name in READ_TOOL_HANDLERS
+        assert name in TOOL_PROJECTORS
+
+    for tool in READ_TOOL_DEFINITIONS:
+        if tool.name in PHASE2_TOOL_NAMES:
+            assert tool.risk == ToolRisk.READ
+            assert tool.allows_parallel is True
+            assert "storeId" in tool.parameters["properties"]
+
+
+@pytest.mark.asyncio
+async def test_stock_items_handler_and_projection() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_stock_items.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "items": [
+                    {
+                        "id": f"item-{i}",
+                        "name": f"Product {i}",
+                        "sku": f"SKU-{i}",
+                        "quantity": 10 + i,
+                        "stockStatus": "IN_STOCK",
+                        "sellingPrice": 100 + i,
+                        "purchasePrice": 80 + i,
+                        "extraInternalField": "strip_me",
+                    }
+                    for i in range(50)
+                ]
+            }
+        },
+    )
+    ctx = _dummy_context(mock_retailer)
+    result = await stock_items({"storeId": STORE_ID}, ctx)
+
+    assert result.success is True
+    # Handler caps at 30 items
+    assert result.data["count"] == 30
+    assert len(result.data["items"]) == 30
+    assert result.data["coverage"] == "scanned 30 items"
+
+    projected = project_stock_items(result.data)
+    assert projected["count"] == 30
+    assert "extraInternalField" not in projected["items"][0]
+    assert projected["items"][0]["sku"] == "SKU-0"
+
+
+@pytest.mark.asyncio
+async def test_list_invoices_handler_and_projection() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.list_invoices.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "invoices": [
+                    {
+                        "id": f"inv-{i}",
+                        "invoiceNumber": f"INV-2025-{i}",
+                        "customer": {
+                            "id": "c1",
+                            "name": "Ramesh",
+                            "phone": "9876543210",
+                        },
+                        "invoiceDate": "2025-01-15",
+                        "grandTotal": 500.0,
+                        "paymentStatus": "PAID",
+                        "invoiceStatus": "RELEASED",
+                        "items": [{"name": "Item A"}],
+                        "secretDbField": "hidden",
+                    }
+                    for i in range(25)
+                ]
+            }
+        },
+    )
+    ctx = _dummy_context(mock_retailer)
+    result = await list_invoices({"storeId": STORE_ID, "limit": 20}, ctx)
+
+    assert result.success is True
+    assert result.data["count"] == 20
+    assert result.data["status"] == "RELEASED"
+
+    projected = project_list_invoices(result.data)
+    assert projected["count"] == 20
+    assert "secretDbField" not in projected["invoices"][0]
+    assert projected["invoices"][0]["invoiceNumber"] == "INV-2025-0"
+    assert projected["invoices"][0]["customer"]["name"] == "Ramesh"
+
+
+@pytest.mark.asyncio
+async def test_expense_summary_and_list_expenses() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_expense_analytics.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "totals": {
+                    "totalExpenses": 15,
+                    "totalAmount": 12500.0,
+                    "paidAmount": 10000.0,
+                    "pendingAmount": 2500.0,
+                    "unused": "skip",
+                },
+                "byCategory": [{"category": "Rent", "amount": 8000}],
+            }
+        },
+    )
+    mock_retailer.get_expenses.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "expenses": [
+                    {
+                        "id": "e1",
+                        "expenseNumber": "EXP-01",
+                        "title": "Shop Tea",
+                        "category": "Food",
+                        "amount": 250.0,
+                        "paymentMode": "CASH",
+                        "date": "2025-02-01",
+                        "status": "PAID",
+                    }
+                ]
+            }
+        },
+    )
+    ctx = _dummy_context(mock_retailer)
+    summary_res = await expense_summary({"storeId": STORE_ID}, ctx)
+    assert summary_res.success is True
+    assert summary_res.data["totals"]["totalAmount"] == 12500.0
+
+    projected_summary = project_expense_summary(summary_res.data)
+    assert "unused" not in projected_summary["totals"]
+
+    list_res = await list_expenses({"storeId": STORE_ID, "limit": 10}, ctx)
+    assert list_res.success is True
+    assert list_res.data["count"] == 1
+
+    projected_list = project_list_expenses(list_res.data)
+    assert projected_list["expenses"][0]["title"] == "Shop Tea"
+
+
+@pytest.mark.asyncio
+async def test_cashbook_summary_handler() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_cashbook_summary.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "openingBalance": 1000.0,
+                "closingBalance": 3500.0,
+                "totalCashIn": 4000.0,
+                "totalCashOut": 1500.0,
+                "netBalance": 2500.0,
+                "cashSales": 3000.0,
+                "dayStatus": "OPEN",
+            }
+        },
+    )
+    ctx = _dummy_context(mock_retailer)
+    result = await cashbook_summary({"storeId": STORE_ID}, ctx)
+    assert result.success is True
+    assert result.data["openingBalance"] == 1000.0
+
+    projected = project_cashbook_summary(result.data)
+    assert projected["closingBalance"] == 3500.0
+    assert projected["dayStatus"] == "OPEN"
+
+
+@pytest.mark.asyncio
+async def test_supplier_and_po_handlers() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_suppliers.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "suppliers": [
+                    {
+                        "id": "sup-1",
+                        "name": "Kishan Trader",
+                        "phone": "9812345678",
+                        "email": "kishan@example.com",
+                        "companyName": "Kishan Traders Pvt Ltd",
+                        "gstNumber": "07AAAAA0000A1Z5",
+                        "account": {"totalDue": 15000.0},
+                    }
+                ]
+            }
+        },
+    )
+    mock_retailer.get_supplier_analytics.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "counts": {
+                    "totalSuppliers": 12,
+                    "activeSuppliers": 10,
+                    "withDues": 4,
+                },
+                "amounts": {
+                    "totalPayable": 50000.0,
+                    "totalPaid": 35000.0,
+                    "totalDue": 15000.0,
+                },
+            }
+        },
+    )
+    mock_retailer.get_purchase_orders.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "purchaseOrders": [
+                    {
+                        "id": "po-1",
+                        "poNumber": "PO-2025-01",
+                        "supplier": {"id": "sup-1", "name": "Kishan Trader"},
+                        "poDate": "2025-01-10",
+                        "status": "APPROVED",
+                        "approvalStatus": "APPROVED",
+                        "totalAmount": 25000.0,
+                        "items": [{}, {}],
+                    }
+                ]
+            }
+        },
+    )
+    ctx = _dummy_context(mock_retailer)
+
+    s_res = await search_supplier({"storeId": STORE_ID, "query": "Kishan"}, ctx)
+    assert s_res.success is True
+    assert s_res.data["suppliers"][0]["totalDue"] == 15000.0
+
+    projected_s = project_search_supplier(s_res.data)
+    assert projected_s["suppliers"][0]["name"] == "Kishan Trader"
+
+    sum_res = await supplier_summary({"storeId": STORE_ID}, ctx)
+    assert sum_res.success is True
+    assert sum_res.data["counts"]["totalSuppliers"] == 12
+
+    projected_sum = project_supplier_summary(sum_res.data)
+    assert projected_sum["amounts"]["totalDue"] == 15000.0
+
+    po_res = await list_purchase_orders({"storeId": STORE_ID}, ctx)
+    assert po_res.success is True
+    assert po_res.data["purchaseOrders"][0]["poNumber"] == "PO-2025-01"
+
+    projected_po = project_list_purchase_orders(po_res.data)
+    assert projected_po["purchaseOrders"][0]["supplier"]["name"] == "Kishan Trader"
+
+
+@pytest.mark.asyncio
+async def test_bill_summary_and_gst_summary() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_bill_analytics.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "counts": {
+                    "totalBills": 40,
+                    "paidBills": 30,
+                    "pendingBills": 10,
+                    "overdueBills": 2,
+                },
+                "amounts": {
+                    "totalPayable": 80000.0,
+                    "totalPaid": 60000.0,
+                    "totalDue": 20000.0,
+                    "totalGst": 9600.0,
+                },
+            }
+        },
+    )
+    mock_retailer.get_gst_summary.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "period": "2025-01",
+                "totalTaxableAmount": 100000.0,
+                "totalTax": 18000.0,
+                "cgst": 9000.0,
+                "sgst": 9000.0,
+                "igst": 0.0,
+                "invoiceCount": 45,
+            }
+        },
+    )
+    mock_retailer.get_gst_health_score.return_value = RetailerResponse(
+        status_code=200,
+        body={"data": {"healthScore": 95}},
+    )
+    ctx = _dummy_context(mock_retailer)
+
+    bill_res = await bill_summary({"storeId": STORE_ID}, ctx)
+    assert bill_res.success is True
+    assert bill_res.data["counts"]["overdueBills"] == 2
+
+    projected_bills = project_bill_summary(bill_res.data)
+    assert projected_bills["amounts"]["totalDue"] == 20000.0
+
+    gst_args = {"storeId": STORE_ID, "month": "1", "year": "2025"}
+    gst_res = await gst_summary(gst_args, ctx)
+    assert gst_res.success is True
+    assert gst_res.data["totalTax"] == 18000.0
+    assert gst_res.data["healthScore"] == 95
+
+    projected_gst = project_gst_summary(gst_res.data)
+    assert projected_gst["healthScore"] == 95
+    assert projected_gst["period"] == "2025-01"
+
+
+@pytest.mark.asyncio
+async def test_sales_orders_and_staff_handlers() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_sales_orders.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "orders": [
+                    {
+                        "id": "so-1",
+                        "orderNumber": "SO-001",
+                        "customer": {
+                            "id": "c2",
+                            "name": "Amit",
+                            "phone": "9811111111",
+                        },
+                        "orderDate": "2025-01-20",
+                        "status": "CONFIRMED",
+                        "paymentStatus": "PAID",
+                        "totalAmount": 1200.0,
+                    }
+                ]
+            }
+        },
+    )
+    mock_retailer.get_staff.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "staff": [
+                    {
+                        "id": "st-1",
+                        "name": "Vikas Sharma",
+                        "phone": "9998887770",
+                        "role": "BILLING_OPERATOR",
+                        "status": "ACTIVE",
+                    }
+                ]
+            }
+        },
+    )
+    ctx = _dummy_context(mock_retailer)
+
+    so_res = await list_sales_orders({"storeId": STORE_ID}, ctx)
+    assert so_res.success is True
+    assert so_res.data["salesOrders"][0]["orderNumber"] == "SO-001"
+
+    projected_so = project_list_sales_orders(so_res.data)
+    assert projected_so["salesOrders"][0]["customer"]["name"] == "Amit"
+
+    staff_res = await list_staff({"storeId": STORE_ID}, ctx)
+    assert staff_res.success is True
+    assert staff_res.data["staff"][0]["name"] == "Vikas Sharma"
+
+    projected_staff = project_list_staff(staff_res.data)
+    assert projected_staff["staff"][0]["role"] == "BILLING_OPERATOR"
+
+
+@pytest.mark.asyncio
+async def test_detailed_analytics_handlers() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_customer_detailed_analytics.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "summary": {"totalCustomers": 150},
+                "growth": {"growthRate": 12.5},
+            }
+        },
+    )
+    mock_retailer.get_invoice_detailed_analytics.return_value = RetailerResponse(
+        status_code=200,
+        body={"data": {"summary": {"totalRevenue": 250000.0}, "trends": {}}},
+    )
+    ctx = _dummy_context(mock_retailer)
+
+    cust_det = await customer_detailed_analytics(
+        {"storeId": STORE_ID, "periodDays": 30}, ctx
+    )
+    assert cust_det.success is True
+    assert cust_det.data["growth"]["growthRate"] == 12.5
+
+    inv_det = await invoice_detailed_analytics(
+        {"storeId": STORE_ID, "periodDays": 15}, ctx
+    )
+    assert inv_det.success is True
+    assert inv_det.data["summary"]["totalRevenue"] == 250000.0
+
+    proj_cust = project_customer_detailed_analytics(cust_det.data)
+    assert proj_cust["summary"]["totalCustomers"] == 150
+
+    proj_inv = project_invoice_detailed_analytics(inv_det.data)
+    assert proj_inv["summary"]["totalRevenue"] == 250000.0
+
+
+@pytest.mark.asyncio
+async def test_failure_handling_in_handlers() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_stock_items.side_effect = RetailerHttpError(
+        status_code=500, code="RETAILER_ERROR", message="Internal DB failure"
+    )
+    ctx = _dummy_context(mock_retailer)
+    result = await stock_items({"storeId": STORE_ID}, ctx)
+    assert result.success is False
+    assert result.data["code"] == "RETAILER_ERROR"
+    assert result.data["message"] == "Internal DB failure"
+
+
+def test_intent_routing_for_phase2_queries() -> None:
+    available = frozenset(t.name for t in READ_TOOL_DEFINITIONS)
+
+    # Stock items
+    intent = resolve_turn_intent("stock items dikhao", available=available)
+    assert "stock_items" in intent.tool_names
+
+    # Invoices
+    intent = resolve_turn_intent("purane bill dikhao", available=available)
+    assert "list_invoices" in intent.tool_names
+
+    # Expense
+    intent = resolve_turn_intent("aaj ka kharcha kitna hua", available=available)
+    assert "expense_summary" in intent.tool_names
+    assert "list_expenses" in intent.tool_names
+
+    # Cashbook
+    intent = resolve_turn_intent("galle ka hisaab dikhao", available=available)
+    assert "cashbook_summary" in intent.tool_names
+
+    # Supplier
+    intent = resolve_turn_intent("suppliers list", available=available)
+    assert "search_supplier" in intent.tool_names
+
+    # Purchase Orders
+    intent = resolve_turn_intent("pending purchase orders dikhao", available=available)
+    assert "list_purchase_orders" in intent.tool_names
+
+    # Bills
+    intent = resolve_turn_intent("kitne bill baki hain", available=available)
+    assert "bill_summary" in intent.tool_names
+
+    # GST
+    intent = resolve_turn_intent("gst report dikhao", available=available)
+    assert "gst_summary" in intent.tool_names
+
+    # Sales Orders
+    intent = resolve_turn_intent("sales orders dikhao", available=available)
+    assert "list_sales_orders" in intent.tool_names
+
+    # Staff
+    intent = resolve_turn_intent("kitne staff kaam karte hain", available=available)
+    assert "list_staff" in intent.tool_names
+
+
+def test_chat_system_prompt_includes_store_reads_rule() -> None:
+    phase2_tools = [
+        t for t in READ_TOOL_DEFINITIONS if t.name in {"stock_items", "expense_summary"}
+    ]
+    prompt = build_chat_system_prompt(
+        language="hi",
+        store_id=STORE_ID,
+        tools=phase2_tools,
+        routing="tools",
+    )
+    assert "Store data (invoices, stock rows, expenses" in prompt

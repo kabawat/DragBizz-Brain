@@ -125,6 +125,13 @@ _HOWTO_LAYOUT = (
     "only (Alt+letter navigation; never invent shortcuts).\n"
 )
 
+_STORE_READS_RULE = (
+    "- Store data (invoices, stock rows, expenses, cashbook, suppliers, "
+    "purchase orders, bills, GST, sales orders, staff): Quote exact numbers "
+    "from tool results only. Never invent amounts, stock counts, dates, or "
+    "names. If list is capped or empty, state so concisely without guessing.\n"
+)
+
 
 def build_chat_system_prompt(
     *,
@@ -214,6 +221,21 @@ def build_chat_system_prompt(
             parts.append(_CUSTOMER_LIVE)
         if "customer_dossier" in tool_names:
             parts.append(_DOSSIER_LIVE)
+        if tool_names & {
+            "stock_items",
+            "list_invoices",
+            "expense_summary",
+            "list_expenses",
+            "cashbook_summary",
+            "search_supplier",
+            "supplier_summary",
+            "list_purchase_orders",
+            "bill_summary",
+            "gst_summary",
+            "list_sales_orders",
+            "list_staff",
+        }:
+            parts.append(_STORE_READS_RULE)
     else:
         parts.append(
             "- Never invent live store numbers (sales, stock, prices, "

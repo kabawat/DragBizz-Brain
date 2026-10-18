@@ -44,23 +44,7 @@ OTHER_STORE = "d" * 24
 CUSTOMER = "b" * 24
 SESSION = "sess-1"
 
-_READ = frozenset(
-    {
-        "search_product",
-        "today_sale",
-        "stock_summary",
-        "product_summary",
-        "search_customer",
-        "payment_history",
-        "list_stores",
-        "customer_summary",
-        "get_customer_ledger",
-        "list_customer_accounts",
-        "get_customer_payment",
-        "list_payment_reminders",
-        "invoice_summary",
-    }
-)
+_READ = frozenset(tool.name for tool in READ_TOOL_DEFINITIONS)
 _WRITES = frozenset(
     {
         "create_customer",
@@ -938,7 +922,10 @@ async def _create_customer_email_only() -> None:
         messages=[
             ChatMessage(
                 role="user",
-                content="Create a customer named Rohit Sharma with email rohit.sharma@example.com",
+                content=(
+                    "Create a customer named Rohit Sharma with "
+                    "email rohit.sharma@example.com"
+                ),
             )
         ],
         tools=tools,
@@ -955,4 +942,5 @@ async def _create_customer_email_only() -> None:
     assert kwargs["email"] == "rohit.sharma@example.com"
     assert kwargs["phone"] is None
     assert outcome.all_write_results[0].success is True
-    assert outcome.all_write_results[0].data["openPath"] == f"/dashboard/customers/{CUSTOMER}"
+    expected_path = f"/dashboard/customers/{CUSTOMER}"
+    assert outcome.all_write_results[0].data["openPath"] == expected_path

@@ -341,6 +341,365 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "required": ["storeId"],
         },
     ),
+    ToolDefinition(
+        name="stock_items",
+        description=(
+            "Itemized inventory stock rows across products and variants "
+            "(name, SKU, stock quantity, stock status, purchase & selling prices). "
+            "Capped at 30 items."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "includeServices": {
+                    "type": "boolean",
+                    "description": "Include service items without physical stock",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="list_invoices",
+        description=(
+            "List recent invoices/bills with status, customer, date, and grand total. "
+            "Capped at 30 invoices."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Optional customer ObjectId filter",
+                },
+                "invoiceStatus": {
+                    "type": "string",
+                    "enum": ["RELEASED", "DRAFT", "CANCELLED"],
+                    "description": "Filter by status (default RELEASED)",
+                },
+                "paymentStatus": {
+                    "type": "string",
+                    "enum": ["PAID", "PARTIALLY_PAID", "UNPAID"],
+                    "description": "Filter by payment status",
+                },
+                "startDate": {
+                    "type": "string",
+                    "description": "Start date filter (YYYY-MM-DD)",
+                },
+                "endDate": {
+                    "type": "string",
+                    "description": "End date filter (YYYY-MM-DD)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 30,
+                    "description": "Max invoices to return (default 20, max 30)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="expense_summary",
+        description="Store expense summary totals and category breakdown.",
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"storeId": _STORE_ID_PROP},
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="list_expenses",
+        description=(
+            "List recent expenses with title, category, amount, payment mode, "
+            "and date. Capped at 20."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "category": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "description": "Filter by expense category",
+                },
+                "startDate": {
+                    "type": "string",
+                    "description": "Start date filter (YYYY-MM-DD)",
+                },
+                "endDate": {
+                    "type": "string",
+                    "description": "End date filter (YYYY-MM-DD)",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "Max expenses (default 20)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="cashbook_summary",
+        description=(
+            "Daily and periodic cashbook summary: cash in/out, opening/closing "
+            "balance, and day status."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "fromDate": {
+                    "type": "string",
+                    "description": "From date (YYYY-MM-DD)",
+                },
+                "toDate": {
+                    "type": "string",
+                    "description": "To date (YYYY-MM-DD)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="search_supplier",
+        description="Search suppliers/vendors by name, company, phone, or GST number.",
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "query": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Supplier name, phone, or company search text",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "Max suppliers (default 10)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="supplier_summary",
+        description=(
+            "Supplier analytics: total suppliers count and total payable/due amounts."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"storeId": _STORE_ID_PROP},
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="list_purchase_orders",
+        description=(
+            "List purchase orders (PO) with PO number, supplier, status, date, "
+            "and amount. Capped at 20."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "status": {
+                    "type": "string",
+                    "description": (
+                        "PO status filter (e.g. DRAFT, PENDING, APPROVED, "
+                        "RECEIVED, CANCELLED)"
+                    ),
+                },
+                "supplierId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Optional supplier ObjectId filter",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "Max purchase orders (default 20)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="bill_summary",
+        description=(
+            "Supplier purchase bill analytics: total bills, paid bills, "
+            "pending/overdue bills, and payable/paid/due amounts."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"storeId": _STORE_ID_PROP},
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="gst_summary",
+        description=(
+            "GST summary (taxable value, IGST, CGST, SGST, total tax) and "
+            "GST compliance health score."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "month": {
+                    "type": "string",
+                    "description": "Month number (1-12) or name",
+                },
+                "quarter": {
+                    "type": "string",
+                    "description": "Quarter (Q1, Q2, Q3, Q4)",
+                },
+                "year": {
+                    "type": "string",
+                    "description": "Financial/calendar year (e.g. 2025)",
+                },
+                "period": {
+                    "type": "string",
+                    "description": "Period identifier (e.g. 2025-03, Q4-2025)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="list_sales_orders",
+        description=(
+            "List customer sales orders with order number, customer, status, "
+            "payment status, and total amount. Capped at 20."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "status": {
+                    "type": "string",
+                    "description": (
+                        "Order status (PENDING, CONFIRMED, SHIPPED, "
+                        "DELIVERED, CANCELLED)"
+                    ),
+                },
+                "customerId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Optional customer ObjectId filter",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "Max orders (default 20)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="list_staff",
+        description=(
+            "List store staff and team members with name, phone, role, "
+            "and active status."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"storeId": _STORE_ID_PROP},
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="customer_detailed_analytics",
+        description=(
+            "Detailed periodic customer analytics (growth, acquisition, order "
+            "frequency) over 7, 15, or 30 days."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "periodDays": {
+                    "type": "integer",
+                    "enum": [7, 15, 30],
+                    "description": "Lookback period in days (7, 15, 30)",
+                },
+                "analyticsType": {
+                    "type": "string",
+                    "enum": ["overview", "growth", "cohort"],
+                    "description": "Analytics slice (default overview)",
+                },
+            },
+            "required": ["storeId", "periodDays"],
+        },
+    ),
+    ToolDefinition(
+        name="invoice_detailed_analytics",
+        description=(
+            "Detailed periodic invoice/sales analytics (revenue trend, profit, "
+            "sales volume) over 1, 7, 15, or 30 days."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "periodDays": {
+                    "type": "integer",
+                    "enum": [1, 7, 15, 30],
+                    "description": "Lookback period in days (1, 7, 15, 30)",
+                },
+            },
+            "required": ["storeId", "periodDays"],
+        },
+    ),
 )
 
 _ADDRESS_FIELDS = {

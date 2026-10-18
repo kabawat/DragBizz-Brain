@@ -1023,6 +1023,697 @@ async def list_stores(
     )
 
 
+async def stock_items(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_stock_items(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            include_services=bool(arguments.get("includeServices")),
+        )
+    except RetailerHttpError as exc:
+        return _failure("stock_items", exc)
+
+    raw_items = response.body.get("data")
+    if isinstance(raw_items, dict) and "items" in raw_items:
+        raw_items = raw_items["items"]
+    if not isinstance(raw_items, list):
+        raw_items = []
+
+    items = []
+    for item in raw_items[:30]:
+        if not isinstance(item, dict):
+            continue
+        items.append(
+            {
+                "id": str(item.get("id") or item.get("_id") or ""),
+                "name": item.get("name") or item.get("productName"),
+                "sku": item.get("sku"),
+                "stock": (
+                    item.get("quantity")
+                    or item.get("availableQuantity")
+                    or item.get("stock")
+                ),
+                "status": item.get("stockStatus") or item.get("status"),
+                "sellingPrice": item.get("sellingPrice") or item.get("price"),
+                "purchasePrice": (
+                    item.get("purchasePrice") or item.get("costPrice")
+                ),
+            }
+        )
+    return ToolResult(
+        tool="stock_items",
+        success=True,
+        data={
+            "count": len(items),
+            "items": items,
+            "coverage": f"scanned {len(items)} items",
+        },
+    )
+
+
+async def list_invoices(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    limit = arguments.get("limit")
+    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 30 else 20
+    invoice_status = arguments.get("invoiceStatus")
+    payment_status = arguments.get("paymentStatus")
+    customer_id = arguments.get("customerId")
+    start_date = arguments.get("startDate")
+    end_date = arguments.get("endDate")
+
+    try:
+        response = await context.retailer.list_invoices(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            limit=limit_val,
+            invoice_status=(
+                invoice_status
+                if isinstance(invoice_status, str)
+                else "RELEASED"
+            ),
+            payment_status=(
+                payment_status if isinstance(payment_status, str) else None
+            ),
+            customer_id=(
+                customer_id
+                if isinstance(customer_id, str) and customer_id.strip()
+                else None
+            ),
+            start_date=start_date if isinstance(start_date, str) else None,
+            end_date=end_date if isinstance(end_date, str) else None,
+            include_items=False,
+        )
+    except RetailerHttpError as exc:
+        return _failure("list_invoices", exc)
+
+    payload = response.body.get("data")
+    if isinstance(payload, dict) and "invoices" in payload:
+        raw_invoices = payload["invoices"]
+    elif isinstance(payload, list):
+        raw_invoices = payload
+    else:
+        raw_invoices = []
+
+    invoices = []
+    for inv in raw_invoices[:limit_val]:
+        if not isinstance(inv, dict):
+            continue
+        cust = inv.get("customer")
+        cust_info = None
+        if isinstance(cust, dict):
+            cust_info = {
+                "id": str(cust.get("id") or cust.get("_id") or ""),
+                "name": cust.get("name"),
+                "phone": cust.get("phone"),
+            }
+        elif isinstance(cust, str):
+            cust_info = {"id": cust}
+
+        invoices.append(
+            {
+                "id": str(inv.get("id") or inv.get("_id") or ""),
+                "invoiceNumber": inv.get("invoiceNumber"),
+                "customer": cust_info,
+                "invoiceDate": inv.get("invoiceDate") or inv.get("createdAt"),
+                "totalAmount": (
+                    inv.get("grandTotal")
+                    or inv.get("totalAmount")
+                    or inv.get("total")
+                ),
+                "paymentStatus": inv.get("paymentStatus"),
+                "invoiceStatus": inv.get("invoiceStatus") or inv.get("status"),
+                "itemCount": (
+                    len(inv.get("items", []))
+                    if isinstance(inv.get("items"), list)
+                    else inv.get("totalItems")
+                ),
+            }
+        )
+
+    return ToolResult(
+        tool="list_invoices",
+        success=True,
+        data={
+            "count": len(invoices),
+            "invoices": invoices,
+            "status": invoice_status or "RELEASED",
+        },
+    )
+
+
+async def expense_summary(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_expense_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+    except RetailerHttpError as exc:
+        return _failure("expense_summary", exc)
+
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    by_category_raw = (
+        payload.get("byCategory") or payload.get("categories") or []
+    )
+    by_category = (
+        by_category_raw[:10] if isinstance(by_category_raw, list) else []
+    )
+
+    return ToolResult(
+        tool="expense_summary",
+        success=True,
+        data={
+            "totals": {
+                k: totals[k]
+                for k in (
+                    "totalExpenses",
+                    "totalAmount",
+                    "paidAmount",
+                    "pendingAmount",
+                )
+                if k in totals
+            },
+            "byCategory": by_category,
+        },
+    )
+
+
+async def list_expenses(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    limit = arguments.get("limit")
+    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 20 else 20
+    category = arguments.get("category")
+    start_date = arguments.get("startDate")
+    end_date = arguments.get("endDate")
+
+    try:
+        response = await context.retailer.get_expenses(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            limit=limit_val,
+            category=category if isinstance(category, str) else None,
+            start_date=start_date if isinstance(start_date, str) else None,
+            end_date=end_date if isinstance(end_date, str) else None,
+        )
+    except RetailerHttpError as exc:
+        return _failure("list_expenses", exc)
+
+    payload = response.body.get("data")
+    if isinstance(payload, dict) and "expenses" in payload:
+        raw_items = payload["expenses"]
+    elif isinstance(payload, list):
+        raw_items = payload
+    else:
+        raw_items = []
+
+    expenses = []
+    for exp in raw_items[:limit_val]:
+        if not isinstance(exp, dict):
+            continue
+        expenses.append(
+            {
+                "id": str(exp.get("id") or exp.get("_id") or ""),
+                "expenseNumber": exp.get("expenseNumber"),
+                "title": (
+                    exp.get("title")
+                    or exp.get("notes")
+                    or exp.get("description")
+                ),
+                "category": exp.get("category"),
+                "amount": exp.get("amount"),
+                "paymentMode": exp.get("paymentMode"),
+                "date": exp.get("date") or exp.get("createdAt"),
+                "status": exp.get("status"),
+            }
+        )
+    return ToolResult(
+        tool="list_expenses",
+        success=True,
+        data={"count": len(expenses), "expenses": expenses},
+    )
+
+
+async def cashbook_summary(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    from_date = arguments.get("fromDate")
+    to_date = arguments.get("toDate")
+    try:
+        response = await context.retailer.get_cashbook_summary(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            from_date=from_date if isinstance(from_date, str) else None,
+            to_date=to_date if isinstance(to_date, str) else None,
+        )
+    except RetailerHttpError as exc:
+        return _failure("cashbook_summary", exc)
+
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    summary = {
+        "openingBalance": payload.get("openingBalance"),
+        "closingBalance": payload.get("closingBalance"),
+        "totalCashIn": payload.get("totalCashIn") or payload.get("cashIn"),
+        "totalCashOut": payload.get("totalCashOut") or payload.get("cashOut"),
+        "netBalance": (
+            payload.get("netBalance") or payload.get("currentBalance")
+        ),
+        "cashSales": payload.get("cashSales"),
+        "dayStatus": payload.get("dayStatus") or payload.get("status"),
+    }
+    return ToolResult(
+        tool="cashbook_summary",
+        success=True,
+        data={k: v for k, v in summary.items() if v is not None},
+    )
+
+
+async def search_supplier(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    query = arguments.get("query", "").strip()
+    limit = arguments.get("limit")
+    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 20 else 10
+
+    try:
+        response = await context.retailer.get_suppliers(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            query=query,
+            limit=limit_val,
+            include_account=True,
+        )
+    except RetailerHttpError as exc:
+        return _failure("search_supplier", exc)
+
+    payload = response.body.get("data")
+    if isinstance(payload, dict) and "suppliers" in payload:
+        raw_items = payload["suppliers"]
+    elif isinstance(payload, list):
+        raw_items = payload
+    else:
+        raw_items = []
+
+    suppliers = []
+    for s in raw_items[:limit_val]:
+        if not isinstance(s, dict):
+            continue
+        acc = s.get("account") if isinstance(s.get("account"), dict) else {}
+        suppliers.append(
+            {
+                "id": str(s.get("id") or s.get("_id") or ""),
+                "name": s.get("name"),
+                "phone": s.get("phone"),
+                "email": s.get("email"),
+                "companyName": s.get("companyName") or s.get("company"),
+                "gstNumber": s.get("gstNumber") or s.get("gstin"),
+                "totalDue": acc.get("totalDue") or s.get("totalDue") or 0.0,
+            }
+        )
+    return ToolResult(
+        tool="search_supplier",
+        success=True,
+        data={"count": len(suppliers), "suppliers": suppliers},
+    )
+
+
+async def supplier_summary(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_supplier_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+    except RetailerHttpError as exc:
+        return _failure("supplier_summary", exc)
+
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    counts = payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
+    amounts = payload.get("amounts") if isinstance(payload.get("amounts"), dict) else {}
+
+    return ToolResult(
+        tool="supplier_summary",
+        success=True,
+        data={
+            "counts": {
+                k: counts[k]
+                for k in ("totalSuppliers", "activeSuppliers", "withDues")
+                if k in counts
+            },
+            "amounts": {
+                k: amounts[k]
+                for k in ("totalPayable", "totalPaid", "totalDue")
+                if k in amounts
+            },
+        },
+    )
+
+
+async def list_purchase_orders(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    limit = arguments.get("limit")
+    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 20 else 20
+    status = arguments.get("status")
+    supplier_id = arguments.get("supplierId")
+
+    try:
+        response = await context.retailer.get_purchase_orders(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            limit=limit_val,
+            status=status if isinstance(status, str) else None,
+            supplier_id=(
+                supplier_id
+                if isinstance(supplier_id, str) and supplier_id.strip()
+                else None
+            ),
+        )
+    except RetailerHttpError as exc:
+        return _failure("list_purchase_orders", exc)
+
+    payload = response.body.get("data")
+    if isinstance(payload, dict) and "purchaseOrders" in payload:
+        raw_items = payload["purchaseOrders"]
+    elif isinstance(payload, list):
+        raw_items = payload
+    else:
+        raw_items = []
+
+    pos = []
+    for po in raw_items[:limit_val]:
+        if not isinstance(po, dict):
+            continue
+        supp = po.get("supplier")
+        supp_info = None
+        if isinstance(supp, dict):
+            supp_info = {
+                "id": str(supp.get("id") or supp.get("_id") or ""),
+                "name": supp.get("name"),
+            }
+        elif isinstance(supp, str):
+            supp_info = {"id": supp}
+
+        pos.append(
+            {
+                "id": str(po.get("id") or po.get("_id") or ""),
+                "poNumber": po.get("poNumber"),
+                "supplier": supp_info,
+                "poDate": po.get("poDate") or po.get("createdAt"),
+                "status": po.get("status"),
+                "approvalStatus": po.get("approvalStatus"),
+                "totalAmount": po.get("totalAmount") or po.get("grandTotal"),
+                "itemCount": (
+                    len(po.get("items", []))
+                    if isinstance(po.get("items"), list)
+                    else 0
+                ),
+            }
+        )
+
+    return ToolResult(
+        tool="list_purchase_orders",
+        success=True,
+        data={"count": len(pos), "purchaseOrders": pos},
+    )
+
+
+async def bill_summary(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_bill_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+    except RetailerHttpError as exc:
+        return _failure("bill_summary", exc)
+
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    counts = payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
+    amounts = payload.get("amounts") if isinstance(payload.get("amounts"), dict) else {}
+
+    return ToolResult(
+        tool="bill_summary",
+        success=True,
+        data={
+            "counts": {
+                k: counts[k]
+                for k in (
+                    "totalBills",
+                    "paidBills",
+                    "pendingBills",
+                    "overdueBills",
+                )
+                if k in counts
+            },
+            "amounts": {
+                k: amounts[k]
+                for k in ("totalPayable", "totalPaid", "totalDue", "totalGst")
+                if k in amounts
+            },
+        },
+    )
+
+
+async def gst_summary(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    month = arguments.get("month")
+    quarter = arguments.get("quarter")
+    year = arguments.get("year")
+    period = arguments.get("period")
+
+    try:
+        summary_res = await context.retailer.get_gst_summary(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            month=month if isinstance(month, str) else None,
+            quarter=quarter if isinstance(quarter, str) else None,
+            year=year if isinstance(year, str) else None,
+            period=period if isinstance(period, str) else None,
+        )
+    except RetailerHttpError as exc:
+        return _failure("gst_summary", exc)
+
+    payload = (
+        summary_res.body.get("data")
+        if isinstance(summary_res.body, dict)
+        else {}
+    )
+    if not isinstance(payload, dict):
+        payload = {}
+
+    health_score = None
+    try:
+        health_res = await context.retailer.get_gst_health_score(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            month=month if isinstance(month, str) else None,
+            quarter=quarter if isinstance(quarter, str) else None,
+            year=year if isinstance(year, str) else None,
+        )
+        h_data = health_res.body.get("data")
+        if isinstance(h_data, dict):
+            health_score = h_data.get("healthScore") or h_data.get("score")
+    except Exception:
+        health_score = None
+
+    data = {
+        "period": payload.get("period"),
+        "totalTaxableAmount": (
+            payload.get("totalTaxableAmount") or payload.get("taxableAmount")
+        ),
+        "totalTax": payload.get("totalTax") or payload.get("taxAmount"),
+        "cgst": payload.get("cgst"),
+        "sgst": payload.get("sgst"),
+        "igst": payload.get("igst"),
+        "invoiceCount": (
+            payload.get("invoiceCount") or payload.get("totalInvoices")
+        ),
+    }
+    if health_score is not None:
+        data["healthScore"] = health_score
+
+    return ToolResult(
+        tool="gst_summary",
+        success=True,
+        data={k: v for k, v in data.items() if v is not None},
+    )
+
+
+async def list_sales_orders(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    limit = arguments.get("limit")
+    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 20 else 20
+    status = arguments.get("status")
+    customer_id = arguments.get("customerId")
+
+    try:
+        response = await context.retailer.get_sales_orders(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            limit=limit_val,
+            status=status if isinstance(status, str) else None,
+            customer_id=(
+                customer_id
+                if isinstance(customer_id, str) and customer_id.strip()
+                else None
+            ),
+        )
+    except RetailerHttpError as exc:
+        return _failure("list_sales_orders", exc)
+
+    payload = response.body.get("data")
+    if isinstance(payload, dict) and "orders" in payload:
+        raw_items = payload["orders"]
+    elif isinstance(payload, list):
+        raw_items = payload
+    else:
+        raw_items = []
+
+    orders = []
+    for order in raw_items[:limit_val]:
+        if not isinstance(order, dict):
+            continue
+        cust = order.get("customer")
+        cust_info = None
+        if isinstance(cust, dict):
+            cust_info = {
+                "id": str(cust.get("id") or cust.get("_id") or ""),
+                "name": cust.get("name"),
+                "phone": cust.get("phone"),
+            }
+        elif isinstance(cust, str):
+            cust_info = {"id": cust}
+
+        orders.append(
+            {
+                "id": str(order.get("id") or order.get("_id") or ""),
+                "orderNumber": (
+                    order.get("orderNumber") or order.get("publicId")
+                ),
+                "customer": cust_info,
+                "orderDate": order.get("orderDate") or order.get("createdAt"),
+                "status": order.get("status"),
+                "paymentStatus": order.get("paymentStatus"),
+                "totalAmount": order.get("totalAmount"),
+            }
+        )
+
+    return ToolResult(
+        tool="list_sales_orders",
+        success=True,
+        data={"count": len(orders), "salesOrders": orders},
+    )
+
+
+async def list_staff(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_staff(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+    except RetailerHttpError as exc:
+        return _failure("list_staff", exc)
+
+    payload = response.body.get("data")
+    if isinstance(payload, dict) and "staff" in payload:
+        raw_items = payload["staff"]
+    elif isinstance(payload, list):
+        raw_items = payload
+    else:
+        raw_items = []
+
+    staff_members = []
+    for m in raw_items[:20]:
+        if not isinstance(m, dict):
+            continue
+        user_info = m.get("user") if isinstance(m.get("user"), dict) else {}
+        name = m.get("name") or user_info.get("name")
+        phone = m.get("phone") or user_info.get("phone")
+        staff_members.append(
+            {
+                "id": str(m.get("id") or m.get("_id") or ""),
+                "name": name,
+                "phone": phone,
+                "role": m.get("role") or m.get("roleName"),
+                "status": m.get("status") or "ACTIVE",
+            }
+        )
+
+    return ToolResult(
+        tool="list_staff",
+        success=True,
+        data={"count": len(staff_members), "staff": staff_members},
+    )
+
+
+async def customer_detailed_analytics(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    period_days = arguments.get("periodDays", 30)
+    analytics_type = arguments.get("analyticsType", "overview")
+    try:
+        response = await context.retailer.get_customer_detailed_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            period_days=period_days,
+            analytics_type=analytics_type,
+        )
+    except RetailerHttpError as exc:
+        return _failure("customer_detailed_analytics", exc)
+
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    return ToolResult(
+        tool="customer_detailed_analytics",
+        success=True,
+        data=payload if isinstance(payload, dict) else {},
+    )
+
+
+async def invoice_detailed_analytics(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    period_days = arguments.get("periodDays", 30)
+    try:
+        response = await context.retailer.get_invoice_detailed_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            period_days=period_days,
+        )
+    except RetailerHttpError as exc:
+        return _failure("invoice_detailed_analytics", exc)
+
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
+    return ToolResult(
+        tool="invoice_detailed_analytics",
+        success=True,
+        data=payload if isinstance(payload, dict) else {},
+    )
+
+
 def _failure(tool: str, exc: RetailerHttpError) -> ToolResult:
     return ToolResult(
         tool=tool,
@@ -1047,4 +1738,18 @@ READ_TOOL_HANDLERS = {
     "get_customer_payment": get_customer_payment,
     "list_payment_reminders": list_payment_reminders,
     "invoice_summary": invoice_summary,
+    "stock_items": stock_items,
+    "list_invoices": list_invoices,
+    "expense_summary": expense_summary,
+    "list_expenses": list_expenses,
+    "cashbook_summary": cashbook_summary,
+    "search_supplier": search_supplier,
+    "supplier_summary": supplier_summary,
+    "list_purchase_orders": list_purchase_orders,
+    "bill_summary": bill_summary,
+    "gst_summary": gst_summary,
+    "list_sales_orders": list_sales_orders,
+    "list_staff": list_staff,
+    "customer_detailed_analytics": customer_detailed_analytics,
+    "invoice_detailed_analytics": invoice_detailed_analytics,
 }

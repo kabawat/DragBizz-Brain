@@ -116,6 +116,24 @@ class RetailerClient:
             store_id=store_id,
         )
 
+    async def get_stock_items(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        include_services: bool = False,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {}
+        if include_services:
+            params["includeServices"] = "true"
+        return await self._request(
+            "GET",
+            "/analytics/stock/items",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
     async def get_product_analytics(
         self, *, access_token: str, store_id: str
     ) -> RetailerResponse:
@@ -417,14 +435,28 @@ class RetailerClient:
         access_token: str,
         store_id: str,
         limit: int = 100,
-        invoice_status: str = "RELEASED",
+        invoice_status: str | None = "RELEASED",
+        payment_status: str | None = None,
+        customer_id: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        include_items: bool = False,
         next_cursor: str | None = None,
     ) -> RetailerResponse:
         params: dict[str, Any] = {
             "limit": limit,
-            "includeItems": "false",
-            "invoiceStatus": invoice_status,
+            "includeItems": "true" if include_items else "false",
         }
+        if invoice_status:
+            params["invoiceStatus"] = invoice_status
+        if payment_status:
+            params["paymentStatus"] = payment_status
+        if customer_id:
+            params["customer"] = customer_id
+        if start_date:
+            params["startDate"] = start_date
+        if end_date:
+            params["endDate"] = end_date
         if next_cursor:
             params["nextCursor"] = next_cursor
         return await self._request(
@@ -668,6 +700,236 @@ class RetailerClient:
             access_token=access_token,
             store_id=store_id,
             json_body=body,
+        )
+
+    async def get_expense_analytics(
+        self, *, access_token: str, store_id: str
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/analytics/expenses",
+            access_token=access_token,
+            store_id=store_id,
+        )
+
+    async def get_expenses(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        limit: int = 20,
+        category: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        status: str | None = None,
+        cursor: str | None = None,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {"limit": limit}
+        if category:
+            params["category"] = category
+        if start_date:
+            params["startDate"] = start_date
+        if end_date:
+            params["endDate"] = end_date
+        if status:
+            params["status"] = status
+        if cursor:
+            params["cursor"] = cursor
+        return await self._request(
+            "GET",
+            "/expense",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
+    async def get_cashbook_summary(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {}
+        if from_date:
+            params["from"] = from_date
+        if to_date:
+            params["to"] = to_date
+        return await self._request(
+            "GET",
+            "/cashbook/summary",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
+    async def get_suppliers(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        query: str = "",
+        limit: int = 20,
+        include_account: bool = False,
+        next_cursor: str | None = None,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {"limit": limit}
+        if query.strip():
+            params["search"] = query.strip()
+        if include_account:
+            params["includeAccount"] = "true"
+        if next_cursor:
+            params["nextCursor"] = next_cursor
+        return await self._request(
+            "GET",
+            "/supplier",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
+    async def get_supplier_analytics(
+        self, *, access_token: str, store_id: str
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/analytics/suppliers",
+            access_token=access_token,
+            store_id=store_id,
+        )
+
+    async def get_purchase_orders(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        limit: int = 20,
+        status: str | None = None,
+        supplier_id: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        cursor: str | None = None,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {"limit": limit}
+        if status:
+            params["status"] = status
+        if supplier_id:
+            params["supplier"] = supplier_id
+        if start_date:
+            params["startDate"] = start_date
+        if end_date:
+            params["endDate"] = end_date
+        if cursor:
+            params["cursor"] = cursor
+        return await self._request(
+            "GET",
+            "/purchase-order",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
+    async def get_bill_analytics(
+        self, *, access_token: str, store_id: str
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/analytics/bills",
+            access_token=access_token,
+            store_id=store_id,
+        )
+
+    async def get_gst_summary(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        month: str | None = None,
+        quarter: str | None = None,
+        year: str | None = None,
+        period: str | None = None,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {}
+        if month:
+            params["month"] = month
+        if quarter:
+            params["quarter"] = quarter
+        if year:
+            params["year"] = year
+        if period:
+            params["period"] = period
+        return await self._request(
+            "GET",
+            "/gst/summary",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
+    async def get_gst_health_score(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        month: str | None = None,
+        quarter: str | None = None,
+        year: str | None = None,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {}
+        if month:
+            params["month"] = month
+        if quarter:
+            params["quarter"] = quarter
+        if year:
+            params["year"] = year
+        return await self._request(
+            "GET",
+            "/gst/health-score",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
+    async def get_sales_orders(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        limit: int = 20,
+        status: str | None = None,
+        customer_id: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        next_cursor: str | None = None,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {"limit": limit}
+        if status:
+            params["status"] = status
+        if customer_id:
+            params["customer"] = customer_id
+        if start_date:
+            params["startDate"] = start_date
+        if end_date:
+            params["endDate"] = end_date
+        if next_cursor:
+            params["nextCursor"] = next_cursor
+        return await self._request(
+            "GET",
+            "/sales-order",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
+    async def get_staff(
+        self, *, access_token: str, store_id: str
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/staff",
+            access_token=access_token,
+            store_id=store_id,
         )
 
     async def _request(

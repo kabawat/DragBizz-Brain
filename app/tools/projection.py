@@ -645,7 +645,9 @@ def project_merge_customers(data: dict[str, Any]) -> dict[str, Any]:
         projected = project_customer_write({"customer": customer})
         if projected:
             out["customer"] = projected.get("customer") or {
-                k: projected[k] for k in ("id", "name", "phone", "email") if k in projected
+                k: projected[k]
+                for k in ("id", "name", "phone", "email")
+                if k in projected
             }
     return out
 
@@ -749,7 +751,10 @@ def project_invoice_summary(data: dict[str, Any]) -> dict[str, Any]:
             out["amounts"] = picked
     today = data.get("today")
     if isinstance(today, dict):
-        picked = _pick(today, ("totalInvoices", "releasedInvoices", "revenue", "profit", "sales"))
+        picked = _pick(
+            today,
+            ("totalInvoices", "releasedInvoices", "revenue", "profit", "sales"),
+        )
         if picked:
             out["today"] = picked
     summary = data.get("summary")
@@ -1005,6 +1010,288 @@ def project_top_customers(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def project_stock_items(data: dict[str, Any]) -> dict[str, Any]:
+    raw_items = data.get("items")
+    if not isinstance(raw_items, list):
+        return {"count": 0, "items": []}
+    items: list[dict[str, Any]] = []
+    for item in raw_items[:30]:
+        if not isinstance(item, dict):
+            continue
+        picked = _pick(
+            item,
+            (
+                "id",
+                "name",
+                "sku",
+                "stock",
+                "status",
+                "sellingPrice",
+                "purchasePrice",
+            ),
+        )
+        if picked:
+            items.append(picked)
+    out: dict[str, Any] = {"count": len(items), "items": items}
+    if isinstance(data.get("coverage"), str):
+        out["coverage"] = data["coverage"]
+    return out
+
+
+def project_list_invoices(data: dict[str, Any]) -> dict[str, Any]:
+    raw = data.get("invoices")
+    if not isinstance(raw, list):
+        return {"count": 0, "invoices": []}
+    invoices: list[dict[str, Any]] = []
+    for inv in raw[:30]:
+        if not isinstance(inv, dict):
+            continue
+        entry: dict[str, Any] = {}
+        for key in (
+            "id",
+            "invoiceNumber",
+            "invoiceDate",
+            "totalAmount",
+            "paymentStatus",
+            "invoiceStatus",
+            "itemCount",
+        ):
+            if key in inv:
+                entry[key] = inv[key]
+        cust = inv.get("customer")
+        if isinstance(cust, dict):
+            entry["customer"] = _pick(cust, ("id", "name", "phone"))
+        invoices.append(entry)
+    out: dict[str, Any] = {"count": len(invoices), "invoices": invoices}
+    if isinstance(data.get("status"), str):
+        out["status"] = data["status"]
+    return out
+
+
+def project_expense_summary(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    totals = data.get("totals")
+    if isinstance(totals, dict):
+        out["totals"] = _pick(
+            totals,
+            ("totalExpenses", "totalAmount", "paidAmount", "pendingAmount"),
+        )
+    cats = data.get("byCategory")
+    if isinstance(cats, list):
+        clean_cats = []
+        for c in cats[:10]:
+            if isinstance(c, dict):
+                clean_cats.append(
+                    _pick(c, ("category", "amount", "count", "percentage"))
+                )
+        if clean_cats:
+            out["byCategory"] = clean_cats
+    return out
+
+
+def project_list_expenses(data: dict[str, Any]) -> dict[str, Any]:
+    raw = data.get("expenses")
+    if not isinstance(raw, list):
+        return {"count": 0, "expenses": []}
+    expenses: list[dict[str, Any]] = []
+    for exp in raw[:20]:
+        if not isinstance(exp, dict):
+            continue
+        picked = _pick(
+            exp,
+            (
+                "id",
+                "expenseNumber",
+                "title",
+                "category",
+                "amount",
+                "paymentMode",
+                "date",
+                "status",
+            ),
+        )
+        if picked:
+            expenses.append(picked)
+    return {"count": len(expenses), "expenses": expenses}
+
+
+def project_cashbook_summary(data: dict[str, Any]) -> dict[str, Any]:
+    return _pick(
+        data,
+        (
+            "openingBalance",
+            "closingBalance",
+            "totalCashIn",
+            "totalCashOut",
+            "netBalance",
+            "cashSales",
+            "dayStatus",
+        ),
+    )
+
+
+def project_search_supplier(data: dict[str, Any]) -> dict[str, Any]:
+    raw = data.get("suppliers")
+    if not isinstance(raw, list):
+        return {"count": 0, "suppliers": []}
+    suppliers: list[dict[str, Any]] = []
+    for s in raw[:20]:
+        if not isinstance(s, dict):
+            continue
+        picked = _pick(
+            s,
+            (
+                "id",
+                "name",
+                "phone",
+                "email",
+                "companyName",
+                "gstNumber",
+                "totalDue",
+            ),
+        )
+        if picked:
+            suppliers.append(picked)
+    return {"count": len(suppliers), "suppliers": suppliers}
+
+
+def project_supplier_summary(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    counts = data.get("counts")
+    if isinstance(counts, dict):
+        out["counts"] = _pick(
+            counts, ("totalSuppliers", "activeSuppliers", "withDues")
+        )
+    amounts = data.get("amounts")
+    if isinstance(amounts, dict):
+        out["amounts"] = _pick(
+            amounts, ("totalPayable", "totalPaid", "totalDue")
+        )
+    return out
+
+
+def project_list_purchase_orders(data: dict[str, Any]) -> dict[str, Any]:
+    raw = data.get("purchaseOrders")
+    if not isinstance(raw, list):
+        return {"count": 0, "purchaseOrders": []}
+    orders: list[dict[str, Any]] = []
+    for po in raw[:20]:
+        if not isinstance(po, dict):
+            continue
+        entry = _pick(
+            po,
+            (
+                "id",
+                "poNumber",
+                "poDate",
+                "status",
+                "approvalStatus",
+                "totalAmount",
+                "itemCount",
+            ),
+        )
+        supp = po.get("supplier")
+        if isinstance(supp, dict):
+            entry["supplier"] = _pick(supp, ("id", "name"))
+        orders.append(entry)
+    return {"count": len(orders), "purchaseOrders": orders}
+
+
+def project_bill_summary(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    counts = data.get("counts")
+    if isinstance(counts, dict):
+        out["counts"] = _pick(
+            counts,
+            ("totalBills", "paidBills", "pendingBills", "overdueBills"),
+        )
+    amounts = data.get("amounts")
+    if isinstance(amounts, dict):
+        out["amounts"] = _pick(
+            amounts,
+            ("totalPayable", "totalPaid", "totalDue", "totalGst"),
+        )
+    return out
+
+
+def project_gst_summary(data: dict[str, Any]) -> dict[str, Any]:
+    return _pick(
+        data,
+        (
+            "period",
+            "totalTaxableAmount",
+            "totalTax",
+            "cgst",
+            "sgst",
+            "igst",
+            "invoiceCount",
+            "healthScore",
+        ),
+    )
+
+
+def project_list_sales_orders(data: dict[str, Any]) -> dict[str, Any]:
+    raw = data.get("salesOrders")
+    if not isinstance(raw, list):
+        return {"count": 0, "salesOrders": []}
+    orders: list[dict[str, Any]] = []
+    for so in raw[:20]:
+        if not isinstance(so, dict):
+            continue
+        entry = _pick(
+            so,
+            (
+                "id",
+                "orderNumber",
+                "orderDate",
+                "status",
+                "paymentStatus",
+                "totalAmount",
+            ),
+        )
+        cust = so.get("customer")
+        if isinstance(cust, dict):
+            entry["customer"] = _pick(cust, ("id", "name", "phone"))
+        orders.append(entry)
+    return {"count": len(orders), "salesOrders": orders}
+
+
+def project_list_staff(data: dict[str, Any]) -> dict[str, Any]:
+    raw = data.get("staff")
+    if not isinstance(raw, list):
+        return {"count": 0, "staff": []}
+    staff_list: list[dict[str, Any]] = []
+    for m in raw[:20]:
+        if not isinstance(m, dict):
+            continue
+        picked = _pick(m, ("id", "name", "phone", "role", "status"))
+        if picked:
+            staff_list.append(picked)
+    return {"count": len(staff_list), "staff": staff_list}
+
+
+def project_customer_detailed_analytics(
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in ("summary", "today", "period", "growth", "newCustomers"):
+        val = data.get(key)
+        if isinstance(val, dict):
+            out[key] = val
+    return out or dict(data)
+
+
+def project_invoice_detailed_analytics(
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in ("summary", "today", "period", "trends", "hourly"):
+        val = data.get(key)
+        if isinstance(val, dict):
+            out[key] = val
+    return out or dict(data)
+
+
 TOOL_PROJECTORS: dict[str, _Projector] = {
     "payment_history": project_payment_history,
     "create_invoice_draft": project_invoice_result,
@@ -1035,4 +1322,18 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "get_customer_payment": project_payment_detail,
     "list_payment_reminders": project_payment_reminders,
     "invoice_summary": project_invoice_summary,
+    "stock_items": project_stock_items,
+    "list_invoices": project_list_invoices,
+    "expense_summary": project_expense_summary,
+    "list_expenses": project_list_expenses,
+    "cashbook_summary": project_cashbook_summary,
+    "search_supplier": project_search_supplier,
+    "supplier_summary": project_supplier_summary,
+    "list_purchase_orders": project_list_purchase_orders,
+    "bill_summary": project_bill_summary,
+    "gst_summary": project_gst_summary,
+    "list_sales_orders": project_list_sales_orders,
+    "list_staff": project_list_staff,
+    "customer_detailed_analytics": project_customer_detailed_analytics,
+    "invoice_detailed_analytics": project_invoice_detailed_analytics,
 }

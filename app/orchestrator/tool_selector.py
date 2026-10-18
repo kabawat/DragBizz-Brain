@@ -19,6 +19,8 @@ _READ_TOOLS = frozenset(
         "stock_summary",
         "product_summary",
         "search_customer",
+        "customer_dossier",
+        "top_customers",
         "payment_history",
         "list_stores",
         "customer_summary",
@@ -27,12 +29,29 @@ _READ_TOOLS = frozenset(
         "get_customer_payment",
         "list_payment_reminders",
         "invoice_summary",
+        "stock_items",
+        "list_invoices",
+        "expense_summary",
+        "list_expenses",
+        "cashbook_summary",
+        "search_supplier",
+        "supplier_summary",
+        "list_purchase_orders",
+        "bill_summary",
+        "gst_summary",
+        "list_sales_orders",
+        "list_staff",
+        "customer_detailed_analytics",
+        "invoice_detailed_analytics",
     }
 )
 
 _FAMILY_READS: dict[str, frozenset[str]] = {
     "sale": frozenset({"today_sale", "invoice_summary"}),
     "stock": frozenset({"stock_summary", "search_product"}),
+    "stock_items": frozenset(
+        {"stock_items", "stock_summary", "search_product"}
+    ),
     "product": frozenset({"search_product"}),
     "product_stats": frozenset({"product_summary"}),
     "payment": frozenset({"payment_history", "search_customer"}),
@@ -48,7 +67,26 @@ _FAMILY_READS: dict[str, frozenset[str]] = {
     ),
     "customer_stats": frozenset({"customer_summary"}),
     "invoice": frozenset({"search_customer", "search_product"}),
+    "invoices": frozenset({"list_invoices", "invoice_summary", "today_sale"}),
     "invoice_stats": frozenset({"invoice_summary", "today_sale"}),
+    "expense": frozenset({"expense_summary", "list_expenses"}),
+    "cashbook": frozenset({"cashbook_summary", "today_sale"}),
+    "supplier": frozenset(
+        {"search_supplier", "supplier_summary", "bill_summary"}
+    ),
+    "purchase_order": frozenset({"list_purchase_orders", "search_supplier"}),
+    "bill": frozenset({"bill_summary", "supplier_summary", "search_supplier"}),
+    "gst": frozenset({"gst_summary", "invoice_summary"}),
+    "sales_order": frozenset({"list_sales_orders", "search_customer"}),
+    "staff": frozenset({"list_staff"}),
+    "detailed_analytics": frozenset(
+        {
+            "customer_detailed_analytics",
+            "invoice_detailed_analytics",
+            "customer_summary",
+            "invoice_summary",
+        }
+    ),
     "store": frozenset({"list_stores"}),
 }
 
@@ -625,6 +663,162 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "profit",
         "munafa",
     ),
+    "stock_items": (
+        "stock items",
+        "stock item",
+        "item wise stock",
+        "inventory items",
+        "inventory rows",
+        "stock details",
+        "stock report",
+        "stock breakdown",
+        "har product ka stock",
+        "products ka stock",
+        "saare items ka stock",
+        "stock list",
+    ),
+    "invoices": (
+        "invoice list",
+        "invoices list",
+        "list invoice",
+        "list invoices",
+        "bill list",
+        "bills list",
+        "recent invoices",
+        "recent bills",
+        "purane bill",
+        "purane invoices",
+        "invoices dikhao",
+        "bills dikhao",
+        "saare bill",
+        "saare invoices",
+        "bill history",
+    ),
+    "expense": (
+        "expense",
+        "expenses",
+        "kharcha",
+        "kharche",
+        "kharch",
+        "expense list",
+        "expenses list",
+        "expense summary",
+        "kitna kharcha",
+        "kitne kharche",
+        "total kharcha",
+        "total expenses",
+        "kharche dikhao",
+        "aaj ka kharcha",
+        "pichle kharche",
+        "expense report",
+    ),
+    "cashbook": (
+        "cashbook",
+        "cash book",
+        "galla",
+        "galle",
+        "galle ka hisaab",
+        "galla hisab",
+        "cash in",
+        "cash out",
+        "cash balance",
+        "opening balance cash",
+        "closing balance cash",
+        "daily cash",
+        "aaj ka cash",
+    ),
+    "supplier": (
+        "supplier",
+        "suppliers",
+        "vendor",
+        "vendors",
+        "supplier summary",
+        "supplier list",
+        "suppliers list",
+        "supplier dhundo",
+        "supplier ka phone",
+        "supplier dues",
+        "supplier payable",
+        "supplier ka hisab",
+        "vendors list",
+    ),
+    "purchase_order": (
+        "purchase order",
+        "purchase orders",
+        "po list",
+        "pos list",
+        "po dikhao",
+        "list po",
+        "pending po",
+        "approved po",
+        "kharidari order",
+        "purchase order status",
+        "po status",
+    ),
+    "bill": (
+        "bill summary",
+        "bills summary",
+        "purchase bill",
+        "purchase bills",
+        "supplier bill",
+        "supplier bills",
+        "overdue bills",
+        "pending bills",
+        "kitne bill baki",
+        "bill status",
+    ),
+    "gst": (
+        "gst summary",
+        "gst report",
+        "gst return",
+        "gst tax",
+        "gst health",
+        "tax summary",
+        "tax report",
+        "sales gst",
+        "purchase gst",
+        "input tax",
+        "output tax",
+        "cgst",
+        "sgst",
+        "igst",
+        "gst score",
+    ),
+    "sales_order": (
+        "sales order",
+        "sales orders",
+        "so list",
+        "sos list",
+        "sales order list",
+        "sales order status",
+        "order list",
+        "orders list",
+        "customer orders",
+        "orders dikhao",
+    ),
+    "staff": (
+        "staff",
+        "staff list",
+        "staff members",
+        "employees",
+        "employee",
+        "karamchari",
+        "kaam karne wale",
+        "team members",
+        "kitne staff",
+        "kaun kaun kaam karta",
+    ),
+    "detailed_analytics": (
+        "detailed analytics",
+        "growth analytics",
+        "customer growth",
+        "sales trend",
+        "cohort",
+        "detailed report",
+        "30 din ka trend",
+        "15 din ka trend",
+        "7 din ka trend",
+    ),
 }
 
 _HOW_TO_CUES = (
@@ -981,9 +1175,7 @@ def should_retrieve_docs(
         return True
     if routing != "unknown":
         return False
-    if tool_names is not None and tool_names - _READ_TOOLS:
-        return False
-    return True
+    return not (tool_names is not None and tool_names - _READ_TOOLS)
 
 
 _PHONE_RE = re.compile(r"^[\d\s+\-]{8,16}$")
@@ -1001,10 +1193,7 @@ def looks_like_field_fill(text: str) -> bool:
         return False
     if _HOW_TO_RE.search(value) or _NEITHER_RE.match(value):
         return False
-    for pattern in _FAMILY_RES.values():
-        if pattern.search(value):
-            return False
-    return True
+    return all(not pattern.search(value) for pattern in _FAMILY_RES.values())
 
 
 def narrow_field_fill_tools(tool_names: frozenset[str]) -> frozenset[str]:

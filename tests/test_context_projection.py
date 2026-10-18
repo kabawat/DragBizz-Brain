@@ -448,9 +448,8 @@ def test_unknown_docs_budget_is_capped() -> None:
 
 def test_schema_token_ceilings() -> None:
     reads = list(READ_TOOL_DEFINITIONS)
-    # Expanded customer coverage (ledger/accounts/payment/reminders) raises
-    # the full-read catalog; selector still exposes a subset per turn.
-    assert _schema_tokens(reads) < 2000
+    # Phase 2 store reads expand catalog; selector exposes a family subset per turn.
+    assert _schema_tokens(reads) < 5000
     chain_names = {
         "search_customer",
         "search_product",
