@@ -282,6 +282,9 @@ def project_ledger_write(data: dict[str, Any]) -> dict[str, Any]:
     customer_id = data.get("customerId")
     if isinstance(customer_id, str) and customer_id.strip():
         out["customerId"] = customer_id.strip()
+    for key in ("totalDue", "remainingDue"):
+        if _is_number(data.get(key)):
+            out[key] = data[key]
     return out
 
 
@@ -846,6 +849,9 @@ def project_customer_dossier(data: dict[str, Any]) -> dict[str, Any]:
     query = data.get("query")
     if isinstance(query, str) and query.strip():
         out["query"] = query.strip()[:200]
+    match_by = data.get("matchBy")
+    if match_by in {"name", "phone", "email", "none"}:
+        out["matchBy"] = match_by
     match_count = data.get("matchCount")
     if isinstance(match_count, int) and not isinstance(match_count, bool):
         out["matchCount"] = match_count
@@ -955,6 +961,9 @@ def project_search_customer(data: dict[str, Any]) -> dict[str, Any]:
             clean.append(row)
         if clean:
             out["downloads"] = clean
+    match_by = data.get("matchBy")
+    if match_by in {"name", "phone", "email", "none"}:
+        out["matchBy"] = match_by
     return out
 
 

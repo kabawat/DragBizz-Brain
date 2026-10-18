@@ -127,7 +127,11 @@ def _customer_refs(results: list[ToolResult]) -> list[tuple[str, str]]:
                     continue
                 seen.add(customer_id)
                 name = item.get("name")
-                label = name.strip() if isinstance(name, str) and name.strip() else "customer"
+                label = (
+                    name.strip()
+                    if isinstance(name, str) and name.strip()
+                    else "customer"
+                )
                 refs.append((customer_id, label))
         elif result.tool in {"create_customer", "update_customer"}:
             customer_id = data.get("id")
@@ -143,7 +147,11 @@ def _customer_refs(results: list[ToolResult]) -> list[tuple[str, str]]:
             name = data.get("name")
             if isinstance(nested, dict) and isinstance(nested.get("name"), str):
                 name = nested.get("name")
-            label = name.strip() if isinstance(name, str) and name.strip() else "customer"
+            label = (
+                name.strip()
+                if isinstance(name, str) and name.strip()
+                else "customer"
+            )
             refs.append((customer_id, label))
     return refs
 
@@ -172,6 +180,8 @@ def maybe_auto_ledger_call(
     amount = parse_ledger_amount(question)
     if amount is None:
         return None
+    if _matched_by_email(results):
+        return None
     refs = _customer_refs(results)
     if len(refs) != 1:
         return None
@@ -187,35 +197,121 @@ def maybe_auto_ledger_call(
     )
 
 
+def _money(value: float | int) -> int | float:
+    return int(value) if float(value) == int(value) else value
+
+
 def ledger_pending_message(
     *,
     tool_name: str,
     amount: float | int,
     customer_name: str,
     language: str,
+    due: float | int | None = None,
 ) -> str:
-    rupees = int(amount) if float(amount) == int(amount) else amount
+    rupees = _money(amount)
     name = customer_name or "customer"
     lang = language.lower()
+    balance = _balance_line(
+        tool_name,
+        due=due,
+        amount=amount,
+        hindi=lang.startswith("hi"),
+    )
     if tool_name == "ledger_credit":
         if lang.startswith("hi"):
             return (
-                f"{name} ke khate mein ₹{rupees} jama confirm ke liye ready hai. "
-                "App mein Confirm dabao."
+                f"{name} ke khate mein ₹{rupees} jama confirm ke liye ready hai."
+                f"{balance} App mein Confirm dabao."
             )
         return (
-            f"Payment of ₹{rupees} for {name} is ready to confirm. "
-            "Tap Confirm in the app."
+            f"Payment of ₹{rupees} for {name} is ready to confirm."
+            f"{balance} Tap Confirm in the app."
         )
     if lang.startswith("hi"):
         return (
-            f"{name} ke khate mein ₹{rupees} udhaar confirm ke liye ready hai. "
-            "App mein Confirm dabao."
+            f"{name} ke khate mein ₹{rupees} udhaar confirm ke liye ready hai."
+            f"{balance} App mein Confirm dabao."
         )
     return (
-        f"₹{rupees} debit on {name}'s khata is ready to confirm. "
-        "Tap Confirm in the app."
+        f"₹{rupees} debit on {name}'s khata is ready to confirm."
+        f"{balance} Tap Confirm in the app."
     )
+
+
+def _balance_line(
+    tool_name: str,
+    *,
+    due: float | int | None,
+    amount: float | int,
+    hindi: bool,
+) -> str:
+    if due is None:
+        return " "
+    due_shown = _money(due)
+    if tool_name == "ledger_credit":
+        remaining = float(due) - float(amount)
+    else:
+        remaining = float(due) + float(amount)
+    remaining_shown = _money(abs(remaining))
+    credit_left = tool_name == "ledger_credit" and remaining >= 0
+    credit_advance = tool_name == "ledger_credit" and remaining < 0
+    if hindi and credit_left:
+        return (
+            f" Abhi due ₹{due_shown} hai. "
+            f"Confirm ke baad ₹{remaining_shown} bachega. "
+        )
+    if hindi and credit_advance:
+        return (
+            f" Abhi due ₹{due_shown} hai. "
+            f"Confirm ke baad ₹{remaining_shown} advance ho jayega. "
+        )
+    if credit_left:
+        return (
+            f" Due now ₹{due_shown}. "
+            f"After confirm, ₹{remaining_shown} will remain. "
+        )
+    if credit_advance:
+        return (
+            f" Due now ₹{due_shown}. "
+            f"After confirm, ₹{remaining_shown} will be advance. "
+        )
+    if hindi:
+        return (
+            f" Abhi due ₹{due_shown} hai. "
+            f"Confirm ke baad ₹{remaining_shown} ho jayega. "
+        )
+    return (
+        f" Due now ₹{due_shown}. After confirm, due will be ₹{remaining_shown}. "
+    )
+
+
+def _matched_by_email(results: list[ToolResult]) -> bool:
+    for result in results:
+        if result.tool != "search_customer" or not isinstance(result.data, dict):
+            continue
+        if result.data.get("matchBy") == "email":
+            return True
+    return False
+
+
+def _due_for(results: list[ToolResult], customer_id: str) -> float | None:
+    for result in results:
+        if result.tool != "search_customer" or not isinstance(result.data, dict):
+            continue
+        items = result.data.get("items")
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict) or item.get("id") != customer_id:
+                continue
+            account = item.get("account")
+            if not isinstance(account, dict):
+                return None
+            due = account.get("totalDue")
+            if isinstance(due, (int, float)) and not isinstance(due, bool):
+                return float(due)
+    return None
 
 
 def customer_label_for_id(results: list[ToolResult], customer_id: str) -> str:
@@ -229,6 +325,11 @@ _BEFORE_KHATA_RE = re.compile(
     r"^(.+?)\s+(?:ke|ki|ka)\s+khat",
     re.IGNORECASE,
 )
+_BEFORE_NE_RE = re.compile(r"^(.+?)\s+ne\b", re.IGNORECASE)
+_LEADING_FILLER_RE = re.compile(
+    r"^(?:bhai|yaar|yar|please|pls)\s+",
+    re.IGNORECASE,
+)
 _PHONE_RE = re.compile(r"\b([6-9]\d{9})\b")
 
 
@@ -239,9 +340,9 @@ def extract_customer_query(question: str) -> str | None:
     phone = _PHONE_RE.search(text)
     if phone:
         return phone.group(1)
-    before = _BEFORE_KHATA_RE.match(text)
+    before = _BEFORE_KHATA_RE.match(text) or _BEFORE_NE_RE.match(text)
     if before:
-        query = before.group(1).strip(" .,:-")
+        query = _LEADING_FILLER_RE.sub("", before.group(1)).strip(" .,:-")
         return query or None
     return None
 
@@ -331,15 +432,22 @@ async def try_fast_ledger_turn(
         audit_trail=audit_trail,
         metrics=metrics,
     )
-    projected_ledger = project_tool_result(
-        _sensitive_placeholder(ledger_call, staged)
-    )
     customer_id = str(ledger_call.arguments.get("customerId") or "")
+    due = _due_for(projected_search, customer_id)
+    placeholder = _sensitive_placeholder(ledger_call, staged)
+    if due is not None and placeholder.data is not None:
+        placeholder.data["totalDue"] = _money(due)
+        if tool_name == "ledger_credit":
+            placeholder.data["remainingDue"] = _money(due - float(amount))
+        else:
+            placeholder.data["remainingDue"] = _money(due + float(amount))
+    projected_ledger = project_tool_result(placeholder)
     message = ledger_pending_message(
         tool_name=tool_name,
         amount=amount,
         customer_name=customer_label_for_id(projected_search, customer_id),
         language=language,
+        due=due,
     )
     pending = pending_to_schema(staged) if staged is not None else None
     return FastLedgerOutcome(

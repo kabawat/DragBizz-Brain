@@ -800,7 +800,8 @@ _LEDGER_DEBIT_FLEX_RE = re.compile(
 )
 _LEDGER_CREDIT_FLEX_RE = re.compile(
     r"khate?\s+me(?:in)?\s+(?:\S+\s+){0,4}(?:jama|payment|paid)\b"
-    r"|(?:jama|payment|paid)\s+(?:\S+\s+){0,4}\b(?:khata|khate)\b",
+    r"|(?:jama|payment|paid)\s+(?:\S+\s+){0,4}\b(?:khata|khate)\b"
+    r"|\bjama\s+k(?:ar|r)(?:o|na|\s+do|\s+dena)?\b",
     re.IGNORECASE,
 )
 # Amount/name may sit between "stock me" and "add" ("stock me 10 add kar do").

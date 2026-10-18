@@ -179,6 +179,59 @@ def test_dossier_exact_name_ignores_similar() -> None:
     assert result.data["billsStatus"] == "ok"
 
 
+def test_dossier_name_beats_email_matches() -> None:
+    retailer = _Retailer(
+        [
+            {
+                "id": "d" * 24,
+                "name": "Pratik Dave",
+                "phone": "9812345678",
+                "email": "vikram.dave@example.com",
+            },
+            {
+                "id": CUSTOMER,
+                "name": "vikram",
+                "phone": "7877952898",
+                "email": "other@example.com",
+            },
+        ],
+        invoices=[
+            {
+                "id": "c" * 24,
+                "invoiceNumber": "INV-2",
+                "totalAmount": 100,
+                "createdAt": "2026-10-18T00:00:00Z",
+            }
+        ],
+    )
+    result = asyncio.run(
+        customer_dossier({"query": "vikram"}, _context(retailer))
+    )
+    assert result.data["matchBy"] == "name"
+    assert result.data["matchCount"] == 1
+    assert result.data["items"][0]["name"] == "vikram"
+    assert retailer.invoice_calls == 1
+
+
+def test_dossier_email_matches_stay_a_list() -> None:
+    retailer = _Retailer(
+        [
+            {
+                "id": CUSTOMER,
+                "name": "Pratik Dave",
+                "email": "vikram@example.com",
+            }
+        ]
+    )
+    result = asyncio.run(
+        customer_dossier({"query": "vikram"}, _context(retailer))
+    )
+    assert retailer.invoice_calls == 0
+    assert result.data["matchBy"] == "email"
+    assert result.data["billsStatus"] == "ambiguous"
+    assert result.data["items"][0]["email"] == "vikram@example.com"
+
+
 def test_dossier_drops_unrelated_names() -> None:
     retailer = _Retailer(
         [

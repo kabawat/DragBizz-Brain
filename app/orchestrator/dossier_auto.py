@@ -109,14 +109,27 @@ def _choice_reply(data: dict[str, Any], *, hindi: bool) -> str:
     count = data.get("matchCount")
     if not isinstance(count, int) or isinstance(count, bool):
         count = len(items)
-    if hindi:
+    by_email = data.get("matchBy") == "email"
+    if by_email:
+        if hindi:
+            head = (
+                f"**{name}** naam se koi customer nahi mila. "
+                f"Email se {count} mile. Kaun sa?"
+            )
+        else:
+            head = (
+                f"No customer named **{name}**. "
+                f"{count} matched by email. Which one?"
+            )
+        cap = "Search pehle 100 tak hai." if hindi else "Showing the first 100."
+    elif hindi:
         head = f"**{name}** se {count} customers mile. Kaun sa?"
-        cap = "Search pehle 10 tak hai."
+        cap = "Search pehle 100 tak hai."
     else:
         head = f"**{name}** matched {count} customers. Which one?"
-        cap = "Showing the first 10."
+        cap = "Showing the first 100."
     lines = [head, ""]
-    if count >= 10:
+    if count >= 100:
         lines.append(cap)
         lines.append("")
     for item in items:
@@ -126,7 +139,14 @@ def _choice_reply(data: dict[str, Any], *, hindi: bool) -> str:
         label = label.strip() or "customer"
         phone = item.get("phone") if isinstance(item.get("phone"), str) else ""
         phone = phone.strip()
-        lines.append(f"- {label} · {phone}" if phone else f"- {label}")
+        email = item.get("email") if isinstance(item.get("email"), str) else ""
+        email = email.strip()
+        bits = [label]
+        if phone:
+            bits.append(phone)
+        if by_email and email:
+            bits.append(email)
+        lines.append("- " + " · ".join(bits))
     return "\n".join(lines).strip()
 
 

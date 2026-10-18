@@ -215,6 +215,81 @@ async def _fast_ledger_turn() -> None:
     assert retailer.calls and retailer.calls[0][0] == "customers"
 
 
+def test_jama_sentence_stages_credit_against_due() -> None:
+    asyncio.run(_jama_sentence_stages_credit())
+
+
+async def _jama_sentence_stages_credit() -> None:
+    from app.orchestrator.ledger_auto import (
+        extract_customer_query,
+        parse_ledger_amount,
+        try_fast_ledger_turn,
+    )
+    from app.orchestrator.tool_selector import resolve_turn_intent
+
+    question = (
+        "Kishanlal Bansal ne aaj 500 de diya he matlab uska 500 jama kr do"
+    )
+    available = {
+        definition.name
+        for definition in (
+            *READ_TOOL_DEFINITIONS,
+            *WRITE_TOOL_DEFINITIONS,
+            *SENSITIVE_TOOL_DEFINITIONS,
+        )
+    }
+    intent = resolve_turn_intent(question, available=available)
+    assert "ledger_credit" in intent.tool_names
+    assert "search_customer" in intent.tool_names
+    assert extract_customer_query(question) == "Kishanlal Bansal"
+    assert parse_ledger_amount(question) == 500
+
+    class Payer(RecordingRetailer):
+        async def get_customers(self, **kwargs):
+            self.calls.append(("customers", kwargs))
+            return RetailerResponse(
+                status_code=200,
+                body={
+                    "data": [
+                        {
+                            "id": CUSTOMER,
+                            "name": "Kishanlal Bansal",
+                            "phone": "9812345678",
+                            "account": {"totalDue": 1100, "totalPaid": 0},
+                        },
+                        {
+                            "id": "d" * 24,
+                            "name": "Pratik Dave",
+                            "email": "kishanlal@example.com",
+                        },
+                    ]
+                },
+            )
+
+    retailer = Payer()
+    fast = await try_fast_ledger_turn(
+        question=question,
+        language="hi-IN",
+        store_id=STORE,
+        access_token="token",
+        session_id=SESSION,
+        user_id="user-1",
+        allowed_names=intent.tool_names,
+        executor=ToolExecutor(registry=_registry(), retailer=retailer),
+        confirmations=InMemoryConfirmationStore(),
+    )
+    assert fast is not None
+    assert fast.pending_confirmation is not None
+    credit = fast.tool_calls[-1]
+    assert credit.name == "ledger_credit"
+    assert credit.arguments["amount"] == 500
+    assert credit.arguments["customerId"] == CUSTOMER
+    assert "₹500" in fast.message
+    assert "₹1100" in fast.message
+    assert "₹600" in fast.message
+    assert "loves" not in fast.message.lower()
+
+
 def test_ledger_confirm_posts_once() -> None:
     asyncio.run(_confirm_staged())
 

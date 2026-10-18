@@ -139,6 +139,7 @@ async def search_customer(
             access_token=context.access_token,
             store_id=context.store_id,
             query=effective_query,
+            limit=_CUSTOMER_SEARCH_LIMIT,
             include_addresses="address" in slices,
             include_account="khata" in slices or "ledger" in slices,
         )
@@ -154,18 +155,19 @@ async def search_customer(
                     access_token=context.access_token,
                     store_id=context.store_id,
                     query=clean_name,
+                    limit=_CUSTOMER_SEARCH_LIMIT,
                     include_addresses="address" in slices,
                     include_account="khata" in slices or "ledger" in slices,
                 )
                 raw_items = fallback_resp.body.get("data") or []
             except RetailerHttpError:
                 pass
-    items = [
-        _customer_row(item, slices=slices)
-        for item in raw_items
-        if isinstance(item, dict)
-    ]
-    data: dict[str, Any] = {"items": items}
+    ranked_items, match_by = _rank_customers(
+        [item for item in raw_items if isinstance(item, dict)],
+        effective_query,
+    )
+    items = [_customer_row(item, slices=slices) for item in ranked_items]
+    data: dict[str, Any] = {"items": items, "matchBy": match_by}
     if "ledger" in slices and len(items) == 1 and items[0]["id"]:
         items[0]["ledger"] = await _ledger_for_customer(
             context,
@@ -182,6 +184,7 @@ async def search_customer(
 
 _DOSSIER_BILL_CAP = 10
 _DOSSIER_LINE_CAP = 5
+_CUSTOMER_SEARCH_LIMIT = 100
 
 
 async def customer_dossier(
@@ -192,6 +195,7 @@ async def customer_dossier(
             access_token=context.access_token,
             store_id=context.store_id,
             query=arguments["query"],
+            limit=_CUSTOMER_SEARCH_LIMIT,
             include_account=True,
         )
     except RetailerHttpError as exc:
@@ -201,19 +205,25 @@ async def customer_dossier(
     items = [
         _dossier_customer(item) for item in raw_items if isinstance(item, dict)
     ]
-    items = _narrow_dossier_customers(items, arguments["query"])
+    items, match_by = _rank_customers(items, arguments["query"])
     match_count = len(items)
     data: dict[str, Any] = {
         "query": arguments["query"],
+        "matchBy": match_by,
         "items": items,
         "matchCount": match_count,
         "billsScanned": 0,
     }
-    if match_count == 0:
+    if match_count == 0 or match_by == "none":
+        data["items"] = []
+        data["matchCount"] = 0
         data["billsStatus"] = "no_match"
         return ToolResult(tool="customer_dossier", success=True, data=data)
-    if match_count != 1 or not items[0].get("id"):
-        data["items"] = [_dossier_identity(item) for item in items]
+    # Email hits are a choice list, even when only one address contains the name.
+    if match_by == "email" or match_count != 1 or not items[0].get("id"):
+        data["items"] = [
+            _dossier_identity(item, with_email=match_by == "email") for item in items
+        ]
         data["billsStatus"] = "ambiguous"
         return ToolResult(tool="customer_dossier", success=True, data=data)
 
@@ -238,39 +248,49 @@ async def customer_dossier(
     return ToolResult(tool="customer_dossier", success=True, data=data)
 
 
-def _narrow_dossier_customers(
+def _rank_customers(
     items: list[dict[str, Any]], query: str
-) -> list[dict[str, Any]]:
-    """Prefer one exact name, phone, or email over a substring page."""
+) -> tuple[list[dict[str, Any]], str]:
+    """Name matches win. Email matches are used only when no name matches."""
     needle = query.strip().casefold()
     if len(needle) < 2:
-        return items
-    exact = [item for item in items if _dossier_exact(item, needle)]
-    if exact:
-        return exact
-    return [item for item in items if _dossier_contains(item, needle)]
+        return items, "name" if items else "none"
 
-
-def _dossier_exact(item: dict[str, Any], needle: str) -> bool:
-    for key in ("name", "phone", "email"):
+    def text(item: dict[str, Any], key: str) -> str:
         value = item.get(key)
-        if isinstance(value, str) and value.strip().casefold() == needle:
-            return True
-    return False
+        return value.strip().casefold() if isinstance(value, str) else ""
+
+    exact_name = [item for item in items if text(item, "name") == needle]
+    if exact_name:
+        return exact_name, "name"
+    partial_name = [item for item in items if needle in text(item, "name")]
+    if partial_name:
+        return partial_name, "name"
+    phone_needle = query.strip()
+    exact_phone = [
+        item
+        for item in items
+        if isinstance(item.get("phone"), str) and item["phone"].strip() == phone_needle
+    ]
+    if exact_phone:
+        return exact_phone, "phone"
+    email_hits = [
+        item
+        for item in items
+        if needle == text(item, "email") or needle in text(item, "email")
+    ]
+    if email_hits:
+        return email_hits, "email"
+    return [], "none"
 
 
-def _dossier_contains(item: dict[str, Any], needle: str) -> bool:
-    for key in ("name", "phone", "email"):
-        value = item.get(key)
-        if isinstance(value, str) and needle in value.casefold():
-            return True
-    return False
-
-
-def _dossier_identity(item: dict[str, Any]) -> dict[str, Any]:
+def _dossier_identity(
+    item: dict[str, Any], *, with_email: bool = False
+) -> dict[str, Any]:
+    keys = ("id", "name", "phone", "email") if with_email else ("id", "name", "phone")
     return {
         key: item[key]
-        for key in ("id", "name", "phone")
+        for key in keys
         if key in item and item[key] not in (None, "")
     }
 
