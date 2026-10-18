@@ -749,9 +749,17 @@ def project_invoice_summary(data: dict[str, Any]) -> dict[str, Any]:
             out["amounts"] = picked
     today = data.get("today")
     if isinstance(today, dict):
-        picked = _pick(today, ("totalInvoices", "releasedInvoices"))
+        picked = _pick(today, ("totalInvoices", "releasedInvoices", "revenue", "profit", "sales"))
         if picked:
             out["today"] = picked
+    summary = data.get("summary")
+    if isinstance(summary, dict):
+        picked = _pick(
+            summary,
+            ("totalRevenue", "totalProfit", "totalSales", "avgOrderValue"),
+        )
+        if picked:
+            out["summary"] = picked
     period = data.get("period")
     if isinstance(period, dict):
         period_out: dict[str, Any] = {}

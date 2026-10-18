@@ -12,6 +12,7 @@ from app.orchestrator.dossier_auto import (
     try_fast_due_list,
     try_fast_name_list,
     try_fast_purchase_rank,
+    try_fast_store_totals,
 )
 from app.orchestrator.tool_selector import extract_who_is_query, resolve_turn_intent
 from app.prompts.system.chat import build_chat_system_prompt
@@ -363,6 +364,71 @@ def test_due_list_uses_accounts_not_recent_names() -> None:
     assert "₹100" in outcome.message
     assert "Rohit Sharma" not in outcome.message
     assert "7877952898" in outcome.message
+
+
+def test_store_totals_include_profit() -> None:
+    class Analytics(_FastRetailer):
+        async def get_invoice_analytics(self, **_kwargs):
+            return RetailerResponse(
+                status_code=200,
+                body={
+                    "data": {
+                        "summary": {
+                            "totalRevenue": 76005,
+                            "totalProfit": 12000,
+                            "totalSales": 64,
+                        }
+                    }
+                },
+            )
+
+    question = "meri total sell kitni?"
+    intent = resolve_turn_intent(question, available=_available())
+    assert "invoice_summary" in intent.tool_names
+    outcome = asyncio.run(
+        try_fast_store_totals(
+            question=question,
+            language="en",
+            store_id=STORE,
+            access_token="token",
+            session_id="sess",
+            user_id="user-1",
+            allowed_names=intent.tool_names,
+            executor=ToolExecutor(registry=_registry(), retailer=Analytics()),
+        )
+    )
+    assert outcome is not None
+    assert "₹76005" in outcome.message
+    assert "₹12000" in outcome.message
+    assert "64" in outcome.message
+    profit_intent = resolve_turn_intent("profit?", available=_available())
+    profit = asyncio.run(
+        try_fast_store_totals(
+            question="profit?",
+            language="en",
+            store_id=STORE,
+            access_token="token",
+            session_id="sess",
+            user_id="user-1",
+            allowed_names=profit_intent.tool_names,
+            executor=ToolExecutor(registry=_registry(), retailer=Analytics()),
+        )
+    )
+    assert profit is not None
+    assert "₹12000" in profit.message
+    skipped = asyncio.run(
+        try_fast_store_totals(
+            question="aaj ki sale",
+            language="hi-IN",
+            store_id=STORE,
+            access_token="token",
+            session_id="sess",
+            user_id="user-1",
+            allowed_names=frozenset({"invoice_summary", "today_sale"}),
+            executor=ToolExecutor(registry=_registry(), retailer=Analytics()),
+        )
+    )
+    assert skipped is None
 
 
 def test_who_is_query_drops_quotes() -> None:

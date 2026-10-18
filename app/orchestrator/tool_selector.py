@@ -301,6 +301,9 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "bill bane",
         "bills today",
         "today's bills",
+        "total sell",
+        "sell kitni",
+        "sell kitna",
     ),
     "stock": (
         "stock me",
@@ -613,6 +616,14 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "is mahine",
         "is month",
         "this month",
+        "total sell",
+        "sell kitni",
+        "sell kitna",
+        "total revenue",
+        "revenue",
+        "total profit",
+        "profit",
+        "munafa",
     ),
 }
 

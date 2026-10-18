@@ -457,6 +457,79 @@ async def try_fast_due_list(
     )
 
 
+_STORE_TOTAL_RE = re.compile(
+    r"\b(?:sell|sales|revenue|profit|munafa)\b|\btotal\s+sale\b",
+    re.IGNORECASE,
+)
+_TODAY_RE = re.compile(r"\b(?:aaj|today|todays|today's)\b", re.IGNORECASE)
+
+
+def _shown_amount(value: float | int) -> int | float:
+    return int(value) if float(value) == int(value) else value
+
+
+def _store_total_reply(data: dict[str, Any]) -> str | None:
+    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    lines = ["**Last 30 days**", ""]
+    revenue = summary.get("totalRevenue")
+    profit = summary.get("totalProfit")
+    sales = summary.get("totalSales")
+    if isinstance(revenue, (int, float)) and not isinstance(revenue, bool):
+        lines.append(f"Revenue ₹{_shown_amount(revenue)}")
+    if isinstance(profit, (int, float)) and not isinstance(profit, bool):
+        lines.append(f"Profit ₹{_shown_amount(profit)}")
+    if isinstance(sales, (int, float)) and not isinstance(sales, bool):
+        lines.append(f"Bills {_shown_amount(sales)}")
+    if len(lines) == 2:
+        return None
+    return "\n".join(lines)
+
+
+async def try_fast_store_totals(
+    *,
+    question: str,
+    language: str,
+    store_id: str,
+    access_token: str,
+    session_id: str,
+    user_id: str,
+    allowed_names: frozenset[str],
+    executor: ToolExecutor,
+) -> FastDossierOutcome | None:
+    """Revenue and profit from invoice analytics. Skips today's-sale questions."""
+    del language
+    text = question.strip()
+    if "invoice_summary" not in allowed_names:
+        return None
+    if _TODAY_RE.search(text) or _STORE_TOTAL_RE.search(text) is None:
+        return None
+    call = ToolCall(
+        id=f"auto_totals_{uuid.uuid4().hex[:10]}",
+        name="invoice_summary",
+        arguments={"storeId": store_id},
+    )
+    results = await executor.execute_reads(
+        [call],
+        access_token=access_token,
+        store_id=store_id,
+        allowed_names=allowed_names,
+        session_id=session_id,
+        user_id=user_id,
+        question=question,
+    )
+    projected = project_tool_result(results[0])
+    if not projected.success or not isinstance(projected.data, dict):
+        return None
+    message = _store_total_reply(projected.data)
+    if message is None:
+        return None
+    return FastDossierOutcome(
+        message=message,
+        tool_calls=[call],
+        tool_results=[projected],
+    )
+
+
 async def try_fast_dossier_turn(
     *,
     question: str,

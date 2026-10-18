@@ -888,10 +888,23 @@ async def invoice_summary(
         },
         "today": {
             key: today[key]
-            for key in ("totalInvoices", "releasedInvoices")
+            for key in (
+                "totalInvoices",
+                "releasedInvoices",
+                "revenue",
+                "profit",
+                "sales",
+            )
             if key in today
         },
     }
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    if summary:
+        data["summary"] = {
+            key: summary[key]
+            for key in ("totalRevenue", "totalProfit", "totalSales", "avgOrderValue")
+            if key in summary
+        }
 
     period_days = arguments.get("periodDays")
     if isinstance(period_days, int) and period_days in {1, 7, 15, 30}:
