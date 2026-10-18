@@ -108,6 +108,29 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         },
     ),
     ToolDefinition(
+        name="customer_dossier",
+        description=(
+            "Who someone is: one customer match plus their saved memo, "
+            "dues if present, and up to 10 recent bills. Not a biography."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "query": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Customer name, phone, or email search text",
+                },
+            },
+            "required": ["storeId", "query"],
+        },
+    ),
+    ToolDefinition(
         name="payment_history",
         description=(
             "Recent customer payments for this store. Not one customer's "

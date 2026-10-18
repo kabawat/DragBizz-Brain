@@ -391,6 +391,26 @@ class RetailerClient:
             json_body=body,
         )
 
+    async def get_invoices(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        customer_id: str,
+        limit: int = 10,
+        include_items: bool = True,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {"customer": customer_id, "limit": limit}
+        if include_items:
+            params["includeItems"] = "true"
+        return await self._request(
+            "GET",
+            "/invoices",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
     async def get_customers(
         self,
         *,

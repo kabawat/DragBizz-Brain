@@ -27,6 +27,7 @@ dist/
 .env.development
 .env.test
 phases.md
+ENGINEERING.md
 # IDE
 .vscode/
 .idea/

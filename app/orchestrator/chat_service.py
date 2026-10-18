@@ -12,9 +12,9 @@ from app.core.exceptions import AppError
 from app.executors.tool_executor import ToolExecutor
 from app.guards.input_guard import InputGuard
 from app.guards.output_guard import (
-    OutputGuard,
     _CURRENCY_RE,
     _NUMBER_RE,
+    OutputGuard,
     _normalize_amount,
 )
 from app.limits.request_budget import BudgetExceeded, RequestBudget
@@ -37,10 +37,11 @@ from app.orchestrator.confirmation import (
     pending_to_schema,
     stage_from_draft_result,
 )
+from app.orchestrator.dossier_auto import try_fast_dossier_turn
+from app.orchestrator.ledger_auto import try_fast_ledger_turn
 from app.orchestrator.token_usage import RequestTokenUsage
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.orchestrator.tool_loop import run_tool_loop
-from app.orchestrator.ledger_auto import try_fast_ledger_turn
 from app.orchestrator.tool_selector import (
     looks_like_field_fill,
     narrow_field_fill_tools,
@@ -196,58 +197,42 @@ class ChatService:
             metrics=self._metrics,
         )
         if fast_ledger is not None:
-            message = self._guard_output(
-                fast_ledger.message,
-                tool_results=fast_ledger.tool_results,
-                language=body.language,
-                prior_numbers=prior_numbers,
-            )
-            await self._sessions.append_turn(
-                session_id=body.session_id,
+            return await self._finish_deterministic(
+                body=body,
                 user_id=user_id,
-                store_id=store_id,
-                turn=SessionTurn(
-                    user_text=body.text,
-                    assistant_text=message,
-                    tool_context=self._sessions.compact_tool_context(
-                        fast_ledger.tool_results
-                    ),
-                ),
-            )
-            schedule_persist_turn(
-                self._history,
-                session_id=body.session_id,
-                user_id=user_id,
-                store_id=store_id,
-                user_text=body.text,
-                assistant_text=message,
-                tool_results=fast_ledger.tool_results,
-            )
-            latency_ms = round((time.perf_counter() - started) * 1000, 1)
-            if self._metrics is not None:
-                self._metrics.record_chat(latency_ms, error=False)
-            emit_event(
-                CHAT_REQUEST,
-                outcome="ok",
-                metrics={
-                    "latency_ms": latency_ms,
-                    "outcome": "ok",
-                    "provider": "fast_ledger",
-                    "model": "",
-                    "model_calls": 0,
-                    "tools_called": [call.name for call in fast_ledger.tool_calls],
-                },
-            )
-            return ChatResponse(
-                message=message,
-                session_id=body.session_id,
                 request_id=request_id,
-                user_id=user_id,
+                store_id=store_id,
+                started=started,
+                prior_numbers=prior_numbers,
                 provider="fast_ledger",
-                model="",
+                message=fast_ledger.message,
                 tool_calls=fast_ledger.tool_calls,
                 tool_results=fast_ledger.tool_results,
                 pending_confirmation=fast_ledger.pending_confirmation,
+            )
+        fast_dossier = await try_fast_dossier_turn(
+            question=body.text,
+            language=body.language,
+            store_id=store_id,
+            access_token=access_token,
+            session_id=body.session_id,
+            user_id=user_id,
+            allowed_names=allowed_names,
+            executor=self._executor,
+        )
+        if fast_dossier is not None:
+            return await self._finish_deterministic(
+                body=body,
+                user_id=user_id,
+                request_id=request_id,
+                store_id=store_id,
+                started=started,
+                prior_numbers=prior_numbers,
+                provider="fast_dossier",
+                message=fast_dossier.message,
+                tool_calls=fast_dossier.tool_calls,
+                tool_results=fast_dossier.tool_results,
+                pending_confirmation=None,
             )
 
         context = await build_chat_context(
@@ -546,6 +531,73 @@ class ChatService:
             audit_trail=self._audit_trail,
             metrics=self._metrics,
             history=self._history,
+        )
+
+    async def _finish_deterministic(
+        self,
+        *,
+        body: ChatRequest,
+        user_id: str,
+        request_id: str,
+        store_id: str,
+        started: float,
+        prior_numbers: set[str],
+        provider: str,
+        message: str,
+        tool_calls: list[Any],
+        tool_results: list[Any],
+        pending_confirmation: PendingConfirmation | None,
+    ) -> ChatResponse:
+        guarded = self._guard_output(
+            message,
+            tool_results=tool_results,
+            language=body.language,
+            prior_numbers=prior_numbers,
+        )
+        await self._sessions.append_turn(
+            session_id=body.session_id,
+            user_id=user_id,
+            store_id=store_id,
+            turn=SessionTurn(
+                user_text=body.text,
+                assistant_text=guarded,
+                tool_context=self._sessions.compact_tool_context(tool_results),
+            ),
+        )
+        schedule_persist_turn(
+            self._history,
+            session_id=body.session_id,
+            user_id=user_id,
+            store_id=store_id,
+            user_text=body.text,
+            assistant_text=guarded,
+            tool_results=tool_results,
+        )
+        latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        if self._metrics is not None:
+            self._metrics.record_chat(latency_ms, error=False)
+        emit_event(
+            CHAT_REQUEST,
+            outcome="ok",
+            metrics={
+                "latency_ms": latency_ms,
+                "outcome": "ok",
+                "provider": provider,
+                "model": "",
+                "model_calls": 0,
+                "tools_called": [call.name for call in tool_calls],
+            },
+        )
+        return ChatResponse(
+            message=guarded,
+            session_id=body.session_id,
+            request_id=request_id,
+            user_id=user_id,
+            provider=provider,
+            model="",
+            tool_calls=tool_calls,
+            tool_results=tool_results,
+            pending_confirmation=pending_confirmation,
         )
 
     def _guard_input(self, body: ChatRequest) -> str | None:

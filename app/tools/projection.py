@@ -828,6 +828,104 @@ def project_list_stores(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_DOSSIER_BILL_CAP = 10
+_DOSSIER_LINE_CAP = 5
+_DOSSIER_STATUSES = frozenset(
+    {"ok", "empty", "ambiguous", "unavailable", "no_match"}
+)
+
+
+def project_customer_dossier(data: dict[str, Any]) -> dict[str, Any]:
+    raw_items = data.get("items")
+    items: list[dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items:
+            if isinstance(item, dict):
+                items.append(_project_dossier_customer(item))
+    out: dict[str, Any] = {"items": items}
+    match_count = data.get("matchCount")
+    if isinstance(match_count, int) and not isinstance(match_count, bool):
+        out["matchCount"] = match_count
+    status = data.get("billsStatus")
+    if isinstance(status, str) and status in _DOSSIER_STATUSES:
+        out["billsStatus"] = status
+    scanned = data.get("billsScanned")
+    if isinstance(scanned, int) and not isinstance(scanned, bool):
+        out["billsScanned"] = scanned
+    if isinstance(data.get("billsError"), str):
+        out["billsError"] = data["billsError"]
+    bills = _project_dossier_bills(data.get("bills"))
+    if bills:
+        out["bills"] = bills
+    return out
+
+
+def _project_dossier_customer(item: dict[str, Any]) -> dict[str, Any]:
+    row: dict[str, Any] = {}
+    entity_id = _entity_id(item)
+    if entity_id is not None:
+        row["id"] = entity_id
+    elif isinstance(item.get("id"), str):
+        row["id"] = item["id"]
+    for key in ("name", "phone", "email", "isActive"):
+        if key in item:
+            row[key] = item[key]
+    memo = _truncate_notes(item.get("memo"))
+    if memo is None:
+        memo = _truncate_notes(item.get("note"))
+    if memo is not None:
+        row["memo"] = memo
+    account = item.get("account")
+    if isinstance(account, dict):
+        picked = _pick(account, ("totalDue", "totalPaid"))
+        if picked:
+            row["account"] = picked
+    return row
+
+
+def _project_dossier_bills(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    bills: list[dict[str, Any]] = []
+    for bill in raw[:_DOSSIER_BILL_CAP]:
+        if not isinstance(bill, dict):
+            continue
+        row: dict[str, Any] = {}
+        if isinstance(bill.get("id"), str) and bill["id"]:
+            row["id"] = bill["id"]
+        for key in (
+            "invoiceNumber",
+            "date",
+            "paymentMode",
+            "paymentStatus",
+            "invoiceStatus",
+        ):
+            if key in bill:
+                row[key] = bill[key]
+        if _is_number(bill.get("totalAmount")):
+            row["totalAmount"] = bill["totalAmount"]
+        lines = bill.get("items")
+        if isinstance(lines, list):
+            clean: list[dict[str, Any]] = []
+            for line in lines:
+                if len(clean) >= _DOSSIER_LINE_CAP:
+                    break
+                if not isinstance(line, dict):
+                    continue
+                name = line.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                projected: dict[str, Any] = {"name": name.strip()}
+                if _is_number(line.get("qty")):
+                    projected["qty"] = line["qty"]
+                clean.append(projected)
+            if clean:
+                row["items"] = clean
+        if row:
+            bills.append(row)
+    return bills
+
+
 def project_search_customer(data: dict[str, Any]) -> dict[str, Any]:
     raw_items = data.get("items")
     items: list[dict[str, Any]] = []
@@ -878,6 +976,7 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "product_summary": project_product_summary,
     "search_product": project_search_product,
     "search_customer": project_search_customer,
+    "customer_dossier": project_customer_dossier,
     "list_stores": project_list_stores,
     "customer_summary": project_customer_summary,
     "get_customer_ledger": project_customer_ledger,

@@ -88,11 +88,9 @@ _STORE_PROFILE = (
 
 _CUSTOMER_LIVE = (
     "- Customer: call search_customer; answer only fields present in the "
-    "result. When asked who someone is (e.g. 'kon he', 'who is', 'details') "
-    "or about them: summarize naturally in friendly buddy tone. Include "
-    "their note if present (e.g. habits, preferences, regular timings), "
-    "their contact details, and their khata/account dues or balance if present.\n"
-    "- Basic ask → name/phone/email/active, plus note when present. Extra slices "
+    "result. Include contact details. A note is a saved memo, not proof "
+    "of habits or preferences — do not expand it into a personality.\n"
+    "- Basic ask → name/phone/email/active, plus the memo when present. Extra slices "
     "(address, GST, account/khata, ledger) only when returned — if the "
     "user asked for khata/account/dues and the result has no totals, say "
     "you could not load them; do not invent numbers.\n"
@@ -108,6 +106,16 @@ _CUSTOMER_LIVE = (
     "opening-balance files — refuse those only. Merge, opening balance "
     "(single), formal payment, collect link, and payment reminder are "
     "allowed when those sensitive tools are offered.\n"
+)
+
+_DOSSIER_LIVE = (
+    "- Who-is: call customer_dossier, not search_customer. Answer only "
+    "from its fields. memo is a user-typed note — quote it only if useful, "
+    "never invent habits or preferences (loves, enjoys, prefers). "
+    "If billsStatus is empty, say there are no bills in the last 10. "
+    "If unavailable, say bills could not be loaded. If matchCount is not 1, "
+    "list name and phone and ask which customer. Do not claim dues unless "
+    "account totals are present.\n"
 )
 
 _HOWTO_LAYOUT = (
@@ -204,6 +212,8 @@ def build_chat_system_prompt(
         )
         if "search_customer" in tool_names:
             parts.append(_CUSTOMER_LIVE)
+        if "customer_dossier" in tool_names:
+            parts.append(_DOSSIER_LIVE)
     else:
         parts.append(
             "- Never invent live store numbers (sales, stock, prices, "

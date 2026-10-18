@@ -180,6 +180,133 @@ async def search_customer(
     )
 
 
+_DOSSIER_BILL_CAP = 10
+_DOSSIER_LINE_CAP = 5
+
+
+async def customer_dossier(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    try:
+        response = await context.retailer.get_customers(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            query=arguments["query"],
+            include_account=True,
+        )
+    except RetailerHttpError as exc:
+        return _failure("customer_dossier", exc)
+
+    raw_items = response.body.get("data") or []
+    items = [
+        _dossier_customer(item) for item in raw_items if isinstance(item, dict)
+    ]
+    match_count = len(items)
+    data: dict[str, Any] = {
+        "items": items,
+        "matchCount": match_count,
+        "billsScanned": 0,
+    }
+    if match_count == 0:
+        data["billsStatus"] = "no_match"
+        return ToolResult(tool="customer_dossier", success=True, data=data)
+    if match_count != 1 or not items[0].get("id"):
+        data["billsStatus"] = "ambiguous"
+        return ToolResult(tool="customer_dossier", success=True, data=data)
+
+    try:
+        invoices = await context.retailer.get_invoices(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            customer_id=items[0]["id"],
+            limit=_DOSSIER_BILL_CAP,
+            include_items=True,
+        )
+    except RetailerHttpError as exc:
+        data["billsStatus"] = "unavailable"
+        data["billsError"] = exc.code
+        return ToolResult(tool="customer_dossier", success=True, data=data)
+
+    raw_bills = invoices.body.get("data") if isinstance(invoices.body, dict) else None
+    bills = _compact_bills(raw_bills if isinstance(raw_bills, list) else [])
+    data["bills"] = bills
+    data["billsScanned"] = len(bills)
+    data["billsStatus"] = "ok" if bills else "empty"
+    return ToolResult(tool="customer_dossier", success=True, data=data)
+
+
+def _dossier_customer(item: dict[str, Any]) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "id": str(item.get("id") or ""),
+        "name": item.get("name"),
+        "phone": item.get("phone"),
+        "email": item.get("email"),
+        "isActive": item.get("isActive"),
+    }
+    note = item.get("note")
+    if isinstance(note, str) and note.strip():
+        row["note"] = note.strip()
+    account = item.get("account")
+    if isinstance(account, dict):
+        picked = {
+            key: account[key]
+            for key in ("totalDue", "totalPaid")
+            if key in account
+        }
+        if picked:
+            row["account"] = picked
+    return row
+
+
+def _compact_bills(raw_bills: list[Any]) -> list[dict[str, Any]]:
+    bills: list[dict[str, Any]] = []
+    for bill in raw_bills[:_DOSSIER_BILL_CAP]:
+        if not isinstance(bill, dict):
+            continue
+        row: dict[str, Any] = {}
+        bill_id = bill.get("id") or bill.get("_id")
+        if bill_id is not None:
+            row["id"] = str(bill_id)
+        for key in (
+            "invoiceNumber",
+            "paymentMode",
+            "paymentStatus",
+            "invoiceStatus",
+            "totalAmount",
+        ):
+            if key in bill:
+                row[key] = bill[key]
+        when = bill.get("releasedAt") or bill.get("createdAt")
+        if when is not None:
+            row["date"] = when if isinstance(when, str) else str(when)
+        lines = _compact_bill_lines(bill.get("items"))
+        if lines:
+            row["items"] = lines
+        bills.append(row)
+    return bills
+
+
+def _compact_bill_lines(raw_items: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_items, list):
+        return []
+    lines: list[dict[str, Any]] = []
+    for item in raw_items:
+        if len(lines) >= _DOSSIER_LINE_CAP:
+            break
+        if not isinstance(item, dict):
+            continue
+        product = item.get("product") if isinstance(item.get("product"), dict) else {}
+        name = item.get("productName") or product.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        line: dict[str, Any] = {"name": name.strip()}
+        qty = item.get("quantity")
+        if isinstance(qty, (int, float)) and not isinstance(qty, bool):
+            line["qty"] = qty
+        lines.append(line)
+    return lines
+
+
 _LEDGER_PREVIEW = 40
 _DOWNLOAD_FORMATS = ("csv", "xlsx", "json")
 _FULL_PROFILE_RE = re.compile(
@@ -707,6 +834,7 @@ READ_TOOL_HANDLERS = {
     "stock_summary": stock_summary,
     "product_summary": product_summary,
     "search_customer": search_customer,
+    "customer_dossier": customer_dossier,
     "payment_history": payment_history,
     "list_stores": list_stores,
     "customer_summary": customer_summary,

@@ -844,6 +844,42 @@ def _prior_exposure_tools(prior_user_texts: Sequence[str] | None) -> set[str]:
     return names
 
 
+_WHO_IS_RE = re.compile(
+    r"poori details|full details|complete details|all details|"
+    r"sab details|sab kuch|pura profile|poora profile|entire profile|"
+    r"kon he|kaun hai|kaun he|kon hai|who is|"
+    r"ke baare me(?!in)|ke bare me(?!in)",
+    re.IGNORECASE,
+)
+_WHO_IS_TOOLS = frozenset({"customer_dossier", "search_product"})
+_WHO_IS_PHONE_RE = re.compile(r"\b([6-9]\d{9})\b")
+_WHO_IS_FILLER_RE = re.compile(
+    r"^(?:please|pls|bhai|mujhe|batao|bata|yeh|ye|yah)\s+",
+    re.IGNORECASE,
+)
+
+
+def extract_who_is_query(question: str) -> str | None:
+    """Name or phone from a who-is question. None when no subject remains."""
+    text = question.strip()
+    if not text or not _WHO_IS_RE.search(text):
+        return None
+    phone = _WHO_IS_PHONE_RE.search(text)
+    if phone:
+        return phone.group(1)
+    cleaned = _WHO_IS_RE.sub(" ", text)
+    cleaned = re.sub(r"[?.,:;!]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
+    while True:
+        nxt = _WHO_IS_FILLER_RE.sub("", cleaned).strip()
+        if nxt == cleaned:
+            break
+        cleaned = nxt
+    if len(cleaned) < 2:
+        return None
+    return cleaned[:200]
+
+
 def resolve_turn_intent(
     question: str,
     *,
@@ -883,6 +919,17 @@ def resolve_turn_intent(
         carried = _prior_exposure_tools(prior_user_texts)
         current = _exposure_tools(text)
         tool_names = (read_only | carried | current) & available_set
+
+    write_exposure = _exposure_tools(text) - _READ_TOOLS
+    customer_only = matched_reads <= _FAMILY_READS["customer"]
+    if (
+        _WHO_IS_RE.search(text)
+        and not write_exposure
+        and not has_howto
+        and (not has_tools or customer_only)
+    ):
+        routing = "tools"
+        tool_names = _WHO_IS_TOOLS & available_set
 
     return TurnIntent(routing=routing, tool_names=tool_names)
 
