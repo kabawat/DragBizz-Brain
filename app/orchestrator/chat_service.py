@@ -37,7 +37,12 @@ from app.orchestrator.confirmation import (
     pending_to_schema,
     stage_from_draft_result,
 )
-from app.orchestrator.dossier_auto import try_fast_dossier_turn, try_fast_name_list
+from app.orchestrator.dossier_auto import (
+    purchase_rank_reply,
+    try_fast_dossier_turn,
+    try_fast_due_list,
+    try_fast_name_list,
+)
 from app.orchestrator.ledger_auto import try_fast_ledger_turn
 from app.orchestrator.token_usage import RequestTokenUsage
 from app.orchestrator.tool_call_validator import ToolCallValidator
@@ -232,6 +237,45 @@ class ChatService:
                 message=fast_names.message,
                 tool_calls=fast_names.tool_calls,
                 tool_results=fast_names.tool_results,
+                pending_confirmation=None,
+            )
+        purchase_reply = purchase_rank_reply(body.text)
+        if purchase_reply is not None:
+            return await self._finish_deterministic(
+                body=body,
+                user_id=user_id,
+                request_id=request_id,
+                store_id=store_id,
+                started=started,
+                prior_numbers=prior_numbers,
+                provider="fast_purchase",
+                message=purchase_reply,
+                tool_calls=[],
+                tool_results=[],
+                pending_confirmation=None,
+            )
+        fast_dues = await try_fast_due_list(
+            question=body.text,
+            language=body.language,
+            store_id=store_id,
+            access_token=access_token,
+            session_id=body.session_id,
+            user_id=user_id,
+            allowed_names=allowed_names,
+            executor=self._executor,
+        )
+        if fast_dues is not None:
+            return await self._finish_deterministic(
+                body=body,
+                user_id=user_id,
+                request_id=request_id,
+                store_id=store_id,
+                started=started,
+                prior_numbers=prior_numbers,
+                provider="fast_dues",
+                message=fast_dues.message,
+                tool_calls=fast_dues.tool_calls,
+                tool_results=fast_dues.tool_results,
                 pending_confirmation=None,
             )
         fast_dossier = await try_fast_dossier_turn(

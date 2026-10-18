@@ -464,6 +464,9 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "jin ke due",
         "due wale",
         "customers with due",
+        "udhari",
+        "udhaar list",
+        "baaki list",
     ),
     "invoice": (
         "bill banao",

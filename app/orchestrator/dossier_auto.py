@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.executors.tool_executor import ToolExecutor
+from app.orchestrator.ledger_auto import wanted_ledger_tool
 from app.orchestrator.tool_selector import extract_who_is_query
 from app.schemas.tool import ToolCall, ToolResult
 from app.tools.projection import project_tool_result
@@ -194,14 +195,41 @@ _NAME_LIST_RE = re.compile(
     r"\b([1-9]\d?)\s+customers?\b.{0,48}\b(?:names?|naam)\b",
     re.IGNORECASE,
 )
+_NAME_LIST_MORE_RE = re.compile(
+    r"purchase|khareed|saman|samaan|jyada|zyada|kitn|udhari|udhaar|udhar|"
+    r"baaki|baqi|\bdue\b|amount|total",
+    re.IGNORECASE,
+)
+_PURCHASE_RANK_RE = re.compile(
+    r"(?:jyada|zyada).{0,40}(?:saman|samaan|purchase|khareed|liya)"
+    r"|(?:kitn[ae]).{0,40}purchase|purchase.{0,40}kitn",
+    re.IGNORECASE,
+)
+_DUE_LIST_RE = re.compile(
+    r"\b(?:udhari|udhaar|udhar|baaki|baqi)\b",
+    re.IGNORECASE,
+)
 
 
 def name_list_count(question: str) -> int | None:
-    match = _NAME_LIST_RE.search(question.strip())
+    text = question.strip()
+    if _NAME_LIST_MORE_RE.search(text):
+        return None
+    match = _NAME_LIST_RE.search(text)
     if match is None:
         return None
     count = int(match.group(1))
     return count if count <= 20 else None
+
+
+def purchase_rank_reply(question: str) -> str | None:
+    """Plain names cannot answer who bought the most."""
+    if _PURCHASE_RANK_RE.search(question.strip()) is None:
+        return None
+    return (
+        "Customer-wise purchase total is not in this list. "
+        "I can list names, or the customers who currently have udhari."
+    )
 
 
 def _name_list_reply(items: list[Any], count: int, *, hindi: bool) -> str:
@@ -264,6 +292,94 @@ async def try_fast_name_list(
         count,
         hindi=language.lower().startswith("hi"),
     )
+    return FastDossierOutcome(
+        message=message,
+        tool_calls=[call],
+        tool_results=[projected],
+    )
+
+
+def _due_rows(items: list[Any]) -> list[tuple[float, str, str]]:
+    rows: list[tuple[float, str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        due = item.get("totalDue")
+        if not isinstance(due, (int, float)) or isinstance(due, bool) or due <= 0:
+            continue
+        customer = item.get("customer")
+        if not isinstance(customer, dict):
+            customer = {}
+        label = customer.get("name") if isinstance(customer.get("name"), str) else ""
+        label = label.strip() or "customer"
+        phone = customer.get("phone") if isinstance(customer.get("phone"), str) else ""
+        email = customer.get("email") if isinstance(customer.get("email"), str) else ""
+        contact = phone.strip() or email.strip()
+        rows.append((float(due), label, contact))
+    rows.sort(key=lambda row: row[0], reverse=True)
+    return rows
+
+
+def _due_list_reply(items: list[Any]) -> str:
+    rows = _due_rows(items)
+    if not rows:
+        return "Kisi customer par abhi udhari nahi hai."
+    lines = ["**Udhari**", ""]
+    for due, label, contact in rows:
+        shown = int(due) if due == int(due) else due
+        bits = [label]
+        if contact:
+            bits.append(contact)
+        bits.append(f"₹{shown}")
+        lines.append("- " + " · ".join(bits))
+    return "\n".join(lines)
+
+
+_DUE_LIST_SCOPE_RE = re.compile(
+    r"\b(?:list|konsa|kaun|sab|sare|saare|jin)\b",
+    re.IGNORECASE,
+)
+
+
+async def try_fast_due_list(
+    *,
+    question: str,
+    language: str,
+    store_id: str,
+    access_token: str,
+    session_id: str,
+    user_id: str,
+    allowed_names: frozenset[str],
+    executor: ToolExecutor,
+) -> FastDossierOutcome | None:
+    """Store-wide dues with name and phone or email. Skips one-customer writes."""
+    del language
+    if "list_customer_accounts" not in allowed_names:
+        return None
+    text = question.strip()
+    if _DUE_LIST_RE.search(text) is None or _DUE_LIST_SCOPE_RE.search(text) is None:
+        return None
+    if wanted_ledger_tool(text, allowed_names) is not None:
+        return None
+    call = ToolCall(
+        id=f"auto_dues_{uuid.uuid4().hex[:10]}",
+        name="list_customer_accounts",
+        arguments={"storeId": store_id, "hasDue": True, "limit": 20},
+    )
+    results = await executor.execute_reads(
+        [call],
+        access_token=access_token,
+        store_id=store_id,
+        allowed_names=allowed_names,
+        session_id=session_id,
+        user_id=user_id,
+        question=question,
+    )
+    projected = project_tool_result(results[0])
+    if not projected.success or not isinstance(projected.data, dict):
+        return None
+    items = projected.data.get("items")
+    message = _due_list_reply(items if isinstance(items, list) else [])
     return FastDossierOutcome(
         message=message,
         tool_calls=[call],

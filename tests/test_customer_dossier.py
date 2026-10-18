@@ -8,7 +8,9 @@ from app.executors.tool_executor import ToolExecutor
 from app.integrations.retailer_client import RetailerHttpError, RetailerResponse
 from app.orchestrator.dossier_auto import (
     name_list_count,
+    purchase_rank_reply,
     try_fast_dossier_turn,
+    try_fast_due_list,
     try_fast_name_list,
 )
 from app.orchestrator.tool_selector import extract_who_is_query, resolve_turn_intent
@@ -187,6 +189,11 @@ def test_dossier_lists_every_name_match() -> None:
 def test_name_list_returns_names_without_amounts() -> None:
     assert name_list_count("koi 4 customer ke name bta") == 4
     assert name_list_count("vikram kon he?") is None
+    purchase = (
+        "koi 4 customer ke name bta jinhone mere se jyada samana liya ho "
+        "and kisne kitna purchase kiya vo bhi"
+    )
+    assert name_list_count(purchase) is None
 
     class Names(_FastRetailer):
         async def get_customers(self, **_kwargs):
@@ -220,6 +227,69 @@ def test_name_list_returns_names_without_amounts() -> None:
     assert "Jayesh Patel" in outcome.message
     assert "Extra" not in outcome.message
     assert "₹" not in outcome.message
+    assert purchase_rank_reply(purchase) is not None
+
+
+def test_due_list_uses_accounts_not_recent_names() -> None:
+    question = "konsa customer ki kitni udhari he list dena to number ya email ke sath"
+    intent = resolve_turn_intent(question, available=_available())
+    assert "list_customer_accounts" in intent.tool_names
+
+    class Accounts(_FastRetailer):
+        async def list_customer_accounts(self, **_kwargs):
+            return RetailerResponse(
+                status_code=200,
+                body={
+                    "data": [
+                        {
+                            "id": "e" * 24,
+                            "totalDue": 100,
+                            "customer": {
+                                "id": CUSTOMER,
+                                "name": "vikram",
+                                "phone": "7877952898",
+                            },
+                        },
+                        {
+                            "id": "f" * 24,
+                            "totalDue": 0,
+                            "customer": {
+                                "id": "d" * 24,
+                                "name": "Rohit Sharma",
+                                "email": "rohit.sharma@example.com",
+                            },
+                        },
+                        {
+                            "id": "c" * 24,
+                            "totalDue": 1000,
+                            "customer": {
+                                "id": "a" * 24,
+                                "name": "Rajesh Jha",
+                                "phone": "9876465111",
+                            },
+                        },
+                    ]
+                },
+            )
+
+    outcome = asyncio.run(
+        try_fast_due_list(
+            question=question,
+            language="en",
+            store_id=STORE,
+            access_token="token",
+            session_id="sess",
+            user_id="user-1",
+            allowed_names=intent.tool_names,
+            executor=ToolExecutor(registry=_registry(), retailer=Accounts()),
+        )
+    )
+    assert outcome is not None
+    assert outcome.message.index("Rajesh Jha") < outcome.message.index("vikram")
+    assert "₹1000" in outcome.message
+    assert "₹100" in outcome.message
+    assert "Rohit Sharma" not in outcome.message
+    assert "7877952898" in outcome.message
 
 
 def test_who_is_query_drops_quotes() -> None:
