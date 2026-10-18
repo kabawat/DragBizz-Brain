@@ -201,8 +201,10 @@ async def customer_dossier(
     items = [
         _dossier_customer(item) for item in raw_items if isinstance(item, dict)
     ]
+    items = _narrow_dossier_customers(items, arguments["query"])
     match_count = len(items)
     data: dict[str, Any] = {
+        "query": arguments["query"],
         "items": items,
         "matchCount": match_count,
         "billsScanned": 0,
@@ -211,6 +213,7 @@ async def customer_dossier(
         data["billsStatus"] = "no_match"
         return ToolResult(tool="customer_dossier", success=True, data=data)
     if match_count != 1 or not items[0].get("id"):
+        data["items"] = [_dossier_identity(item) for item in items]
         data["billsStatus"] = "ambiguous"
         return ToolResult(tool="customer_dossier", success=True, data=data)
 
@@ -233,6 +236,43 @@ async def customer_dossier(
     data["billsScanned"] = len(bills)
     data["billsStatus"] = "ok" if bills else "empty"
     return ToolResult(tool="customer_dossier", success=True, data=data)
+
+
+def _narrow_dossier_customers(
+    items: list[dict[str, Any]], query: str
+) -> list[dict[str, Any]]:
+    """Prefer one exact name, phone, or email over a substring page."""
+    needle = query.strip().casefold()
+    if len(needle) < 2:
+        return items
+    exact = [item for item in items if _dossier_exact(item, needle)]
+    if exact:
+        return exact
+    return [item for item in items if _dossier_contains(item, needle)]
+
+
+def _dossier_exact(item: dict[str, Any], needle: str) -> bool:
+    for key in ("name", "phone", "email"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip().casefold() == needle:
+            return True
+    return False
+
+
+def _dossier_contains(item: dict[str, Any], needle: str) -> bool:
+    for key in ("name", "phone", "email"):
+        value = item.get(key)
+        if isinstance(value, str) and needle in value.casefold():
+            return True
+    return False
+
+
+def _dossier_identity(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: item[key]
+        for key in ("id", "name", "phone")
+        if key in item and item[key] not in (None, "")
+    }
 
 
 def _dossier_customer(item: dict[str, Any]) -> dict[str, Any]:

@@ -130,8 +130,13 @@ def test_dossier_one_match_loads_bills_once() -> None:
 def test_dossier_two_matches_skip_invoices() -> None:
     retailer = _Retailer(
         [
-            {"id": CUSTOMER, "name": "A", "phone": "9812345678"},
-            {"id": "d" * 24, "name": "B", "phone": "9812345679"},
+            {
+                "id": CUSTOMER,
+                "name": "A",
+                "phone": "9812345678",
+                "note": "prefers butter",
+            },
+            {"id": "d" * 24, "name": "A", "phone": "9812345679"},
         ]
     )
     result = asyncio.run(
@@ -140,6 +145,53 @@ def test_dossier_two_matches_skip_invoices() -> None:
     assert retailer.invoice_calls == 0
     assert result.data["billsStatus"] == "ambiguous"
     assert result.data["matchCount"] == 2
+    assert "note" not in result.data["items"][0]
+    assert "memo" not in result.data["items"][0]
+
+
+def test_dossier_exact_name_ignores_similar() -> None:
+    exact_id = CUSTOMER
+    retailer = _Retailer(
+        [
+            {"id": "d" * 24, "name": "Vikram Sharma", "phone": "9812345678"},
+            {
+                "id": exact_id,
+                "name": "vikram",
+                "phone": "7877952898",
+                "note": "udhari vala",
+            },
+        ],
+        invoices=[
+            {
+                "id": "c" * 24,
+                "invoiceNumber": "INV-2",
+                "totalAmount": 100,
+                "createdAt": "2026-10-18T00:00:00Z",
+            }
+        ],
+    )
+    result = asyncio.run(
+        customer_dossier({"query": "Vikram"}, _context(retailer))
+    )
+    assert result.data["matchCount"] == 1
+    assert result.data["items"][0]["id"] == exact_id
+    assert retailer.invoice_calls == 1
+    assert result.data["billsStatus"] == "ok"
+
+
+def test_dossier_drops_unrelated_names() -> None:
+    retailer = _Retailer(
+        [
+            {"id": CUSTOMER, "name": "Pratik Dave", "phone": "9812345678"},
+            {"id": "d" * 24, "name": "Parth Rathore", "phone": "9812345679"},
+        ]
+    )
+    result = asyncio.run(
+        customer_dossier({"query": "Vikram"}, _context(retailer))
+    )
+    assert retailer.invoice_calls == 0
+    assert result.data["billsStatus"] == "no_match"
+    assert result.data["matchCount"] == 0
 
 
 def test_dossier_invoice_error_keeps_profile() -> None:
@@ -286,15 +338,26 @@ def test_fast_dossier_quotes_bills_not_personality() -> None:
     assert retailer.calls == ["customers", "invoices", "customers", "invoices"]
 
 
-def test_fast_dossier_skips_ambiguous() -> None:
+def test_fast_dossier_lists_ambiguous_without_biography() -> None:
     class Many(_FastRetailer):
         async def get_customers(self, **_kwargs):
+            self.calls.append("customers")
             return RetailerResponse(
                 status_code=200,
                 body={
                     "data": [
-                        {"id": CUSTOMER, "name": "A", "phone": "9812345678"},
-                        {"id": "d" * 24, "name": "B", "phone": "9812345679"},
+                        {
+                            "id": CUSTOMER,
+                            "name": "Kishanlal",
+                            "phone": "9812345678",
+                            "note": "Prefers paneer",
+                        },
+                        {
+                            "id": "d" * 24,
+                            "name": "Kishanlal",
+                            "phone": "9812345679",
+                            "note": "Monthly khata customer",
+                        },
                     ]
                 },
             )
@@ -314,7 +377,11 @@ def test_fast_dossier_skips_ambiguous() -> None:
             executor=ToolExecutor(registry=_registry(), retailer=Many()),
         )
     )
-    assert outcome is None
+    assert outcome is not None
+    assert "9812345678" in outcome.message
+    assert "9812345679" in outcome.message
+    assert "prefers" not in outcome.message.lower()
+    assert "khata" not in outcome.message.lower()
 
 
 def test_dossier_prompt_only_when_tool_offered() -> None:

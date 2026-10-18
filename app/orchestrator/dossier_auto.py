@@ -24,9 +24,15 @@ class FastDossierOutcome:
 
 
 def dossier_reply(data: dict[str, Any], *, language: str) -> str | None:
+    hindi = language.lower().startswith("hi")
+    status = data.get("billsStatus")
+    if status == "no_match":
+        return _miss_reply(data, hindi=hindi)
+    if status == "ambiguous":
+        return _choice_reply(data, hindi=hindi)
     if data.get("matchCount") != 1:
         return None
-    if data.get("billsStatus") not in {"ok", "empty", "unavailable"}:
+    if status not in {"ok", "empty", "unavailable"}:
         return None
     items = data.get("items")
     if not isinstance(items, list) or len(items) != 1:
@@ -34,7 +40,6 @@ def dossier_reply(data: dict[str, Any], *, language: str) -> str | None:
     item = items[0]
     if not isinstance(item, dict):
         return None
-    hindi = language.lower().startswith("hi")
     name = item.get("name") if isinstance(item.get("name"), str) else ""
     name = name.strip() or "customer"
     phone = item.get("phone") if isinstance(item.get("phone"), str) else ""
@@ -81,6 +86,47 @@ def dossier_reply(data: dict[str, Any], *, language: str) -> str | None:
             lines.append("## Recent bills")
             lines.append("")
             lines.append("\n\n".join(rendered))
+    return "\n".join(lines).strip()
+
+
+def _asked_name(data: dict[str, Any]) -> str:
+    query = data.get("query")
+    if isinstance(query, str) and query.strip():
+        return query.strip()
+    return "this name"
+
+
+def _miss_reply(data: dict[str, Any], *, hindi: bool) -> str:
+    name = _asked_name(data)
+    if hindi:
+        return f"**{name}** naam ka koi customer nahi mila."
+    return f"No customer matched **{name}**."
+
+
+def _choice_reply(data: dict[str, Any], *, hindi: bool) -> str:
+    name = _asked_name(data)
+    items = data.get("items") if isinstance(data.get("items"), list) else []
+    count = data.get("matchCount")
+    if not isinstance(count, int) or isinstance(count, bool):
+        count = len(items)
+    if hindi:
+        head = f"**{name}** se {count} customers mile. Kaun sa?"
+        cap = "Search pehle 10 tak hai."
+    else:
+        head = f"**{name}** matched {count} customers. Which one?"
+        cap = "Showing the first 10."
+    lines = [head, ""]
+    if count >= 10:
+        lines.append(cap)
+        lines.append("")
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        label = item.get("name") if isinstance(item.get("name"), str) else ""
+        label = label.strip() or "customer"
+        phone = item.get("phone") if isinstance(item.get("phone"), str) else ""
+        phone = phone.strip()
+        lines.append(f"- {label} · {phone}" if phone else f"- {label}")
     return "\n".join(lines).strip()
 
 

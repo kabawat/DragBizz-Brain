@@ -843,6 +843,9 @@ def project_customer_dossier(data: dict[str, Any]) -> dict[str, Any]:
             if isinstance(item, dict):
                 items.append(_project_dossier_customer(item))
     out: dict[str, Any] = {"items": items}
+    query = data.get("query")
+    if isinstance(query, str) and query.strip():
+        out["query"] = query.strip()[:200]
     match_count = data.get("matchCount")
     if isinstance(match_count, int) and not isinstance(match_count, bool):
         out["matchCount"] = match_count
