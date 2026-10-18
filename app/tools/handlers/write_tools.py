@@ -13,13 +13,19 @@ async def create_customer(
     missing = _require_phone_or_email("create_customer", arguments)
     if missing is not None:
         return missing
+    phone = arguments.get("phone")
+    clean_phone = phone.strip() if isinstance(phone, str) and phone.strip() else None
+    email = arguments.get("email")
+    clean_email = email.strip() if isinstance(email, str) and email.strip() else None
+    name = arguments.get("name")
+    clean_name = name.strip() if isinstance(name, str) else str(name)
     try:
         response = await context.retailer.create_customer(
             access_token=context.access_token,
             store_id=context.store_id,
-            name=arguments["name"],
-            phone=arguments.get("phone"),
-            email=arguments.get("email"),
+            name=clean_name,
+            phone=clean_phone,
+            email=clean_email,
         )
     except RetailerHttpError as exc:
         # Retailer's 409 ("already exists") does not include the existing
@@ -76,7 +82,11 @@ async def _find_existing_customer(
             if not isinstance(item, dict):
                 continue
             value = item.get(key)
-            if isinstance(value, str) and value.strip() == identifier:
+            if isinstance(value, str) and (
+                value.strip().lower() == identifier.lower()
+                if key == "email"
+                else value.strip() == identifier
+            ):
                 # Contract: GET /customer serializes _id as `id`.
                 customer_id = item.get("id")
                 if not isinstance(customer_id, str) or not customer_id:

@@ -97,7 +97,9 @@ _CUSTOMER_LIVE = (
     "present. Multiple matches → list name+phone and ask which.\n"
     "- payment_history is store-wide payments, not one customer ledger; "
     "use get_customer_ledger / get_customer_payment for one customer.\n"
-    "- create_customer: name + phone or email. update_customer: name + "
+    "- create_customer: name + phone or email (either phone or email is "
+    "sufficient; never ask for phone when email is provided, and never "
+    "ask for email when phone is provided). update_customer: name + "
     "phone/email required; may also set note, companyDetails (GST), "
     "addresses. Never delete a customer. Never bulk-create or import "
     "opening-balance files — refuse those only. Merge, opening balance "
@@ -216,8 +218,8 @@ def build_chat_system_prompt(
             "Never invent, guess, or 'pick for them' a customer name, "
             "phone, email, product, quantity, or amount — even if they say "
             "'as you wish', 'koi bhi', 'anything', or 'suggest' without the "
-            "value. Then: do NOT call the write tool; ask for the exact "
-            "name and 10-digit phone (or email).\n"
+            "value. In that case do NOT call the write tool; ask for the "
+            "missing values.\n"
         )
         parts.append(
             "- After a successful write with openPath, put a Markdown "
@@ -297,6 +299,14 @@ def build_chat_system_prompt(
 
     if has_create_customer:
         parts.append(
+            "- create_customer contact rule: a customer requires a name "
+            "plus at least ONE contact method — either a 10-digit phone OR "
+            "an email. When the user gives a name and email without a phone, "
+            "create the customer immediately with the email; NEVER ask for a "
+            "phone number. When the user gives a name and phone without an "
+            "email, create the customer immediately with the phone; NEVER "
+            "ask for an email. Only ask for contact info when BOTH phone and "
+            "email are missing.\n"
             "- If the user asks whether you can create/add a customer: "
             "say yes — you can, once they give name and a 10-digit phone "
             "or email. Ask for those missing fields; do not refuse or send "

@@ -14,7 +14,7 @@ _OBJECT_ID_PROP = {
 _PHONE_PROP = {
     "type": "string",
     "pattern": "^[6-9]\\d{9}$",
-    "description": "Indian 10-digit mobile number",
+    "description": "Indian 10-digit mobile number (required if email omitted)",
 }
 
 READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
@@ -336,7 +336,7 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="create_customer",
         description=(
-            "Create customer (name + phone or email from user). "
+            "Create customer (name + either phone or email from user). "
             "Never invent name/phone/email/ids."
         ),
         risk=ToolRisk.WRITE,

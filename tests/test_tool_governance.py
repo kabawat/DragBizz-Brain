@@ -133,6 +133,20 @@ class RecordingRetailer:
             },
         )
 
+    async def create_customer(self, **kwargs):
+        self.calls.append(("create_customer", kwargs))
+        return RetailerResponse(
+            status_code=201,
+            body={
+                "data": {
+                    "id": CUSTOMER,
+                    "name": kwargs.get("name"),
+                    "email": kwargs.get("email"),
+                    "phone": kwargs.get("phone"),
+                }
+            },
+        )
+
     async def create_ledger_transaction(self, **kwargs):
         self.calls.append(("ledger", kwargs))
         return RetailerResponse(status_code=200, body={"data": {"id": "tx1"}})
@@ -885,3 +899,60 @@ async def _merge_confirm() -> None:
     assert len(retailer.calls) == 1
     assert retailer.calls[0][0] == "merge"
     assert "merged" in response.message.lower()
+
+
+def test_create_customer_with_email_only_auto_executes() -> None:
+    asyncio.run(_create_customer_email_only())
+
+
+async def _create_customer_email_only() -> None:
+    retailer = RecordingRetailer()
+    registry = _registry()
+    confirmations = InMemoryConfirmationStore()
+    executor = ToolExecutor(registry=registry, retailer=retailer)
+    tools = list(registry.definitions())
+    call = ToolCall(
+        id="call-create-cust",
+        name="create_customer",
+        arguments={
+            "storeId": STORE,
+            "name": "Rohit Sharma",
+            "email": "rohit.sharma@example.com",
+        },
+    )
+    outcome = await run_tool_loop(
+        gateway=StickyGateway(
+            GenerationResponse(
+                provider="test",
+                model="m",
+                content="Customer Rohit Sharma created.",
+                tool_calls=[],
+            )
+        ),
+        validator=ToolCallValidator(registry),
+        registry=registry,
+        executor=executor,
+        confirmations=confirmations,
+        settings=_settings(),
+        generation=_generation(call),
+        messages=[
+            ChatMessage(
+                role="user",
+                content="Create a customer named Rohit Sharma with email rohit.sharma@example.com",
+            )
+        ],
+        tools=tools,
+        language="en",
+        store_id=STORE,
+        access_token="token",
+        session_id=SESSION,
+        user_id="user-1",
+    )
+    assert len(retailer.calls) == 1
+    kind, kwargs = retailer.calls[0]
+    assert kind == "create_customer"
+    assert kwargs["name"] == "Rohit Sharma"
+    assert kwargs["email"] == "rohit.sharma@example.com"
+    assert kwargs["phone"] is None
+    assert outcome.all_write_results[0].success is True
+    assert outcome.all_write_results[0].data["openPath"] == f"/dashboard/customers/{CUSTOMER}"
