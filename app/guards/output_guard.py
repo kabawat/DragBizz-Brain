@@ -69,7 +69,10 @@ def _numbers_in_tool_results(tool_results: list[ToolResult]) -> set[str]:
 
 class OutputGuard:
     def evaluate(
-        self, text: str, tool_results: list[ToolResult]
+        self,
+        text: str,
+        tool_results: list[ToolResult],
+        prior_numbers: set[str] | None = None,
     ) -> OutputGuardDecision:
         secret = _SECRET_RE.search(text)
         if secret:
@@ -80,7 +83,9 @@ class OutputGuard:
                 sanitized_text=_SECRET_RE.sub(_REDACTED, text),
             )
 
-        unsupported = self._first_unsupported_amount(text, tool_results)
+        unsupported = self._first_unsupported_amount(
+            text, tool_results, prior_numbers=prior_numbers
+        )
         if unsupported is not None:
             return OutputGuardDecision(
                 allowed=False,
@@ -92,7 +97,10 @@ class OutputGuard:
         return OutputGuardDecision(allowed=True, sanitized_text=text)
 
     def _first_unsupported_amount(
-        self, text: str, tool_results: list[ToolResult]
+        self,
+        text: str,
+        tool_results: list[ToolResult],
+        prior_numbers: set[str] | None = None,
     ) -> str | None:
         amounts = [
             (match.group(0), _normalize_amount(match.group(1) or match.group(2)))
@@ -101,6 +109,8 @@ class OutputGuard:
         if not amounts:
             return None
         known = _numbers_in_tool_results(tool_results)
+        if prior_numbers:
+            known.update(prior_numbers)
         for raw, normalized in amounts:
             if normalized not in known:
                 return raw

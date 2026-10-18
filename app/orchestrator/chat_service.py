@@ -11,7 +11,12 @@ from app.confirmations import ConfirmationStore, InMemoryConfirmationStore
 from app.core.exceptions import AppError
 from app.executors.tool_executor import ToolExecutor
 from app.guards.input_guard import InputGuard
-from app.guards.output_guard import OutputGuard
+from app.guards.output_guard import (
+    OutputGuard,
+    _CURRENCY_RE,
+    _NUMBER_RE,
+    _normalize_amount,
+)
 from app.limits.request_budget import BudgetExceeded, RequestBudget
 from app.observability.audit_trail import AuditTrail
 from app.observability.events import CHAT_REQUEST, LIMIT_BUDGET, emit_event
@@ -146,6 +151,7 @@ class ChatService:
             user_id=user_id,
             store_id=store_id,
         )
+        prior_numbers = _extract_prior_numbers(prior_turns)
         intent = resolve_turn_intent(
             body.text,
             available=available,
@@ -178,6 +184,7 @@ class ChatService:
                 fast_ledger.message,
                 tool_results=fast_ledger.tool_results,
                 language=body.language,
+                prior_numbers=prior_numbers,
             )
             await self._sessions.append_turn(
                 session_id=body.session_id,
@@ -388,6 +395,7 @@ class ChatService:
             reply,
             tool_results=outcome.all_results,
             language=body.language,
+            prior_numbers=prior_numbers,
         )
         if not message.strip():
             message = get_fallback_message(body.language)
@@ -542,17 +550,36 @@ class ChatService:
             return None
         return get_refusal_message(body.language)
 
+def _extract_prior_numbers(prior_turns: list[Any]) -> set[str]:
+    numbers: set[str] = set()
+    for turn in prior_turns:
+        tool_ctx = getattr(turn, "tool_context", None)
+        if tool_ctx:
+            for match in _NUMBER_RE.finditer(tool_ctx):
+                numbers.add(_normalize_amount(match.group(0)))
+        asst_text = getattr(turn, "assistant_text", None)
+        if asst_text:
+            for match in _CURRENCY_RE.finditer(asst_text):
+                raw = match.group(1) or match.group(2)
+                if raw:
+                    numbers.add(_normalize_amount(raw))
+    return numbers
+
+
     def _guard_output(
         self,
         message: str,
         *,
         tool_results: list[Any],
         language: str,
+        prior_numbers: set[str] | None = None,
     ) -> str:
         mode = self._settings.guards.output_mode
         if mode == "off" or not message:
             return message
-        decision = self._output_guard.evaluate(message, tool_results)
+        decision = self._output_guard.evaluate(
+            message, tool_results, prior_numbers=prior_numbers
+        )
         if decision.allowed:
             return message
         # Log category/match only, not full response.

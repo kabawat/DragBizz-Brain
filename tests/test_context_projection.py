@@ -377,6 +377,16 @@ def test_output_guard_uses_projected_amounts() -> None:
     assert bad.category == "UNSUPPORTED_NUMBERS"
 
 
+def test_output_guard_allows_prior_session_numbers() -> None:
+    guard = OutputGuard()
+    res = guard.evaluate(
+        "Vikram has a total due of ₹100.",
+        tool_results=[],
+        prior_numbers={"100"},
+    )
+    assert res.allowed is True
+
+
 def test_history_snapshot_is_valid_json_with_total() -> None:
     sessions = InMemorySessionStore(tool_context_max_chars=800)
     # Many payment rows force list shrinking instead of mid-string cuts.

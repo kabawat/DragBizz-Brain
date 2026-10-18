@@ -132,10 +132,13 @@ async def search_customer(
 ) -> ToolResult:
     try:
         slices = _slices_for_question(context.question)
+        raw_query = arguments["query"].strip()
+        phone_match = re.search(r"\b[6-9]\d{9}\b", raw_query)
+        effective_query = phone_match.group(0) if phone_match else raw_query
         response = await context.retailer.get_customers(
             access_token=context.access_token,
             store_id=context.store_id,
-            query=arguments["query"],
+            query=effective_query,
             include_addresses="address" in slices,
             include_account="khata" in slices or "ledger" in slices,
         )
@@ -143,6 +146,20 @@ async def search_customer(
         return _failure("search_customer", exc)
 
     raw_items = response.body.get("data") or []
+    if not raw_items and effective_query != raw_query:
+        clean_name = re.sub(r"\(?[6-9]\d{9}\)?", "", raw_query).strip()
+        if clean_name:
+            try:
+                fallback_resp = await context.retailer.get_customers(
+                    access_token=context.access_token,
+                    store_id=context.store_id,
+                    query=clean_name,
+                    include_addresses="address" in slices,
+                    include_account="khata" in slices or "ledger" in slices,
+                )
+                raw_items = fallback_resp.body.get("data") or []
+            except RetailerHttpError:
+                pass
     items = [
         _customer_row(item, slices=slices)
         for item in raw_items
