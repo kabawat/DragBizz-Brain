@@ -687,6 +687,9 @@ async def test_create_expense_full_flow() -> None:
     assert record.type == "create_expense"
     assert record.summary["title"] == "Store Rent"
     assert record.summary["amount"] == 20000.0
+    assert record.summary["total"] == 20000.0
+    assert record.summary["invoiceNumber"] == "Store Rent"
+    assert "openPath" not in record.summary
 
     # 5. Confirm Flow Approval
     executor = AsyncMock()

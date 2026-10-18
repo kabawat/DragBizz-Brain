@@ -25,17 +25,17 @@ _PERSONA = (
 
 def _answer_format(*, with_docs: bool) -> str:
     link_rule = (
-        "- In-app links only when relevant to THIS question and present in "
-        "retrieved docs (e.g. [Invoices](/dashboard/invoices)). Never invent "
-        "paths. do not mention Tally unless the user asked about Tally / "
+        "- In-app links: NEVER convert normal spoken phrases or conversational "
+        "suggestions into markdown links (e.g. NEVER write '[aaj ki total sales]"
+        "(/dashboard/today-sale)', never write '[yahan click karke](...)', "
+        "never write '[pichle dino ki summary](...)'). "
+        "NEVER invent routes (e.g. '/dashboard/today-sale' does NOT exist; "
+        "the main store dashboard is '/dashboard'). "
+        "Only cite an in-app page link (e.g. [Invoices](/dashboard/invoices)) "
+        "when specifically answering a how-to question where the user asked "
+        "where to find something in the dashboard.\n"
+        "- Do not mention Tally unless the user asked about Tally / "
         "accounting export.\n"
-        if with_docs
-        else (
-            "- In-app links only when relevant to THIS question "
-            "(e.g. [Invoices](/dashboard/invoices)). Never invent paths. "
-            "do not mention Tally unless the user asked about Tally / "
-            "accounting export.\n"
-        )
     )
     return (
         "- Friend-chat style: short natural lines with a light smile — "
@@ -276,8 +276,13 @@ def build_chat_system_prompt(
         )
         parts.append(
             f"- Sensitive tools ({sensitive_names}) NEVER auto-run — calling "
-            "only stages confirmation. Do not claim the action finished "
-            "until the user confirms in the app.\n"
+            "only stages confirmation. The chat UI automatically renders a "
+            "confirmation card with 'Confirm' and 'Cancel' buttons right below "
+            "your message. NEVER output markdown links like '[yahan click karke]"
+            "(...)' or tell the user to click a link to confirm. Briefly state "
+            "what was prepared and tell the user to click the Confirm button on "
+            "the card below. Do not claim the action finished until the user "
+            "confirms.\n"
         )
         if "ledger_credit" in tool_names or "ledger_debit" in tool_names:
             parts.append(
@@ -341,7 +346,10 @@ def build_chat_system_prompt(
                 "Examples of category: 'Rent', 'Utilities', 'Food & Refreshment', "
                 "'Salaries', 'Maintenance', 'Supplies', 'Transport', 'Other'. "
                 "Never say you cannot record or add an expense while create_expense "
-                "is offered. Do not claim the expense is saved until confirmed.\n"
+                "is offered. Tell the user to tap the Confirm button on the "
+                "card below to confirm. Do NOT output markdown links like "
+                "'[yahan click karke](...)'. Do not claim the expense is saved "
+                "until confirmed.\n"
             )
 
 

@@ -760,9 +760,10 @@ async def _stage_create_expense_call(
         "action": "create_expense",
         "title": title,
         "amount": amount,
+        "total": amount,
+        "invoiceNumber": title,
         "category": category,
         "currency": "INR",
-        "openPath": "/dashboard/expenses",
     }
     date_val = args.get("date")
     if isinstance(date_val, str) and date_val.strip():
