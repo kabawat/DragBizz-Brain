@@ -288,6 +288,94 @@ async def customer_dossier(
     return ToolResult(tool="customer_dossier", success=True, data=data)
 
 
+_TOP_CUSTOMER_PAGE = 100
+_TOP_CUSTOMER_PAGES = 5
+
+
+async def top_customers(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    raw_limit = arguments.get("limit")
+    want = raw_limit if isinstance(raw_limit, int) and 1 <= raw_limit <= 20 else 4
+    totals: dict[str, dict[str, Any]] = {}
+    scanned = 0
+    capped = False
+    cursor: str | None = None
+    seen: set[str] = set()
+    try:
+        for _ in range(_TOP_CUSTOMER_PAGES):
+            response = await context.retailer.list_invoices(
+                access_token=context.access_token,
+                store_id=context.store_id,
+                limit=_TOP_CUSTOMER_PAGE,
+                next_cursor=cursor,
+            )
+            body = response.body if isinstance(response.body, dict) else {}
+            page = body.get("data") or []
+            if isinstance(page, list):
+                for bill in page:
+                    if isinstance(bill, dict) and _add_purchase(totals, bill):
+                        scanned += 1
+            nxt = _customer_cursor(body)
+            if not nxt or nxt in seen:
+                break
+            seen.add(nxt)
+            cursor = nxt
+        else:
+            capped = True
+    except RetailerHttpError as exc:
+        return _failure("top_customers", exc)
+    ranked = sorted(
+        totals.values(), key=lambda row: float(row["total"]), reverse=True
+    )
+    items: list[dict[str, Any]] = []
+    for row in ranked[:want]:
+        total = float(row["total"])
+        shown = int(total) if total == int(total) else round(total, 2)
+        items.append(
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "phone": row["phone"],
+                "total": shown,
+                "bills": row["bills"],
+            }
+        )
+    return ToolResult(
+        tool="top_customers",
+        success=True,
+        data={"items": items, "billsScanned": scanned, "capped": capped},
+    )
+
+
+def _add_purchase(totals: dict[str, dict[str, Any]], bill: dict[str, Any]) -> bool:
+    status = bill.get("invoiceStatus")
+    if isinstance(status, str) and status != "RELEASED":
+        return False
+    amount = bill.get("totalAmount")
+    if not isinstance(amount, (int, float)) or isinstance(amount, bool):
+        return False
+    customer = bill.get("customer") if isinstance(bill.get("customer"), dict) else {}
+    customer_id = str(customer.get("id") or "")
+    if not customer_id:
+        return False
+    row = totals.get(customer_id)
+    if row is None:
+        name = customer.get("name") if isinstance(customer.get("name"), str) else ""
+        phone = customer.get("phone") if isinstance(customer.get("phone"), str) else ""
+        row = {
+            "id": customer_id,
+            "name": name.strip() or "customer",
+            "phone": phone.strip(),
+            "total": 0.0,
+            "bills": 0,
+        }
+        totals[customer_id] = row
+    row["total"] = float(row["total"]) + float(amount)
+    row["bills"] = int(row["bills"]) + 1
+    return True
+
+
 def _rank_customers(
     items: list[dict[str, Any]], query: str
 ) -> tuple[list[dict[str, Any]], str]:
@@ -937,6 +1025,7 @@ READ_TOOL_HANDLERS = {
     "product_summary": product_summary,
     "search_customer": search_customer,
     "customer_dossier": customer_dossier,
+    "top_customers": top_customers,
     "payment_history": payment_history,
     "list_stores": list_stores,
     "customer_summary": customer_summary,

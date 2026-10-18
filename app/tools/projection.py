@@ -967,6 +967,36 @@ def project_search_customer(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def project_top_customers(data: dict[str, Any]) -> dict[str, Any]:
+    raw_items = data.get("items")
+    items: list[dict[str, Any]] = []
+    if isinstance(raw_items, list):
+        for item in raw_items[:20]:
+            if not isinstance(item, dict):
+                continue
+            row: dict[str, Any] = {}
+            if isinstance(item.get("id"), str) and item["id"]:
+                row["id"] = item["id"]
+            if isinstance(item.get("name"), str):
+                row["name"] = item["name"]
+            if isinstance(item.get("phone"), str) and item["phone"]:
+                row["phone"] = item["phone"]
+            if _is_number(item.get("total")):
+                row["total"] = item["total"]
+            bills = item.get("bills")
+            if isinstance(bills, int) and not isinstance(bills, bool):
+                row["bills"] = bills
+            if row:
+                items.append(row)
+    out: dict[str, Any] = {"items": items}
+    scanned = data.get("billsScanned")
+    if isinstance(scanned, int) and not isinstance(scanned, bool):
+        out["billsScanned"] = scanned
+    if isinstance(data.get("capped"), bool):
+        out["capped"] = data["capped"]
+    return out
+
+
 TOOL_PROJECTORS: dict[str, _Projector] = {
     "payment_history": project_payment_history,
     "create_invoice_draft": project_invoice_result,
@@ -989,6 +1019,7 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "search_product": project_search_product,
     "search_customer": project_search_customer,
     "customer_dossier": project_customer_dossier,
+    "top_customers": project_top_customers,
     "list_stores": project_list_stores,
     "customer_summary": project_customer_summary,
     "get_customer_ledger": project_customer_ledger,

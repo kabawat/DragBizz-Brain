@@ -131,6 +131,29 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
         },
     ),
     ToolDefinition(
+        name="top_customers",
+        description=(
+            "Customers who spent the most, summed from recent released "
+            "bills. Not all-time if the store has more than 500 bills."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "description": "How many customers to return",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
         name="payment_history",
         description=(
             "Recent customer payments for this store. Not one customer's "

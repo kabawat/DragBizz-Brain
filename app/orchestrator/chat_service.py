@@ -38,10 +38,10 @@ from app.orchestrator.confirmation import (
     stage_from_draft_result,
 )
 from app.orchestrator.dossier_auto import (
-    purchase_rank_reply,
     try_fast_dossier_turn,
     try_fast_due_list,
     try_fast_name_list,
+    try_fast_purchase_rank,
 )
 from app.orchestrator.ledger_auto import try_fast_ledger_turn
 from app.orchestrator.token_usage import RequestTokenUsage
@@ -239,8 +239,17 @@ class ChatService:
                 tool_results=fast_names.tool_results,
                 pending_confirmation=None,
             )
-        purchase_reply = purchase_rank_reply(body.text)
-        if purchase_reply is not None:
+        fast_purchases = await try_fast_purchase_rank(
+            question=body.text,
+            language=body.language,
+            store_id=store_id,
+            access_token=access_token,
+            session_id=body.session_id,
+            user_id=user_id,
+            allowed_names=allowed_names,
+            executor=self._executor,
+        )
+        if fast_purchases is not None:
             return await self._finish_deterministic(
                 body=body,
                 user_id=user_id,
@@ -248,10 +257,10 @@ class ChatService:
                 store_id=store_id,
                 started=started,
                 prior_numbers=prior_numbers,
-                provider="fast_purchase",
-                message=purchase_reply,
-                tool_calls=[],
-                tool_results=[],
+                provider="fast_purchases",
+                message=fast_purchases.message,
+                tool_calls=fast_purchases.tool_calls,
+                tool_results=fast_purchases.tool_results,
                 pending_confirmation=None,
             )
         fast_dues = await try_fast_due_list(

@@ -411,6 +411,30 @@ class RetailerClient:
             params=params,
         )
 
+    async def list_invoices(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        limit: int = 100,
+        invoice_status: str = "RELEASED",
+        next_cursor: str | None = None,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {
+            "limit": limit,
+            "includeItems": "false",
+            "invoiceStatus": invoice_status,
+        }
+        if next_cursor:
+            params["nextCursor"] = next_cursor
+        return await self._request(
+            "GET",
+            "/invoices",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
     async def get_customers(
         self,
         *,

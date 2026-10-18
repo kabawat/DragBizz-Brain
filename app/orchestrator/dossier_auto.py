@@ -13,7 +13,7 @@ from typing import Any
 
 from app.executors.tool_executor import ToolExecutor
 from app.orchestrator.ledger_auto import wanted_ledger_tool
-from app.orchestrator.tool_selector import extract_who_is_query
+from app.orchestrator.tool_selector import _PURCHASE_RANK_RE, extract_who_is_query
 from app.schemas.tool import ToolCall, ToolResult
 from app.tools.projection import project_tool_result
 
@@ -200,11 +200,6 @@ _NAME_LIST_MORE_RE = re.compile(
     r"baaki|baqi|\bdue\b|amount|total",
     re.IGNORECASE,
 )
-_PURCHASE_RANK_RE = re.compile(
-    r"(?:jyada|zyada).{0,40}(?:saman|samaan|purchase|khareed|liya)"
-    r"|(?:kitn[ae]).{0,40}purchase|purchase.{0,40}kitn",
-    re.IGNORECASE,
-)
 _DUE_LIST_RE = re.compile(
     r"\b(?:udhari|udhaar|udhar|baaki|baqi)\b",
     re.IGNORECASE,
@@ -222,13 +217,88 @@ def name_list_count(question: str) -> int | None:
     return count if count <= 20 else None
 
 
-def purchase_rank_reply(question: str) -> str | None:
-    """Plain names cannot answer who bought the most."""
+def purchase_rank_count(question: str) -> int | None:
     if _PURCHASE_RANK_RE.search(question.strip()) is None:
         return None
-    return (
-        "Customer-wise purchase total is not in this list. "
-        "I can list names, or the customers who currently have udhari."
+    match = _NAME_LIST_RE.search(question)
+    if match is None:
+        return 4
+    count = int(match.group(1))
+    return count if count <= 20 else 20
+
+
+def _purchase_reply(data: dict[str, Any]) -> str:
+    items = data.get("items") if isinstance(data.get("items"), list) else []
+    scanned = data.get("billsScanned")
+    scanned_n = scanned if isinstance(scanned, int) else 0
+    if not items:
+        return f"No customer purchases in the last {scanned_n} released bills."
+    scope = (
+        f"From the latest {scanned_n} released bills."
+        if data.get("capped")
+        else f"From {scanned_n} released bills."
+    )
+    lines = ["**Top customers by purchase**", "", scope, ""]
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name") if isinstance(item.get("name"), str) else ""
+        name = name.strip() or "customer"
+        phone = item.get("phone") if isinstance(item.get("phone"), str) else ""
+        phone = phone.strip()
+        total = item.get("total")
+        bits = [name]
+        if phone:
+            bits.append(phone)
+        if isinstance(total, (int, float)) and not isinstance(total, bool):
+            shown = int(total) if float(total) == int(total) else total
+            bits.append(f"₹{shown}")
+        bills = item.get("bills")
+        if isinstance(bills, int) and not isinstance(bills, bool):
+            bits.append(f"{bills} bills")
+        lines.append("- " + " · ".join(bits))
+    return "\n".join(lines)
+
+
+async def try_fast_purchase_rank(
+    *,
+    question: str,
+    language: str,
+    store_id: str,
+    access_token: str,
+    session_id: str,
+    user_id: str,
+    allowed_names: frozenset[str],
+    executor: ToolExecutor,
+) -> FastDossierOutcome | None:
+    """Top customers by released-bill total. Amounts come from those bills."""
+    del language
+    if "top_customers" not in allowed_names:
+        return None
+    count = purchase_rank_count(question)
+    if count is None:
+        return None
+    call = ToolCall(
+        id=f"auto_top_{uuid.uuid4().hex[:10]}",
+        name="top_customers",
+        arguments={"storeId": store_id, "limit": count},
+    )
+    results = await executor.execute_reads(
+        [call],
+        access_token=access_token,
+        store_id=store_id,
+        allowed_names=allowed_names,
+        session_id=session_id,
+        user_id=user_id,
+        question=question,
+    )
+    projected = project_tool_result(results[0])
+    if not projected.success or not isinstance(projected.data, dict):
+        return None
+    return FastDossierOutcome(
+        message=_purchase_reply(projected.data),
+        tool_calls=[call],
+        tool_results=[projected],
     )
 
 

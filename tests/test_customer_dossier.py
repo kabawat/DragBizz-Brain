@@ -8,10 +8,10 @@ from app.executors.tool_executor import ToolExecutor
 from app.integrations.retailer_client import RetailerHttpError, RetailerResponse
 from app.orchestrator.dossier_auto import (
     name_list_count,
-    purchase_rank_reply,
     try_fast_dossier_turn,
     try_fast_due_list,
     try_fast_name_list,
+    try_fast_purchase_rank,
 )
 from app.orchestrator.tool_selector import extract_who_is_query, resolve_turn_intent
 from app.prompts.system.chat import build_chat_system_prompt
@@ -227,7 +227,80 @@ def test_name_list_returns_names_without_amounts() -> None:
     assert "Jayesh Patel" in outcome.message
     assert "Extra" not in outcome.message
     assert "₹" not in outcome.message
-    assert purchase_rank_reply(purchase) is not None
+
+
+def test_top_customers_ranks_released_bills() -> None:
+    question = (
+        "koi 4 customer ke name bta jinhone mere se jyada samana liya ho "
+        "and kisne kitna purchase kiya vo bhi"
+    )
+    intent = resolve_turn_intent(question, available=_available())
+    assert "top_customers" in intent.tool_names
+
+    class Bills(_FastRetailer):
+        async def list_invoices(self, **_kwargs):
+            return RetailerResponse(
+                status_code=200,
+                body={
+                    "data": [
+                        {
+                            "invoiceStatus": "RELEASED",
+                            "totalAmount": 100,
+                            "customer": {
+                                "id": CUSTOMER,
+                                "name": "Rajesh Jha",
+                                "phone": "9876465111",
+                            },
+                        },
+                        {
+                            "invoiceStatus": "RELEASED",
+                            "totalAmount": 50,
+                            "customer": {
+                                "id": CUSTOMER,
+                                "name": "Rajesh Jha",
+                                "phone": "9876465111",
+                            },
+                        },
+                        {
+                            "invoiceStatus": "DRAFT",
+                            "totalAmount": 9999,
+                            "customer": {
+                                "id": "d" * 24,
+                                "name": "Draft Only",
+                            },
+                        },
+                        {
+                            "invoiceStatus": "RELEASED",
+                            "totalAmount": 80,
+                            "customer": {
+                                "id": "e" * 24,
+                                "name": "vikram",
+                                "phone": "7877952898",
+                            },
+                        },
+                    ]
+                },
+            )
+
+    outcome = asyncio.run(
+        try_fast_purchase_rank(
+            question=question,
+            language="en",
+            store_id=STORE,
+            access_token="token",
+            session_id="sess",
+            user_id="user-1",
+            allowed_names=intent.tool_names,
+            executor=ToolExecutor(registry=_registry(), retailer=Bills()),
+        )
+    )
+    assert outcome is not None
+    assert "not in this list" not in outcome.message
+    assert outcome.message.index("Rajesh Jha") < outcome.message.index("vikram")
+    assert "₹150" in outcome.message
+    assert "₹80" in outcome.message
+    assert "Draft Only" not in outcome.message
+    assert "9876465111" in outcome.message
 
 
 def test_due_list_uses_accounts_not_recent_names() -> None:

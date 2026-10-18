@@ -807,6 +807,11 @@ _LEDGER_CREDIT_FLEX_RE = re.compile(
     r"|\bjama\s+k(?:ar|r)(?:o|na|\s+do|\s+dena)?\b",
     re.IGNORECASE,
 )
+_PURCHASE_RANK_RE = re.compile(
+    r"(?:jyada|zyada).{0,40}(?:saman|samaan|purchase|khareed|liya)"
+    r"|(?:kitn[ae]).{0,40}purchase|purchase.{0,40}kitn",
+    re.IGNORECASE,
+)
 # Amount/name may sit between "stock me" and "add" ("stock me 10 add kar do").
 _STOCK_ADD_FLEX_RE = re.compile(
     r"stock\s+me(?:in)?\s+(?:\S+\s+){0,6}(?:add|daal|dalo|badha)\b"
@@ -833,6 +838,8 @@ def _exposure_tools(text: str) -> set[str]:
         names.add("ledger_debit")
     if _LEDGER_CREDIT_FLEX_RE.search(text):
         names.add("ledger_credit")
+    if _PURCHASE_RANK_RE.search(text):
+        names.add("top_customers")
     if _STOCK_ADD_FLEX_RE.search(text):
         names.update({"add_stock", "search_product"})
     return names
