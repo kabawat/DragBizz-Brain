@@ -1,5 +1,6 @@
 from pydantic_settings import SettingsConfigDict
 
+
 def _group_config() -> SettingsConfigDict:
     return SettingsConfigDict(
         env_file=".env",

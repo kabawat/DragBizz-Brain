@@ -373,14 +373,14 @@ def _parse_arguments(raw: object) -> dict[str, Any]:
         return {}
     try:
         parsed = json.loads(text)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
         repaired = _repair_json_object(text)
         if repaired is None:
             raise AppError(
                 code="TOOL_ARGS_INVALID",
                 message="Tool arguments must be valid JSON",
                 status_code=400,
-            )
+            ) from exc
         parsed = repaired
     if not isinstance(parsed, dict):
         raise AppError(
