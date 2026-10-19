@@ -59,7 +59,12 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     http_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(settings.services.request_timeout_seconds)
+        timeout=httpx.Timeout(settings.services.request_timeout_seconds),
+        limits=httpx.Limits(
+            max_keepalive_connections=20,
+            max_connections=50,
+            keepalive_expiry=30.0,
+        ),
     )
     app.state.http_client = http_client
 

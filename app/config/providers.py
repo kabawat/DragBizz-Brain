@@ -57,7 +57,7 @@ class ChatSettings(BaseSettings):
         validation_alias="AI_CHAT_TEMPERATURE",
     )
     provider_timeout_seconds: float = Field(
-        default=30.0,
+        default=15.0,
         gt=0,
         le=60,
         validation_alias="AI_PROVIDER_TIMEOUT_SECONDS",

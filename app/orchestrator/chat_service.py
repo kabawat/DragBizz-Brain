@@ -37,6 +37,7 @@ from app.orchestrator.confirmation import (
     pending_to_schema,
     stage_from_draft_result,
 )
+from app.orchestrator.conversational_auto import try_fast_conversational_turn
 from app.orchestrator.dossier_auto import (
     try_fast_dossier_turn,
     try_fast_due_list,
@@ -175,6 +176,27 @@ class ChatService:
                 user_id=user_id,
                 provider="input_guard",
                 model="",
+            )
+
+        user_name = str(user.get("name") or user.get("given_name") or "")
+        fast_conv = try_fast_conversational_turn(
+            body.text,
+            language=body.language,
+            user_name=user_name,
+        )
+        if fast_conv is not None:
+            return await self._finish_deterministic(
+                body=body,
+                user_id=user_id,
+                request_id=request_id,
+                store_id=store_id,
+                started=started,
+                prior_numbers=set(),
+                provider="fast_conversational",
+                message=fast_conv.message,
+                tool_calls=[],
+                tool_results=[],
+                pending_confirmation=None,
             )
 
         available = {definition.name for definition in self._registry.definitions()}

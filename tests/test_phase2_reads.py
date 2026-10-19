@@ -899,3 +899,48 @@ def test_live_time_and_date_injected_in_prompt() -> None:
     assert today in prompt
     assert time_str in prompt
     assert "Current Date & Time Rule:" in prompt
+
+
+def test_fast_conversational_turn() -> None:
+    from app.orchestrator.conversational_auto import try_fast_conversational_turn
+
+    # 1. Greetings
+    res_hy = try_fast_conversational_turn("hy")
+    assert res_hy is not None
+    assert "DragBizz me aapka swagat hai" in res_hy.message
+
+    res_namaste = try_fast_conversational_turn("namaste")
+    assert res_namaste is not None
+    assert "DragBizz" in res_namaste.message
+
+    # 2. Time & Date
+    res_time = try_fast_conversational_turn("exact time batao")
+    assert res_time is not None
+    assert "exact time" in res_time.message or "IST" in res_time.message
+
+    res_date = try_fast_conversational_turn("aaj kya date he")
+    assert res_date is not None
+    assert "Aaj" in res_date.message
+
+    # 3. Identity
+    res_who = try_fast_conversational_turn("aap kaun ho")
+    assert res_who is not None
+    assert "DragBizz Store Dost" in res_who.message
+
+    # 4. Closures
+    res_close = try_fast_conversational_turn("theek hai")
+    assert res_close is not None
+    assert "dost" in res_close.message.lower()
+
+
+def test_fast_conversational_bypasses_business_queries() -> None:
+    from app.orchestrator.conversational_auto import try_fast_conversational_turn
+
+    # Business terms must NEVER be intercepted by conversational fast path
+    msg_expense = "add karo kharcha aaj ka chai ka 160 rupye"
+    assert try_fast_conversational_turn(msg_expense) is None
+    assert try_fast_conversational_turn("aaj ki sale kitni hui") is None
+    assert try_fast_conversational_turn("chai ka stock kitna hai") is None
+    assert try_fast_conversational_turn("500 rupaye jama karo") is None
+    assert try_fast_conversational_turn("create invoice draft") is None
+    assert try_fast_conversational_turn("customer ram ka ledger dikhao") is None

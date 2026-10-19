@@ -873,8 +873,10 @@ _HOW_TO_CUES = (
 )
 
 _NEITHER_RE = re.compile(
-    r"^(hi|hello|hey|yo|thanks|thank you(?:\s+bhai)?|theek hai|"
-    r"ok|okay|kem cho|namaste|bye|good morning|good evening)\W*$",
+    r"^(hi|hy|hii+|hello|helo|hlo|hey|yo|thanks|thank you(?:\s+bhai)?|thank u|"
+    r"theek hai|thik hai|ok|okay|accha|achha|got it|samajh gaya|dhanyawad|shukriya|"
+    r"kem cho|namaste|namaskar|pranam|radhe radhe|ram ram|kya haal hai|kaise ho|"
+    r"bye|alvida|good night|good morning|good afternoon|good evening)\W*$",
     re.IGNORECASE,
 )
 
