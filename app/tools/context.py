@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from app.integrations.retailer_client import RetailerClient
 
@@ -11,3 +12,4 @@ class ToolContext:
     store_id: str
     retailer: RetailerClient
     question: str = ""
+    insight_cache: Any = None

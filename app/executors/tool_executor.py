@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Collection
+from typing import Any
 
 from app.core.exceptions import AppError
 from app.idempotency import (
@@ -32,12 +33,14 @@ class ToolExecutor:
         idempotency_store: IdempotencyStore | None = None,
         audit_trail: AuditTrail | None = None,
         metrics: MetricsRegistry | None = None,
+        insight_cache: Any = None,
     ) -> None:
         self._registry = registry
         self._retailer = retailer
         self._idempotency = idempotency_store or InMemoryIdempotencyStore()
         self._audit_trail = audit_trail
         self._metrics = metrics
+        self._insight_cache = insight_cache
 
     async def execute_reads(
         self,
@@ -91,6 +94,7 @@ class ToolExecutor:
             store_id=store_id,
             retailer=self._retailer,
             question=question,
+            insight_cache=self._insight_cache,
         )
 
         async def _one(call: ToolCall) -> ToolResult:
@@ -279,6 +283,7 @@ class ToolExecutor:
             store_id=store_id,
             retailer=self._retailer,
             question=question,
+            insight_cache=self._insight_cache,
         )
         results: list[ToolResult] = []
         draft_calls_seen = prior_draft_calls

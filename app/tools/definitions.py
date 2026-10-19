@@ -700,6 +700,111 @@ READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "required": ["storeId", "periodDays"],
         },
     ),
+    ToolDefinition(
+        name="sales_pareto",
+        description=(
+            "Deterministic 80/20 Pareto product sales analysis: calculates "
+            "top revenue-generating products, units sold, and cumulative revenue "
+            "shares from verified invoices over a time window (today, 7d, 30d)."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "window": {
+                    "type": "string",
+                    "enum": ["today", "7d", "30d", "90d"],
+                    "description": "Analysis window (default '7d')",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "description": "Maximum top products to return (default 20)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="payment_mix",
+        description=(
+            "Deterministic breakdown of store payment collections by channel "
+            "(Cash, UPI, Card, Credit/Udhaar, Bank Transfer) over a time window "
+            "(today, 7d, 30d)."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "window": {
+                    "type": "string",
+                    "enum": ["today", "7d", "30d", "90d"],
+                    "description": "Analysis window (default '7d')",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="inventory_velocity",
+        description=(
+            "Deterministic inventory sales velocity and scanning: correlates catalog "
+            "stock against observed sales to identify fast-moving products and items "
+            "with zero sales observed in the scanned window."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "window": {
+                    "type": "string",
+                    "enum": ["today", "7d", "30d", "90d"],
+                    "description": "Analysis window (default '7d')",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "description": "Maximum items per category (default 20)",
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="store_brief",
+        description=(
+            "Deterministic composite executive store brief: combines live sales "
+            "today, inventory stock alerts, customer receivables/dues, and "
+            "expenses into a single verified report."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "date": {
+                    "type": "string",
+                    "description": (
+                        "Optional date in YYYY-MM-DD format (defaults to today)"
+                    ),
+                },
+            },
+            "required": ["storeId"],
+        },
+    ),
 )
 
 _ADDRESS_FIELDS = {

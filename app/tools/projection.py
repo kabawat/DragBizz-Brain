@@ -1381,6 +1381,127 @@ def project_invoice_detailed_analytics(
     return out or dict(data)
 
 
+def project_sales_pareto(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in (
+        "totalRevenue",
+        "totalUnitsSold",
+        "totalProductsSold",
+        "paretoThresholdPct",
+        "paretoTopCount",
+        "paretoRatio",
+    ):
+        if key in data:
+            out[key] = data[key]
+
+    for list_key in ("topProducts", "paretoProducts"):
+        raw_list = data.get(list_key)
+        if isinstance(raw_list, list):
+            items = []
+            for item in raw_list[:_MAX_LIST]:
+                if isinstance(item, dict):
+                    items.append({
+                        "rank": item.get("rank"),
+                        "productId": str(item.get("productId") or ""),
+                        "productName": item.get("productName"),
+                        "sku": item.get("sku"),
+                        "unitsSold": item.get("unitsSold"),
+                        "revenue": item.get("revenue"),
+                        "revenueSharePct": item.get("revenueSharePct"),
+                        "cumulativeSharePct": item.get("cumulativeSharePct"),
+                    })
+            out[list_key] = items
+
+    cov = data.get("coverage")
+    if isinstance(cov, dict):
+        out["coverage"] = dict(cov)
+    return out or dict(data)
+
+
+def project_payment_mix(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in (
+        "totalInvoiced",
+        "totalAmount",
+        "totalCollected",
+        "totalUncollectedCredit",
+        "invoiceCount",
+        "primaryMode",
+    ):
+        if key in data:
+            out[key] = data[key]
+
+    raw_bd = data.get("breakdown")
+    if isinstance(raw_bd, dict):
+        out["breakdown"] = dict(raw_bd)
+
+    cov = data.get("coverage")
+    if isinstance(cov, dict):
+        out["coverage"] = dict(cov)
+    return out or dict(data)
+
+
+def project_inventory_velocity(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in (
+        "totalStockItemsScanned",
+        "itemsWithSalesInWindow",
+        "zeroObservedSalesCount",
+        "lowStockCount",
+    ):
+        if key in data:
+            out[key] = data[key]
+
+    for list_key in ("fastMovingItems", "zeroObservedSalesItems", "lowStockItems"):
+        raw_list = data.get(list_key)
+        if isinstance(raw_list, list):
+            items = []
+            for item in raw_list[:_MAX_LIST]:
+                if isinstance(item, dict):
+                    items.append({
+                        "productId": str(item.get("productId") or ""),
+                        "productName": item.get("productName"),
+                        "sku": item.get("sku"),
+                        "category": item.get("category"),
+                        "availableQuantity": item.get("availableQuantity"),
+                        "lowStockThreshold": item.get("lowStockThreshold"),
+                        "unitsSoldInWindow": item.get("unitsSoldInWindow"),
+                        "billsCountInWindow": item.get("billsCountInWindow"),
+                        "isLowStock": item.get("isLowStock"),
+                        "isOutOfStock": item.get("isOutOfStock"),
+                        "zeroSalesInScannedWindow": item.get(
+                            "zeroSalesInScannedWindow"
+                        ),
+                        "observationNote": item.get("observationNote"),
+                    })
+            out[list_key] = items
+
+    cov = data.get("coverage")
+    if isinstance(cov, dict):
+        out["coverage"] = dict(cov)
+    return out or dict(data)
+
+
+def project_store_brief(data: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in (
+        "date",
+        "todaySales",
+        "inventoryHealth",
+        "customerReceivables",
+        "expenses",
+        "netCashflowIndication",
+        "netCashflowStatus",
+    ):
+        if key in data:
+            out[key] = data[key]
+
+    cov = data.get("coverage")
+    if isinstance(cov, dict):
+        out["coverage"] = dict(cov)
+    return out or dict(data)
+
+
 TOOL_PROJECTORS: dict[str, _Projector] = {
     "payment_history": project_payment_history,
     "create_invoice_draft": project_invoice_result,
@@ -1428,5 +1549,9 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "create_expense": project_create_expense,
     "update_expense": project_update_expense,
     "create_purchase_order": project_create_purchase_order,
+    "sales_pareto": project_sales_pareto,
+    "payment_mix": project_payment_mix,
+    "inventory_velocity": project_inventory_velocity,
+    "store_brief": project_store_brief,
 }
 

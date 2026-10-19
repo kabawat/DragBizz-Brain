@@ -4,6 +4,14 @@ import contextlib
 import re
 from typing import Any
 
+from app.core.dates import current_ist_date_str
+from app.insights import (
+    calculate_inventory_velocity,
+    calculate_payment_mix,
+    calculate_sales_pareto,
+    compile_store_brief,
+    resolve_window_dates,
+)
 from app.integrations.retailer_client import RetailerHttpError
 from app.schemas.tool import ToolResult
 from app.tools.context import ToolContext
@@ -1767,6 +1775,272 @@ def _failure(tool: str, exc: RetailerHttpError) -> ToolResult:
     )
 
 
+async def _fetch_invoices_window(
+    context: ToolContext,
+    *,
+    start_date: str,
+    end_date: str,
+    include_items: bool,
+    max_invoices: int = 300,
+) -> tuple[list[dict[str, Any]], bool]:
+    invoices: list[dict[str, Any]] = []
+    next_cursor: str | None = None
+    has_more = False
+
+    for _ in range(3):
+        resp = await context.retailer.list_invoices(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            limit=100,
+            start_date=start_date,
+            end_date=end_date,
+            include_items=include_items,
+            next_cursor=next_cursor,
+        )
+        body = resp.body if isinstance(resp.body, dict) else {}
+        batch = body.get("data") or []
+        if isinstance(batch, list):
+            invoices.extend(batch)
+
+        meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+        has_next = bool(meta.get("hasNextPage"))
+        cursor = meta.get("nextCursor")
+        has_more = has_next
+
+        if not has_next or not cursor or len(invoices) >= max_invoices:
+            break
+        next_cursor = str(cursor)
+
+    return invoices, has_more
+
+
+async def sales_pareto(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    window, start_date, end_date = resolve_window_dates(arguments.get("window"))
+    if context.insight_cache:
+        cached = await context.insight_cache.get(
+            context.store_id, "sales_pareto", window
+        )
+        if isinstance(cached, dict):
+            return ToolResult(tool="sales_pareto", success=True, data=cached)
+
+    try:
+        invoices, has_more = await _fetch_invoices_window(
+            context,
+            start_date=start_date,
+            end_date=end_date,
+            include_items=True,
+        )
+    except RetailerHttpError as exc:
+        return _failure("sales_pareto", exc)
+
+    raw_limit = arguments.get("limit") or 20
+    try:
+        limit = max(1, min(int(raw_limit), 50))
+    except (ValueError, TypeError):
+        limit = 20
+
+    data = calculate_sales_pareto(
+        invoices,
+        window=window,
+        is_complete=not has_more,
+        limit=limit,
+    )
+    if context.insight_cache:
+        await context.insight_cache.set(
+            context.store_id, "sales_pareto", window, data
+        )
+
+    return ToolResult(tool="sales_pareto", success=True, data=data)
+
+
+async def payment_mix(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    window, start_date, end_date = resolve_window_dates(arguments.get("window"))
+    if context.insight_cache:
+        cached = await context.insight_cache.get(
+            context.store_id, "payment_mix", window
+        )
+        if isinstance(cached, dict):
+            return ToolResult(tool="payment_mix", success=True, data=cached)
+
+    try:
+        invoices, has_more = await _fetch_invoices_window(
+            context,
+            start_date=start_date,
+            end_date=end_date,
+            include_items=False,
+        )
+    except RetailerHttpError as exc:
+        return _failure("payment_mix", exc)
+
+    data = calculate_payment_mix(
+        invoices,
+        window=window,
+        is_complete=not has_more,
+    )
+    if context.insight_cache:
+        await context.insight_cache.set(
+            context.store_id, "payment_mix", window, data
+        )
+
+    return ToolResult(tool="payment_mix", success=True, data=data)
+
+
+async def inventory_velocity(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    window, start_date, end_date = resolve_window_dates(arguments.get("window"))
+    if context.insight_cache:
+        cached = await context.insight_cache.get(
+            context.store_id, "inventory_velocity", window
+        )
+        if isinstance(cached, dict):
+            return ToolResult(
+                tool="inventory_velocity", success=True, data=cached
+            )
+
+    try:
+        stock_resp = await context.retailer.get_stock_items(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+    except RetailerHttpError as exc:
+        return _failure("inventory_velocity", exc)
+
+    stock_body = stock_resp.body if isinstance(stock_resp.body, dict) else {}
+    stock_data = stock_body.get("data")
+    if isinstance(stock_data, dict):
+        raw_items = stock_data.get("items") or []
+    elif isinstance(stock_data, list):
+        raw_items = stock_data
+    else:
+        raw_items = []
+
+    stock_items = [item for item in raw_items if isinstance(item, dict)]
+
+    try:
+        invoices, has_more = await _fetch_invoices_window(
+            context,
+            start_date=start_date,
+            end_date=end_date,
+            include_items=True,
+        )
+    except RetailerHttpError as exc:
+        return _failure("inventory_velocity", exc)
+
+    raw_limit = arguments.get("limit") or 20
+    try:
+        limit = max(1, min(int(raw_limit), 50))
+    except (ValueError, TypeError):
+        limit = 20
+
+    data = calculate_inventory_velocity(
+        stock_items,
+        invoices,
+        window=window,
+        is_complete=not has_more,
+        limit=limit,
+    )
+    if context.insight_cache:
+        await context.insight_cache.set(
+            context.store_id, "inventory_velocity", window, data
+        )
+
+    return ToolResult(tool="inventory_velocity", success=True, data=data)
+
+
+async def store_brief(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    date_str = str(arguments.get("date") or current_ist_date_str())
+    if context.insight_cache:
+        cached = await context.insight_cache.get(
+            context.store_id, "store_brief", date_str
+        )
+        if isinstance(cached, dict):
+            return ToolResult(tool="store_brief", success=True, data=cached)
+
+    all_succeeded = True
+    today_revenue: dict[str, Any] | None = None
+    stock_totals: dict[str, Any] | None = None
+    customer_totals: dict[str, Any] | None = None
+    expense_totals: dict[str, Any] | None = None
+
+    try:
+        rev_resp = await context.retailer.get_revenue(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+        rev_body = rev_resp.body if isinstance(rev_resp.body, dict) else {}
+        data = rev_body.get("data")
+        if isinstance(data, dict) and bool(data):
+            today_revenue = data
+        else:
+            all_succeeded = False
+    except Exception:
+        all_succeeded = False
+
+    try:
+        stk_resp = await context.retailer.get_stock(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+        stk_body = stk_resp.body if isinstance(stk_resp.body, dict) else {}
+        data = stk_body.get("data")
+        if isinstance(data, dict) and bool(data):
+            stock_totals = data
+        else:
+            all_succeeded = False
+    except Exception:
+        all_succeeded = False
+
+    try:
+        cust_resp = await context.retailer.get_customer_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+        cust_body = cust_resp.body if isinstance(cust_resp.body, dict) else {}
+        data = cust_body.get("data")
+        if isinstance(data, dict) and bool(data):
+            customer_totals = data
+        else:
+            all_succeeded = False
+    except Exception:
+        all_succeeded = False
+
+    try:
+        exp_resp = await context.retailer.get_expense_analytics(
+            access_token=context.access_token,
+            store_id=context.store_id,
+        )
+        exp_body = exp_resp.body if isinstance(exp_resp.body, dict) else {}
+        data = exp_body.get("data")
+        if isinstance(data, dict) and bool(data):
+            expense_totals = data
+        else:
+            all_succeeded = False
+    except Exception:
+        all_succeeded = False
+
+    data = compile_store_brief(
+        today_revenue=today_revenue,
+        stock_totals=stock_totals,
+        customer_totals=customer_totals,
+        expense_totals=expense_totals,
+        date_str=date_str,
+        is_complete=all_succeeded,
+    )
+    if context.insight_cache:
+        await context.insight_cache.set(
+            context.store_id, "store_brief", date_str, data
+        )
+
+    return ToolResult(tool="store_brief", success=True, data=data)
+
+
 READ_TOOL_HANDLERS = {
     "search_product": search_product,
     "today_sale": today_sale,
@@ -1797,4 +2071,8 @@ READ_TOOL_HANDLERS = {
     "list_staff": list_staff,
     "customer_detailed_analytics": customer_detailed_analytics,
     "invoice_detailed_analytics": invoice_detailed_analytics,
+    "sales_pareto": sales_pareto,
+    "payment_mix": payment_mix,
+    "inventory_velocity": inventory_velocity,
+    "store_brief": store_brief,
 }

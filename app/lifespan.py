@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.confirmations import InMemoryConfirmationStore, RedisConfirmationStore
 from app.executors.tool_executor import ToolExecutor
 from app.idempotency import InMemoryIdempotencyStore, RedisIdempotencyStore
+from app.insights import build_insight_cache
 from app.integrations.retailer_client import RetailerClient
 from app.limits import (
     CircuitBreaker,
@@ -190,12 +191,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             ttl_seconds=settings.session.confirmation_ttl_seconds
         )
     )
+    insight_cache = build_insight_cache(redis_client, ttl_seconds=900)
+    app.state.insight_cache = insight_cache
     tool_executor = ToolExecutor(
         registry=tool_registry,
         retailer=retailer,
         idempotency_store=idempotency_store,
         audit_trail=audit_trail,
         metrics=metrics,
+        insight_cache=insight_cache,
     )
 
     model_router = ModelRouter()

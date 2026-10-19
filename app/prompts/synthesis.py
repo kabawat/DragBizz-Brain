@@ -47,7 +47,10 @@ def build_continuation_instruction(*, language: str) -> str:
         "mention only the lookups that returned items and do not say the "
         "other kind was missing; say nothing was found only when every "
         "lookup was empty; if a tool failed, say so briefly without "
-        "guessing numbers; "
+        "guessing numbers; if a metric is null or marked UNAVAILABLE, state "
+        "clearly that it is unavailable — NEVER report unavailable metrics as "
+        "zero or calculate net values from missing data; genuine zero (₹0.00) "
+        "indicates zero observed activity, distinct from unavailable data; "
         + _NATURAL_REPLY
         + "if a successful write tool result includes openPath, confirm "
         "briefly then include it as a Markdown link using that path exactly. "
@@ -68,6 +71,10 @@ def build_synthesis_instruction(*, language: str) -> str:
         "other kind was missing. Say nothing was found only when every "
         "lookup was empty. "
         "If a tool failed, say so briefly without guessing numbers. "
+        "If a metric is null or marked UNAVAILABLE, state clearly that it is "
+        "unavailable — NEVER report unavailable metrics as zero or calculate net "
+        "values from missing data; genuine zero (₹0.00) indicates zero observed "
+        "activity, distinct from unavailable data. "
         + _NATURAL_REPLY
         + "If a successful write tool result includes openPath, confirm "
         "briefly then include it as a Markdown link "
