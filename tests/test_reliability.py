@@ -743,7 +743,7 @@ async def _confirm_redis_down() -> None:
 
 
 @pytest.mark.asyncio
-async def test_jwks_async_thread_offload_and_error_mapping() -> None:
+async def test_jwks_async_thread_offload_success() -> None:
     from app.integrations.auth_jwks import JwksTokenVerifier
 
     mock_client = MagicMock()
@@ -763,7 +763,6 @@ async def test_jwks_async_thread_offload_and_error_mapping() -> None:
     )
     verifier = JwksTokenVerifier(settings=settings, jwks_client=mock_client)  # type: ignore[arg-type]
 
-    # 1. Success case and to_thread offload
     with (
         patch("jwt.decode") as mock_decode,
         patch("asyncio.to_thread", wraps=asyncio.to_thread) as spy_to_thread,
@@ -780,39 +779,184 @@ async def test_jwks_async_thread_offload_and_error_mapping() -> None:
         assert claims["tenant"] == "tenant-a"
         assert spy_to_thread.called
 
-    # 2. PyJWKClientConnectionError maps to 503 AUTH_UNAVAILABLE
+
+@pytest.mark.asyncio
+async def test_jwks_missing_kid_and_unknown_signing_key_id() -> None:
+    from app.integrations.auth_jwks import JwksTokenVerifier
+
+    mock_client = MagicMock()
+    settings = SimpleNamespace(
+        jwt=SimpleNamespace(
+            url="https://auth.example.com/.well-known/jwks.json",
+            cache_ttl_seconds=300,
+            algorithms=["RS256"],
+            audience="retailer-admin",
+            issuer="dragbizz-auth",
+            clock_skew_seconds=0,
+        )
+    )
+    verifier = JwksTokenVerifier(settings=settings, jwks_client=mock_client)  # type: ignore[arg-type]
+
+    # 1. Missing kid in token header (header.get("kid") is None)
+    mock_client.get_signing_key_from_jwt.side_effect = jwt.PyJWKClientError(
+        'Unable to find a signing key that matches: "None"'
+    )
+    with pytest.raises(AppError) as exc_missing_kid:
+        await verifier.verify("token.without.kid", None)  # type: ignore[arg-type]
+    assert exc_missing_kid.value.status_code == 401
+    assert exc_missing_kid.value.code == "AUTH_INVALID"
+    assert exc_missing_kid.value.message == "Invalid access token"
+    assert "None" not in exc_missing_kid.value.message
+
+    # 2. Unknown signing-key ID (kid not found in JWKS)
+    mock_client.get_signing_key_from_jwt.side_effect = jwt.PyJWKClientError(
+        'Unable to find a signing key that matches: "unknown-key-id-999"'
+    )
+    with pytest.raises(AppError) as exc_unknown_kid:
+        await verifier.verify("token.with.unknown.kid", None)  # type: ignore[arg-type]
+    assert exc_unknown_kid.value.status_code == 401
+    assert exc_unknown_kid.value.code == "AUTH_INVALID"
+    assert exc_unknown_kid.value.message == "Invalid access token"
+    assert "unknown-key-id" not in exc_unknown_kid.value.message
+
+
+@pytest.mark.asyncio
+async def test_jwks_network_timeout_or_connection_failure() -> None:
+    from app.integrations.auth_jwks import JwksTokenVerifier
+
+    mock_client = MagicMock()
+    settings = SimpleNamespace(
+        jwt=SimpleNamespace(
+            url="https://auth.example.com/.well-known/jwks.json",
+            cache_ttl_seconds=300,
+            algorithms=["RS256"],
+            audience="retailer-admin",
+            issuer="dragbizz-auth",
+            clock_skew_seconds=0,
+        )
+    )
+    verifier = JwksTokenVerifier(settings=settings, jwks_client=mock_client)  # type: ignore[arg-type]
+
+    # 1. Connection refused / network failure
     mock_client.get_signing_key_from_jwt.side_effect = (
-        jwt.PyJWKClientConnectionError("Connection refused")
+        jwt.PyJWKClientConnectionError("Connection refused to auth.example.com:443")
     )
     with pytest.raises(AppError) as exc_conn:
         await verifier.verify("token", None)  # type: ignore[arg-type]
     assert exc_conn.value.status_code == 503
     assert exc_conn.value.code == "AUTH_UNAVAILABLE"
+    assert exc_conn.value.message == "Auth service unavailable"
+    assert "auth.example.com" not in exc_conn.value.message
 
-    # 3. PyJWKError maps to 401 AUTH_INVALID
-    mock_client.get_signing_key_from_jwt.side_effect = jwt.PyJWKError(
-        "Signing key not found"
+    # 2. Timeout error
+    mock_client.get_signing_key_from_jwt.side_effect = (
+        jwt.PyJWKClientConnectionError("The read operation timed out")
     )
-    with pytest.raises(AppError) as exc_jwk:
+    with pytest.raises(AppError) as exc_timeout:
         await verifier.verify("token", None)  # type: ignore[arg-type]
-    assert exc_jwk.value.status_code == 401
-    assert exc_jwk.value.code == "AUTH_INVALID"
+    assert exc_timeout.value.status_code == 503
+    assert exc_timeout.value.code == "AUTH_UNAVAILABLE"
+    assert exc_timeout.value.message == "Auth service unavailable"
 
-    # 4. ExpiredSignatureError maps to 401 AUTH_EXPIRED
-    mock_client.get_signing_key_from_jwt.side_effect = None
+
+@pytest.mark.asyncio
+async def test_jwks_malformed_or_unusable_responses() -> None:
+    from app.integrations.auth_jwks import JwksTokenVerifier
+
+    mock_client = MagicMock()
+    settings = SimpleNamespace(
+        jwt=SimpleNamespace(
+            url="https://auth.example.com/.well-known/jwks.json",
+            cache_ttl_seconds=300,
+            algorithms=["RS256"],
+            audience="retailer-admin",
+            issuer="dragbizz-auth",
+            clock_skew_seconds=0,
+        )
+    )
+    verifier = JwksTokenVerifier(settings=settings, jwks_client=mock_client)  # type: ignore[arg-type]
+
+    # 1. Malformed non-JSON response from JWKS endpoint (service failure, NOT 401)
+    mock_client.get_signing_key_from_jwt.side_effect = jwt.PyJWKClientError(
+        "The JWKS endpoint did not return a JSON object"
+    )
+    with pytest.raises(AppError) as exc_non_json:
+        await verifier.verify("token", None)  # type: ignore[arg-type]
+    assert exc_non_json.value.status_code == 503
+    assert exc_non_json.value.code == "AUTH_UNAVAILABLE"
+    assert exc_non_json.value.message == "Auth service unavailable"
+
+    # 2. JWK Set did not contain any keys (service failure, NOT 401)
+    mock_client.get_signing_key_from_jwt.side_effect = jwt.PyJWKSetError(
+        "The JWK Set did not contain any keys"
+    )
+    with pytest.raises(AppError) as exc_empty_set:
+        await verifier.verify("token", None)  # type: ignore[arg-type]
+    assert exc_empty_set.value.status_code == 503
+    assert exc_empty_set.value.code == "AUTH_UNAVAILABLE"
+    assert exc_empty_set.value.message == "Auth service unavailable"
+
+    # 3. JWK Set did not contain any usable keys (service failure, NOT 401)
+    mock_client.get_signing_key_from_jwt.side_effect = jwt.PyJWKSetError(
+        "The JWK Set did not contain any usable keys."
+    )
+    with pytest.raises(AppError) as exc_unusable:
+        await verifier.verify("token", None)  # type: ignore[arg-type]
+    assert exc_unusable.value.status_code == 503
+    assert exc_unusable.value.code == "AUTH_UNAVAILABLE"
+    assert exc_unusable.value.message == "Auth service unavailable"
+
+
+@pytest.mark.asyncio
+async def test_jwks_expired_and_invalid_token_error_mapping() -> None:
+    from app.integrations.auth_jwks import JwksTokenVerifier
+
+    mock_client = MagicMock()
+    mock_key = MagicMock()
+    mock_key.key = "fake-public-key"
     mock_client.get_signing_key_from_jwt.return_value = mock_key
-    with patch("jwt.decode", side_effect=jwt.ExpiredSignatureError("Token expired")):
+
+    settings = SimpleNamespace(
+        jwt=SimpleNamespace(
+            url="https://auth.example.com/.well-known/jwks.json",
+            cache_ttl_seconds=300,
+            algorithms=["RS256"],
+            audience="retailer-admin",
+            issuer="dragbizz-auth",
+            clock_skew_seconds=0,
+        )
+    )
+    verifier = JwksTokenVerifier(settings=settings, jwks_client=mock_client)  # type: ignore[arg-type]
+
+    # Expired token
+    with patch(
+        "jwt.decode",
+        side_effect=jwt.ExpiredSignatureError("Signature expired"),
+    ):
         with pytest.raises(AppError) as exc_exp:
-            await verifier.verify("token", None)  # type: ignore[arg-type]
+            await verifier.verify("expired.token", None)  # type: ignore[arg-type]
         assert exc_exp.value.status_code == 401
         assert exc_exp.value.code == "AUTH_EXPIRED"
+        assert exc_exp.value.message == "Access token expired"
 
-    # 5. InvalidTokenError maps to 401 AUTH_INVALID
-    with patch("jwt.decode", side_effect=jwt.InvalidTokenError("Malformed")):
-        with pytest.raises(AppError) as exc_inv:
-            await verifier.verify("token", None)  # type: ignore[arg-type]
-        assert exc_inv.value.status_code == 401
-        assert exc_inv.value.code == "AUTH_INVALID"
+    # Malformed token format (DecodeError)
+    with patch("jwt.decode", side_effect=jwt.DecodeError("Not enough segments")):
+        with pytest.raises(AppError) as exc_decode:
+            await verifier.verify("bad.format", None)  # type: ignore[arg-type]
+        assert exc_decode.value.status_code == 401
+        assert exc_decode.value.code == "AUTH_INVALID"
+        assert exc_decode.value.message == "Invalid access token"
+
+    # Invalid signature (InvalidSignatureError)
+    with patch(
+        "jwt.decode",
+        side_effect=jwt.InvalidSignatureError("Signature verification failed"),
+    ):
+        with pytest.raises(AppError) as exc_sig:
+            await verifier.verify("bad.sig", None)  # type: ignore[arg-type]
+        assert exc_sig.value.status_code == 401
+        assert exc_sig.value.code == "AUTH_INVALID"
+        assert exc_sig.value.message == "Invalid access token"
 
 
 @pytest.mark.asyncio

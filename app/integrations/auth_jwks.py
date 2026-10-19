@@ -59,7 +59,23 @@ class JwksTokenVerifier:
                 message="Access token expired",
                 status_code=401,
             ) from exc
-        except jwt.PyJWKClientConnectionError as exc:
+        except (
+            jwt.PyJWKClientConnectionError,
+            jwt.PyJWKSetError,
+        ) as exc:
+            raise AppError(
+                code="AUTH_UNAVAILABLE",
+                message="Auth service unavailable",
+                status_code=503,
+            ) from exc
+        except jwt.PyJWKClientError as exc:
+            err_msg = str(exc).lower()
+            if "unable to find a signing key" in err_msg:
+                raise AppError(
+                    code="AUTH_INVALID",
+                    message="Invalid access token",
+                    status_code=401,
+                ) from exc
             raise AppError(
                 code="AUTH_UNAVAILABLE",
                 message="Auth service unavailable",
