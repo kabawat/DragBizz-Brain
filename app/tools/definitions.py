@@ -1306,10 +1306,18 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                         "'BANK_TRANSFER', 'CARD', 'OTHER'"
                     ),
                 },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": (
+                        "Optional description or note for the expense "
+                        "(e.g. 'last month sept ka')"
+                    ),
+                },
                 "notes": {
                     "type": "string",
                     "maxLength": 500,
-                    "description": "Optional memo or notes",
+                    "description": "Alias for description",
                 },
             },
             "required": ["storeId", "title", "amount", "category"],

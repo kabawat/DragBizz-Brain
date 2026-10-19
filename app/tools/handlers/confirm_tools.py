@@ -602,6 +602,14 @@ async def create_expense(
         arguments.get("date"), context_text=context_text
     )
 
+    desc = (
+        arguments.get("description")
+        if isinstance(arguments.get("description"), str)
+        else arguments.get("notes")
+        if isinstance(arguments.get("notes"), str)
+        else None
+    )
+
     try:
         response = await context.retailer.create_expense(
             access_token=context.access_token,
@@ -613,9 +621,8 @@ async def create_expense(
             payment_mode=arguments.get("paymentMode")
             if isinstance(arguments.get("paymentMode"), str)
             else None,
-            notes=arguments.get("notes")
-            if isinstance(arguments.get("notes"), str)
-            else None,
+            notes=desc,
+            description=desc,
         )
     except RetailerHttpError as exc:
         return ToolResult(

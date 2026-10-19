@@ -754,6 +754,7 @@ class RetailerClient:
         date: str | None = None,
         payment_mode: str | None = None,
         notes: str | None = None,
+        description: str | None = None,
     ) -> RetailerResponse:
         body: dict[str, Any] = {
             "title": title,
@@ -764,8 +765,10 @@ class RetailerClient:
             body["date"] = date
         if payment_mode:
             body["paymentMode"] = payment_mode
-        if notes:
-            body["notes"] = notes
+        desc_val = description or notes
+        if desc_val:
+            body["description"] = desc_val
+            body["notes"] = desc_val
         return await self._request(
             "POST",
             "/expense",
