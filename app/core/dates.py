@@ -27,6 +27,16 @@ def current_ist_human_str() -> str:
     return now_ist().strftime("%A, %d %B %Y")
 
 
+def current_ist_time_str() -> str:
+    """Return human readable time in IST e.g. '03:00 PM'."""
+    return now_ist().strftime("%I:%M %p")
+
+
+def current_ist_datetime_str() -> str:
+    """Return full date and time e.g. 'Monday, 19 October 2026, 03:00 PM IST'."""
+    return now_ist().strftime("%A, %d %B %Y, %I:%M %p IST")
+
+
 def resolve_expense_date(raw_date: str | None, context_text: str = "") -> str:
     """Resolve expense date to a valid ISO YYYY-MM-DD string.
 

@@ -1,4 +1,8 @@
-from app.core.dates import current_ist_date_str, current_ist_human_str
+from app.core.dates import (
+    current_ist_date_str,
+    current_ist_human_str,
+    current_ist_time_str,
+)
 from app.prompts.abuse import abuse_tone_rule
 from app.rag.chunker import estimate_tokens
 from app.rag.models import RetrievedChunk
@@ -167,33 +171,39 @@ def build_chat_system_prompt(
 
     if documentation:
         scope_rule = (
-            "- Answer DragBizz / store topics and anything covered in "
-            "Documentation below. Refuse unrelated general knowledge, "
-            "coding, news, entertainment.\n"
+            "- Answer DragBizz / store topics, greetings, current date/time, and "
+            "anything covered in Documentation below. Refuse unrelated "
+            "general knowledge, coding, news, entertainment.\n"
             "- When refusing: one short buddy line (vary wording); nudge "
             "toward a store / DragBizz question. No corporate filler.\n"
         )
     else:
         scope_rule = (
-            "- Answer only DragBizz or store topics (sales, stock, khata, "
-            "GST, billing, reports, features, integrations). Refuse "
-            "unrelated general knowledge, coding, news, entertainment.\n"
+            "- Answer DragBizz or store topics (sales, stock, khata, "
+            "GST, billing, reports, features, integrations), greetings, and "
+            "current date/time queries. Refuse unrelated general knowledge, "
+            "coding, news, entertainment.\n"
             "- When refusing: one short buddy line (vary wording); nudge "
             "toward a store / DragBizz question. No corporate filler.\n"
         )
 
     today_date = current_ist_date_str()
     today_human = current_ist_human_str()
+    current_time = current_ist_time_str()
     parts: list[str] = [
         _PERSONA,
         f"Respond to the user in language tag: {language}.\n",
         f"Active storeId: {store_id}.\n",
-        f"Today's live date (IST): {today_date} ({today_human}).\n",
+        f"Today's live date & time (IST): {today_human}, {current_time} "
+        f"(date: {today_date}).\n",
         "Rules:\n",
         (
-            f"- Current Date Rule: Today's live date is {today_date}. Whenever "
-            "the user mentions 'aaj', 'today', 'current', or logs a new expense "
-            f"or bill, ALWAYS use {today_date}. NEVER use 2024 or 2025.\n"
+            f"- Current Date & Time Rule: Today's live date is {today_date} "
+            f"({today_human}) and current live time is {current_time} (IST). "
+            "When the user asks for date or exact time, answer accurately "
+            "with this live time/date. Whenever the user mentions 'aaj', "
+            "'today', 'current', or logs a new expense or bill, ALWAYS "
+            f"use {today_date}. NEVER use 2024 or 2025.\n"
         ),
     ]
     if abuse_rule:

@@ -884,5 +884,18 @@ def test_resolve_expense_date_prevents_llm_past_cutoff() -> None:
     assert d3 == today
 
 
+def test_live_time_and_date_injected_in_prompt() -> None:
+    from app.core.dates import current_ist_date_str, current_ist_time_str
+    from app.prompts.system.chat import build_chat_system_prompt
 
+    prompt = build_chat_system_prompt(
+        language="hi-IN",
+        store_id="store-1",
+        tools=[],
+    )
+    today = current_ist_date_str()
+    time_str = current_ist_time_str()
 
+    assert today in prompt
+    assert time_str in prompt
+    assert "Current Date & Time Rule:" in prompt
