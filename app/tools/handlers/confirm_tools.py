@@ -152,6 +152,7 @@ async def add_stock(
         ):
             purchase_price = 1.0
         product_id = product_id.strip()
+        idempotency_key = arguments.get("idempotencyKey")
         try:
             response = await context.retailer.add_stock(
                 access_token=context.access_token,
@@ -159,6 +160,9 @@ async def add_stock(
                 product_id=product_id,
                 quantity=float(quantity),
                 purchase_price=float(purchase_price),
+                idempotency_key=str(idempotency_key).strip()
+                if isinstance(idempotency_key, str) and idempotency_key.strip()
+                else None,
             )
         except RetailerHttpError as exc:
             return ToolResult(
@@ -617,6 +621,7 @@ async def create_expense(
         else None
     )
 
+    idempotency_key = arguments.get("idempotencyKey")
     try:
         response = await context.retailer.create_expense(
             access_token=context.access_token,
@@ -631,6 +636,9 @@ async def create_expense(
             notes=desc,
             description=desc,
             status=status_val,
+            idempotency_key=str(idempotency_key).strip()
+            if isinstance(idempotency_key, str) and idempotency_key.strip()
+            else None,
         )
     except RetailerHttpError as exc:
         return ToolResult(

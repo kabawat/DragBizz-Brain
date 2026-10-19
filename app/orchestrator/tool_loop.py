@@ -170,6 +170,8 @@ async def run_tool_loop(
     access_token: str,
     session_id: str,
     user_id: str,
+    agency_id: str | None = None,
+    tenant_id: str | None = None,
     budget: RequestBudget | None = None,
     audit_trail: AuditTrail | None = None,
     metrics: MetricsRegistry | None = None,
@@ -197,7 +199,11 @@ async def run_tool_loop(
 
     def _describe_errors(tool_calls: list[ToolCall], sid: str) -> list[str]:
         return validator.describe_errors(
-            tool_calls, store_id=sid, allowed_names=allowed_names
+            tool_calls,
+            store_id=sid,
+            allowed_names=allowed_names,
+            agency_id=agency_id,
+            tenant_id=tenant_id,
         )
 
     for round_index in range(max_rounds):
@@ -206,6 +212,8 @@ async def run_tool_loop(
                 generation.tool_calls,
                 store_id=store_id,
                 allowed_names=allowed_names,
+                agency_id=agency_id,
+                tenant_id=tenant_id,
             )
         except AppError as exc:
             if exc.code not in {"TOOL_ARGS_INVALID", "TOOL_NOT_ALLOWED"}:
@@ -228,6 +236,8 @@ async def run_tool_loop(
                 generation.tool_calls,
                 store_id=store_id,
                 allowed_names=allowed_names,
+                agency_id=agency_id,
+                tenant_id=tenant_id,
             )
 
         if not tool_calls:

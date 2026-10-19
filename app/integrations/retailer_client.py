@@ -167,19 +167,24 @@ class RetailerClient:
         product_id: str,
         quantity: float,
         purchase_price: float,
+        idempotency_key: str | None = None,
     ) -> RetailerResponse:
+        body: dict[str, Any] = {
+            "productId": product_id,
+            "batchData": {
+                "quantity": quantity,
+                "purchasePrice": purchase_price,
+            },
+        }
+        if idempotency_key:
+            body["idempotencyKey"] = idempotency_key
+            body["clientLocalId"] = idempotency_key
         return await self._request(
             "POST",
             "/stock",
             access_token=access_token,
             store_id=store_id,
-            json_body={
-                "productId": product_id,
-                "batchData": {
-                    "quantity": quantity,
-                    "purchasePrice": purchase_price,
-                },
-            },
+            json_body=body,
         )
 
     async def get_payments(
@@ -756,6 +761,7 @@ class RetailerClient:
         notes: str | None = None,
         description: str | None = None,
         status: str | None = None,
+        idempotency_key: str | None = None,
     ) -> RetailerResponse:
         body: dict[str, Any] = {
             "title": title,
@@ -772,6 +778,9 @@ class RetailerClient:
         if desc_val:
             body["description"] = desc_val
             body["notes"] = desc_val
+        if idempotency_key:
+            body["idempotencyKey"] = idempotency_key
+            body["clientLocalId"] = idempotency_key
         return await self._request(
             "POST",
             "/expense",

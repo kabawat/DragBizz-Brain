@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -155,6 +156,68 @@ class FakeRedis:
                 self._data.pop(key, None)
                 return 1
             return 0
+        if "payload['business_idempotency_key']" in script:
+            key = str(keys_and_args[0])
+            raw = self._data.get(key)
+            if not raw:
+                return "ERR:NOT_FOUND"
+            payload = json.loads(raw)
+            now = float(keys_and_args[1])
+            if now >= float(payload["expires_at"]):
+                self._data.pop(key, None)
+                return "ERR:EXPIRED"
+            if (
+                payload["user_id"] != keys_and_args[2]
+                or payload["store_id"] != keys_and_args[3]
+                or payload["session_id"] != keys_and_args[4]
+            ):
+                return "ERR:FORBIDDEN"
+            if keys_and_args[5] and payload["draft_id"] != keys_and_args[5]:
+                return "ERR:DRAFT_MISMATCH"
+            status = payload.get("status") or "PENDING"
+            if status in ("SUCCEEDED", "REJECTED", "FAILED", "EXECUTING"):
+                return "ERR:ALREADY_USED"
+            key_arg = keys_and_args[6]
+            if key_arg:
+                payload["business_idempotency_key"] = key_arg
+            elif not payload.get("business_idempotency_key"):
+                return "ERR:MISSING_KEY"
+            payload["status"] = "EXECUTING"
+            self._data[key] = json.dumps(payload)
+            return "OK:" + json.dumps(payload)
+        if "payload['status'] = 'REJECTED'" in script:
+            key = str(keys_and_args[0])
+            raw = self._data.get(key)
+            if not raw:
+                return "ERR:NOT_FOUND"
+            payload = json.loads(raw)
+            now = float(keys_and_args[1])
+            if now >= float(payload["expires_at"]):
+                self._data.pop(key, None)
+                return "ERR:EXPIRED"
+            if (
+                payload["user_id"] != keys_and_args[2]
+                or payload["store_id"] != keys_and_args[3]
+                or payload["session_id"] != keys_and_args[4]
+            ):
+                return "ERR:FORBIDDEN"
+            if keys_and_args[5] and payload["draft_id"] != keys_and_args[5]:
+                return "ERR:DRAFT_MISMATCH"
+            status = payload.get("status") or "PENDING"
+            if status != "PENDING":
+                return "ERR:ALREADY_USED"
+            payload["status"] = "REJECTED"
+            self._data[key] = json.dumps(payload)
+            return "OK:" + json.dumps(payload)
+        if "payload['status'] = ARGV[1]" in script:
+            key = str(keys_and_args[0])
+            raw = self._data.get(key)
+            if not raw:
+                return "ERR:NOT_FOUND"
+            payload = json.loads(raw)
+            payload["status"] = keys_and_args[1]
+            self._data[key] = json.dumps(payload)
+            return "OK:" + json.dumps(payload)
         raise NotImplementedError
 
 
@@ -1092,3 +1155,251 @@ async def test_chat_endpoints_teardown_swallows_release_error() -> None:
     )
     conf_resp = await confirm_chat(conf_body, mock_request, user, chat_service)  # type: ignore[arg-type]
     assert conf_resp.message == "confirmed from mock"
+
+
+@pytest.mark.asyncio
+async def test_redis_confirmation_atomic_reject_and_concurrent_claim_race() -> None:
+    from app.confirmations import RedisConfirmationStore
+
+    fake_redis = FakeRedis()
+    store = RedisConfirmationStore(fake_redis)
+    record = await store.create(
+        user_id="u1",
+        store_id=STORE,
+        session_id=SESSION,
+        type="ledger_credit",
+        draft_id=CUSTOMER,
+        summary={"total": 50},
+        tool_name="ledger_credit",
+        arguments={"storeId": STORE, "customerId": CUSTOMER, "amount": 50},
+    )
+
+    rejected = await store.reject(
+        record.confirmation_id,
+        user_id="u1",
+        store_id=STORE,
+        session_id=SESSION,
+        draft_id=CUSTOMER,
+    )
+    assert rejected.status == "REJECTED"
+
+    with pytest.raises(AppError) as caught:
+        await store.claim(
+            record.confirmation_id,
+            user_id="u1",
+            store_id=STORE,
+            session_id=SESSION,
+            draft_id=CUSTOMER,
+        )
+    assert caught.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_confirmation_argument_modification_rejected() -> None:
+    confirmations = InMemoryConfirmationStore()
+    executor = ToolExecutor(
+        registry=_registry(),
+        retailer=TimeoutRetailer(succeed_on=1),
+    )
+    staged = await stage_from_sensitive_calls(
+        confirmations,
+        user_id="u1",
+        store_id=STORE,
+        session_id=SESSION,
+        sensitive_calls=[
+            ToolCall(
+                id="c1",
+                name="ledger_credit",
+                arguments={
+                    "storeId": STORE,
+                    "customerId": CUSTOMER,
+                    "amount": 50,
+                },
+            )
+        ],
+    )
+    assert staged is not None
+    body = ConfirmRequest(
+        sessionId=SESSION,
+        storeId=STORE,
+        confirmationId=staged.confirmation_id,
+        draftId=CUSTOMER,
+        action="approve",
+        updates={"amount": 999},
+    )
+    with pytest.raises(AppError) as caught:
+        await handle_confirm(
+            body,
+            user_id="u1",
+            request_id="r1",
+            store_id=STORE,
+            access_token="tok",
+            confirmations=confirmations,
+            sessions=InMemorySessionStore(),
+            executor=executor,
+            guard_output=_guard,
+        )
+    assert caught.value.status_code == 400
+    assert caught.value.code == "CONFIRMATION_ARGUMENTS_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_cross_store_updates_rejected() -> None:
+    confirmations = InMemoryConfirmationStore()
+    executor = ToolExecutor(
+        registry=_registry(),
+        retailer=TimeoutRetailer(succeed_on=1),
+    )
+    staged = await stage_from_sensitive_calls(
+        confirmations,
+        user_id="u1",
+        store_id=STORE,
+        session_id=SESSION,
+        sensitive_calls=[
+            ToolCall(
+                id="c1",
+                name="ledger_credit",
+                arguments={
+                    "storeId": STORE,
+                    "customerId": CUSTOMER,
+                    "amount": 50,
+                },
+            )
+        ],
+    )
+    assert staged is not None
+    body = ConfirmRequest(
+        sessionId=SESSION,
+        storeId=STORE,
+        confirmationId=staged.confirmation_id,
+        draftId=CUSTOMER,
+        action="approve",
+        updates={"storeId": "x" * 24},
+    )
+    with pytest.raises(AppError) as caught:
+        await handle_confirm(
+            body,
+            user_id="u1",
+            request_id="r1",
+            store_id=STORE,
+            access_token="tok",
+            confirmations=confirmations,
+            sessions=InMemorySessionStore(),
+            executor=executor,
+            guard_output=_guard,
+        )
+    assert caught.value.status_code == 403
+    assert caught.value.code == "STORE_FORBIDDEN"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_additional_arguments_rejected() -> None:
+    confirmations = InMemoryConfirmationStore()
+    executor = ToolExecutor(
+        registry=_registry(),
+        retailer=TimeoutRetailer(succeed_on=1),
+    )
+    staged = await stage_from_sensitive_calls(
+        confirmations,
+        user_id="u1",
+        store_id=STORE,
+        session_id=SESSION,
+        sensitive_calls=[
+            ToolCall(
+                id="c1",
+                name="ledger_credit",
+                arguments={
+                    "storeId": STORE,
+                    "customerId": CUSTOMER,
+                    "amount": 50,
+                },
+            )
+        ],
+    )
+    assert staged is not None
+    body = ConfirmRequest(
+        sessionId=SESSION,
+        storeId=STORE,
+        confirmationId=staged.confirmation_id,
+        draftId=CUSTOMER,
+        action="approve",
+        updates={"extraField": "malicious_injection"},
+    )
+    with pytest.raises(AppError) as caught:
+        await handle_confirm(
+            body,
+            user_id="u1",
+            request_id="r1",
+            store_id=STORE,
+            access_token="tok",
+            confirmations=confirmations,
+            sessions=InMemorySessionStore(),
+            executor=executor,
+            guard_output=_guard,
+        )
+    assert caught.value.status_code == 400
+    assert caught.value.code == "CONFIRMATION_ARGUMENTS_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_confirmation_nested_argument_modification_rejected() -> None:
+    confirmations = InMemoryConfirmationStore()
+    executor = ToolExecutor(
+        registry=_registry(),
+        retailer=TimeoutRetailer(succeed_on=1),
+    )
+    staged = await stage_from_sensitive_calls(
+        confirmations,
+        user_id="u1",
+        store_id=STORE,
+        session_id=SESSION,
+        sensitive_calls=[
+            ToolCall(
+                id="c1",
+                name="add_stock",
+                arguments={
+                    "storeId": STORE,
+                    "items": [
+                        {
+                            "productId": "p1",
+                            "quantity": 10,
+                            "purchasePrice": 100.0,
+                        }
+                    ],
+                },
+            )
+        ],
+    )
+    assert staged is not None
+    body = ConfirmRequest(
+        sessionId=SESSION,
+        storeId=STORE,
+        confirmationId=staged.confirmation_id,
+        draftId="p1",
+        action="approve",
+        updates={
+            "items": [
+                {
+                    "productId": "p1",
+                    "quantity": 9999,
+                    "purchasePrice": 100.0,
+                }
+            ]
+        },
+    )
+    with pytest.raises(AppError) as caught:
+        await handle_confirm(
+            body,
+            user_id="u1",
+            request_id="r1",
+            store_id=STORE,
+            access_token="tok",
+            confirmations=confirmations,
+            sessions=InMemorySessionStore(),
+            executor=executor,
+            guard_output=_guard,
+        )
+    assert caught.value.status_code == 400
+    assert caught.value.code == "CONFIRMATION_ARGUMENTS_INVALID"
+
+

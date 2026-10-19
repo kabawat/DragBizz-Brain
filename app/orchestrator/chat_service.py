@@ -166,6 +166,12 @@ class ChatService:
     ) -> ChatResponse:
         started = time.perf_counter()
         user_id = str(user["sub"])
+        agency_id = (
+            str(user["agencyId"]).strip() if user.get("agencyId") else None
+        )
+        tenant_id = (
+            str(user["tenant"]).strip().lower() if user.get("tenant") else None
+        )
         await self._enforce_usage_cap(store_id)
         refusal = self._guard_input(body)
         if refusal is not None:
@@ -426,7 +432,11 @@ class ChatService:
 
         def _describe_errors(tool_calls: list, sid: str) -> list[str]:
             return self._validator.describe_errors(
-                tool_calls, store_id=sid, allowed_names=allowed_names
+                tool_calls,
+                store_id=sid,
+                allowed_names=allowed_names,
+                agency_id=agency_id,
+                tenant_id=tenant_id,
             )
 
         try:
@@ -465,6 +475,8 @@ class ChatService:
                 access_token=access_token,
                 session_id=body.session_id,
                 user_id=user_id,
+                agency_id=agency_id,
+                tenant_id=tenant_id,
                 budget=budget,
                 audit_trail=self._audit_trail,
                 metrics=self._metrics,

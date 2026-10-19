@@ -19,6 +19,11 @@ _PROMPT_INJECTION_PATTERNS = (
     r"\bdan\s+mode\b",
     r"(?:^|\n)\s*(?:system|assistant)\s*:",
     r"\[\s*system\s*\]",
+    r"(?:purane|sab|sabhi)\s+(?:rules|niyam|instructions)\s+bhul\s+(?:ja|jao|do)",
+    r"(?:apna|tumhara)\s+(?:system\s+)?(?:prompt|instructions)\s+(?:dikhao|batao)",
+    r"system\s+prompt\s+(?:dikhao|batao|dekhao|batavo)",
+    r"(?:badha|badha\s+j)\s+(?:niyamo|niyam)\s+bhuli\s+jao",
+    r"tamaro\s+system\s+prompt",
 )
 
 _OFF_TOPIC_PATTERNS = (

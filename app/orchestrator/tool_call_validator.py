@@ -21,6 +21,8 @@ class ToolCallValidator:
         *,
         store_id: str,
         allowed_names: Collection[str] | None = None,
+        agency_id: str | None = None,
+        tenant_id: str | None = None,
     ) -> list[ToolCall]:
         if not tool_calls:
             return []
@@ -32,7 +34,12 @@ class ToolCallValidator:
             )
             arguments = dict(call.arguments)
             self._validate_schema(definition, arguments)
-            self._validate_store_id(arguments, store_id)
+            self._validate_store_id(
+                arguments,
+                store_id,
+                agency_id=agency_id,
+                tenant_id=tenant_id,
+            )
             validated.append(
                 ToolCall(id=call.id, name=call.name, arguments=arguments)
             )
@@ -44,12 +51,18 @@ class ToolCallValidator:
         *,
         store_id: str,
         allowed_names: Collection[str] | None = None,
+        agency_id: str | None = None,
+        tenant_id: str | None = None,
     ) -> list[str]:
         errors: list[str] = []
         for call in tool_calls:
             try:
                 self.validate(
-                    [call], store_id=store_id, allowed_names=allowed_names
+                    [call],
+                    store_id=store_id,
+                    allowed_names=allowed_names,
+                    agency_id=agency_id,
+                    tenant_id=tenant_id,
                 )
             except AppError as exc:
                 errors.append(f"{call.name}: {exc.message}")
@@ -99,12 +112,43 @@ class ToolCallValidator:
                 status_code=400,
             ) from exc
 
-    def _validate_store_id(self, arguments: dict[str, Any], store_id: str) -> None:
-        if "storeId" not in arguments:
-            return
-        if arguments["storeId"] != store_id:
+    def _validate_store_id(
+        self,
+        arguments: dict[str, Any],
+        store_id: str,
+        *,
+        agency_id: str | None = None,
+        tenant_id: str | None = None,
+    ) -> None:
+        if "agencyId" in arguments and (
+            not agency_id or arguments["agencyId"] != agency_id
+        ):
             raise AppError(
                 code="TOOL_ARGS_INVALID",
-                message="Tool storeId must match the chat request storeId",
+                message="Tool agencyId does not match authenticated agency",
                 status_code=400,
             )
+        if "tenantId" in arguments and (
+            not tenant_id or arguments["tenantId"] != tenant_id
+        ):
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="Tool tenantId does not match authenticated tenant",
+                status_code=400,
+            )
+        if "tenant" in arguments and (
+            not tenant_id or arguments["tenant"] != tenant_id
+        ):
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="Tool tenant does not match authenticated tenant",
+                status_code=400,
+            )
+        if "storeId" in arguments:
+            if arguments["storeId"] != store_id:
+                raise AppError(
+                    code="TOOL_ARGS_INVALID",
+                    message="Tool storeId must match the chat request storeId",
+                    status_code=400,
+                )
+            arguments["storeId"] = store_id

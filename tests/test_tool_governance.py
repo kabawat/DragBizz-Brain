@@ -27,7 +27,7 @@ from app.prompts.synthesis import (
     build_synthesis_instruction,
 )
 from app.schemas.chat import ChatMessage, ConfirmRequest, GenerationResponse
-from app.schemas.tool import ToolCall
+from app.schemas.tool import ToolCall, ToolDefinition, ToolRisk
 from app.sessions import InMemorySessionStore, SessionTurn, turns_to_messages
 from app.tools.definitions import (
     READ_TOOL_DEFINITIONS,
@@ -174,6 +174,18 @@ class RecordingRetailer:
         self.calls.append(("reminder", kwargs))
         return RetailerResponse(
             status_code=201, body={"data": {"id": "rem1"}}
+        )
+
+    async def add_stock(self, **kwargs):
+        self.calls.append(("add_stock", kwargs))
+        return RetailerResponse(
+            status_code=201, body={"data": {"id": "stk1"}}
+        )
+
+    async def create_expense(self, **kwargs):
+        self.calls.append(("create_expense", kwargs))
+        return RetailerResponse(
+            status_code=201, body={"data": {"id": "exp1"}}
         )
 
 
@@ -946,3 +958,327 @@ async def _create_customer_email_only() -> None:
     assert outcome.all_write_results[0].success is True
     expected_path = f"/dashboard/customers/{CUSTOMER}"
     assert outcome.all_write_results[0].data["openPath"] == expected_path
+
+
+def test_tool_call_validator_rejects_cross_tenant_tenant_id() -> None:
+    registry = _registry()
+    validator = ToolCallValidator(registry)
+    call = ToolCall(
+        id="call-tenant-mismatch",
+        name="search_product",
+        arguments={
+            "storeId": STORE,
+            "tenantId": "agency-other",
+            "query": "maggi",
+        },
+    )
+    with pytest.raises(AppError) as caught:
+        validator.validate([call], store_id=STORE, tenant_id="agency-1")
+    assert caught.value.code == "TOOL_ARGS_INVALID"
+    assert caught.value.status_code == 400
+
+
+def test_tool_call_validator_accepts_valid_matching_tenant_id() -> None:
+    custom_def = ToolDefinition(
+        name="custom_tenant_tool",
+        description="test tool with tenant",
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": {"type": "string"},
+                "tenantId": {"type": "string"},
+            },
+            "required": ["storeId"],
+        },
+    )
+    registry = ToolRegistry()
+    registry.register(custom_def, lambda *args: None)
+    validator = ToolCallValidator(registry)
+    call = ToolCall(
+        id="call-tenant-valid",
+        name="custom_tenant_tool",
+        arguments={
+            "storeId": STORE,
+            "tenantId": "agency-1",
+        },
+    )
+    validated = validator.validate(
+        [call], store_id=STORE, tenant_id="agency-1"
+    )
+    assert len(validated) == 1
+    assert validated[0].arguments["storeId"] == STORE
+
+
+def test_tool_call_validator_rejects_unauthorized_cross_store_write() -> None:
+    registry = _registry()
+    validator = ToolCallValidator(registry)
+    call = ToolCall(
+        id="call-cross-store-write",
+        name="create_customer",
+        arguments={
+            "storeId": OTHER_STORE,
+            "name": "Attacker Target",
+        },
+    )
+    with pytest.raises(AppError) as caught:
+        validator.validate([call], store_id=STORE)
+    assert caught.value.code == "TOOL_ARGS_INVALID"
+    assert caught.value.status_code == 400
+
+
+def test_tool_call_validator_rejects_untrusted_tenant_when_no_tenant_context() -> None:
+    registry = _registry()
+    validator = ToolCallValidator(registry)
+    call = ToolCall(
+        id="call-tenant-untrusted",
+        name="search_product",
+        arguments={
+            "storeId": STORE,
+            "tenantId": "invented-tenant",
+            "query": "maggi",
+        },
+    )
+    with pytest.raises(AppError) as caught:
+        validator.validate([call], store_id=STORE, tenant_id=None)
+    assert caught.value.code == "TOOL_ARGS_INVALID"
+    assert caught.value.status_code == 400
+
+
+def test_tool_call_validator_pins_store_id() -> None:
+    registry = _registry()
+    validator = ToolCallValidator(registry)
+    call = ToolCall(
+        id="call-valid",
+        name="search_product",
+        arguments={
+            "storeId": STORE,
+            "query": "maggi",
+        },
+    )
+    validated = validator.validate([call], store_id=STORE)
+    assert len(validated) == 1
+    assert validated[0].arguments["storeId"] == STORE
+
+
+def test_tool_call_validator_rejects_agency_id_mismatch() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="agency_tool",
+            description="Test tool with agency",
+            risk=ToolRisk.READ,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "storeId": {"type": "string"},
+                    "agencyId": {"type": "string"},
+                },
+                "required": ["storeId"],
+                "additionalProperties": False,
+            },
+        ),
+        handler=lambda **kwargs: None,
+    )
+    validator = ToolCallValidator(registry)
+    call = ToolCall(
+        id="call-agency-mismatch",
+        name="agency_tool",
+        arguments={
+            "storeId": STORE,
+            "agencyId": "651234567890abcdef123456",
+        },
+    )
+    with pytest.raises(AppError) as caught:
+        validator.validate(
+            [call],
+            store_id=STORE,
+            agency_id="659876543210fedcba654321",
+        )
+    assert caught.value.code == "TOOL_ARGS_INVALID"
+    assert caught.value.status_code == 400
+
+
+def test_tool_call_validator_rejects_untrusted_agency_when_no_agency_context() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="agency_tool",
+            description="Test tool with agency",
+            risk=ToolRisk.READ,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "storeId": {"type": "string"},
+                    "agencyId": {"type": "string"},
+                },
+                "required": ["storeId"],
+                "additionalProperties": False,
+            },
+        ),
+        handler=lambda **kwargs: None,
+    )
+    validator = ToolCallValidator(registry)
+    call = ToolCall(
+        id="call-agency-untrusted",
+        name="agency_tool",
+        arguments={
+            "storeId": STORE,
+            "agencyId": "651234567890abcdef123456",
+        },
+    )
+    with pytest.raises(AppError) as caught:
+        validator.validate([call], store_id=STORE, agency_id=None)
+    assert caught.value.code == "TOOL_ARGS_INVALID"
+    assert caught.value.status_code == 400
+
+
+def test_tool_call_validator_accepts_matching_agency_id() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="agency_tool",
+            description="Test tool with agency",
+            risk=ToolRisk.READ,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "storeId": {"type": "string"},
+                    "agencyId": {"type": "string"},
+                },
+                "required": ["storeId"],
+                "additionalProperties": False,
+            },
+        ),
+        handler=lambda **kwargs: None,
+    )
+    validator = ToolCallValidator(registry)
+    call = ToolCall(
+        id="call-agency-matching",
+        name="agency_tool",
+        arguments={
+            "storeId": STORE,
+            "agencyId": "651234567890abcdef123456",
+        },
+    )
+    validated = validator.validate(
+        [call],
+        store_id=STORE,
+        agency_id="651234567890abcdef123456",
+    )
+    assert len(validated) == 1
+    assert validated[0].arguments["agencyId"] == "651234567890abcdef123456"
+
+
+def test_tool_call_validator_does_not_confuse_tenant_and_agency() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="agency_tool",
+            description="Test tool with agency",
+            risk=ToolRisk.READ,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "storeId": {"type": "string"},
+                    "agencyId": {"type": "string"},
+                },
+                "required": ["storeId"],
+                "additionalProperties": False,
+            },
+        ),
+        handler=lambda **kwargs: None,
+    )
+    validator = ToolCallValidator(registry)
+    call = ToolCall(
+        id="call-agency-as-tenant",
+        name="agency_tool",
+        arguments={
+            "storeId": STORE,
+            "agencyId": "my-tenant-slug",
+        },
+    )
+    with pytest.raises(AppError) as caught:
+        validator.validate(
+            [call],
+            store_id=STORE,
+            tenant_id="my-tenant-slug",
+            agency_id=None,
+        )
+    assert caught.value.code == "TOOL_ARGS_INVALID"
+    assert caught.value.status_code == 400
+
+
+def test_confirm_add_stock_forwards_idempotency_key() -> None:
+    retailer = RecordingRetailer()
+    registry = _registry()
+    executor = ToolExecutor(registry=registry, retailer=retailer)
+    call = ToolCall(
+        id="call-stock",
+        name="add_stock",
+        arguments={
+            "storeId": STORE,
+            "items": [
+                {
+                    "productId": "p1",
+                    "quantity": 10,
+                    "purchasePrice": 50.0,
+                }
+            ],
+        },
+    )
+    results = asyncio.run(
+        executor.execute_confirmations(
+            [call],
+            access_token="token",
+            store_id=STORE,
+            session_id=SESSION,
+            user_id="user-1",
+            confirmation_id="conf-stock-1",
+            business_idempotency_key="biz-key-stock-1",
+        )
+    )
+    assert len(results) == 1
+    assert results[0].success is True
+    assert len(retailer.calls) == 1
+    action, kwargs = retailer.calls[0]
+    assert action == "add_stock"
+    assert kwargs.get("idempotency_key") == "biz-key-stock-1"
+
+
+def test_confirm_create_expense_forwards_idempotency_key() -> None:
+    retailer = RecordingRetailer()
+    registry = _registry()
+    executor = ToolExecutor(registry=registry, retailer=retailer)
+    call = ToolCall(
+        id="call-expense",
+        name="create_expense",
+        arguments={
+            "storeId": STORE,
+            "title": "Shop Rent",
+            "amount": 5000.0,
+            "category": "rent",
+        },
+    )
+    results = asyncio.run(
+        executor.execute_confirmations(
+            [call],
+            access_token="token",
+            store_id=STORE,
+            session_id=SESSION,
+            user_id="user-1",
+            confirmation_id="conf-expense-1",
+            business_idempotency_key="biz-key-expense-1",
+        )
+    )
+    assert len(results) == 1
+    assert results[0].success is True
+    assert len(retailer.calls) == 1
+    action, kwargs = retailer.calls[0]
+    assert action == "create_expense"
+    assert kwargs.get("idempotency_key") == "biz-key-expense-1"
+
+
+

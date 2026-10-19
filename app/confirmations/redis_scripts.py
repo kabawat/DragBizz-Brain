@@ -47,3 +47,31 @@ redis.call('SET', KEYS[1], cjson.encode(payload), 'EX', remaining)
 return 'OK:' .. cjson.encode(payload)
 """
 
+_REJECT_LUA = """
+local raw = redis.call('GET', KEYS[1])
+if not raw then
+  return 'ERR:NOT_FOUND'
+end
+local payload = cjson.decode(raw)
+local now = tonumber(ARGV[1])
+if now >= tonumber(payload['expires_at']) then
+  redis.call('DEL', KEYS[1])
+  return 'ERR:EXPIRED'
+end
+if payload['user_id'] ~= ARGV[2] or payload['store_id'] ~= ARGV[3]
+   or payload['session_id'] ~= ARGV[4] then
+  return 'ERR:FORBIDDEN'
+end
+if ARGV[5] ~= '' and payload['draft_id'] ~= ARGV[5] then
+  return 'ERR:DRAFT_MISMATCH'
+end
+local status = payload['status'] or 'PENDING'
+if status ~= 'PENDING' then
+  return 'ERR:ALREADY_USED'
+end
+payload['status'] = 'REJECTED'
+local remaining = math.max(1, math.floor(tonumber(payload['expires_at']) - now))
+redis.call('SET', KEYS[1], cjson.encode(payload), 'EX', remaining)
+return 'OK:' .. cjson.encode(payload)
+"""
+

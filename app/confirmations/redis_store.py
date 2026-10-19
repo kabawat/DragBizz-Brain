@@ -7,13 +7,12 @@ import time
 from typing import Any
 
 from app.confirmations.helpers import (
-    _assert_draft,
     _assert_owner,
     _assert_unused,
     _business_key,
 )
 from app.confirmations.models import ConfirmationStatus, PendingConfirmationRecord
-from app.confirmations.redis_scripts import _CLAIM_LUA, _COMPLETE_LUA
+from app.confirmations.redis_scripts import _CLAIM_LUA, _COMPLETE_LUA, _REJECT_LUA
 from app.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
@@ -155,19 +154,25 @@ class RedisConfirmationStore:
         session_id: str,
         draft_id: str | None = None,
     ) -> PendingConfirmationRecord:
-        record = await self._load(confirmation_id)
-        _assert_owner(
-            record, user_id=user_id, store_id=store_id, session_id=session_id
-        )
-        _assert_unused(record)
-        _assert_draft(record, draft_id)
-        if record.status != "PENDING":
-            raise AppError(
-                code="CONFIRMATION_REQUIRED",
-                message="Confirmation was already used",
-                status_code=409,
+        try:
+            result = await self._redis.eval(
+                _REJECT_LUA,
+                1,
+                self._key(confirmation_id),
+                str(time.time()),
+                user_id,
+                store_id,
+                session_id,
+                draft_id or "",
             )
-        return await self.complete(confirmation_id, status="REJECTED")
+        except Exception as exc:
+            logger.warning("Confirmation reject failed", exc_info=True)
+            raise AppError(
+                code="AI_STORE_UNAVAILABLE",
+                message="Confirmation store unavailable",
+                status_code=503,
+            ) from exc
+        return self._decode_lua(result)
 
     async def consume(
         self,

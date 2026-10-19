@@ -19,6 +19,7 @@ from app.confirmations import (
     ConfirmationStore,
     PendingConfirmationRecord,
 )
+from app.core.exceptions import AppError
 from app.executors.tool_executor import ToolExecutor
 from app.observability.audit_trail import AuditTrail
 from app.observability.confirmation_audit import audit_confirmation
@@ -154,9 +155,27 @@ async def handle_confirm(
     )
     tool_args = dict(record.arguments)
     if body.updates and isinstance(body.updates, dict):
+        if "storeId" in body.updates and body.updates["storeId"] != store_id:
+            raise AppError(
+                code="STORE_FORBIDDEN",
+                message="Confirmation storeId cannot be modified",
+                status_code=403,
+            )
+        for k, v in body.updates.items():
+            if k not in record.arguments or record.arguments[k] != v:
+                raise AppError(
+                    code="CONFIRMATION_ARGUMENTS_INVALID",
+                    message=(
+                        "Action argument modification invalidates "
+                        "the original confirmation"
+                    ),
+                    status_code=400,
+                )
         tool_args.update(body.updates)
         if "status" in body.updates:
             record.summary["status"] = body.updates["status"]
+    if "storeId" in tool_args:
+        tool_args["storeId"] = store_id
     tool_call = ToolCall(
         id=f"confirm_{record.confirmation_id[:12]}",
         name=record.tool_name,

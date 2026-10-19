@@ -239,6 +239,8 @@ class ToolExecutor:
                 "ledger_credit",
                 "ledger_debit",
                 "record_customer_payment",
+                "add_stock",
+                "create_expense",
             }:
                 arguments["idempotencyKey"] = key
             result = await handler(arguments, context)
