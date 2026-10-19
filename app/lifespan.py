@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from app.config import get_settings
 from app.confirmations import InMemoryConfirmationStore, RedisConfirmationStore
+from app.events import DeadLetterStore, RedisStreamConsumer
 from app.executors.tool_executor import ToolExecutor
 from app.idempotency import InMemoryIdempotencyStore, RedisIdempotencyStore
 from app.insights import build_insight_cache
@@ -309,10 +310,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pricing=pricing_from_settings(settings),
     )
 
+    event_consumer = None
+    if redis_client is not None and settings.events.consumer_enabled:
+        dead_letter_store = DeadLetterStore(
+            mongo_client.get_default_database() if mongo_client is not None else None
+        )
+        event_consumer = RedisStreamConsumer(
+            redis_client=redis_client,
+            insight_cache=insight_cache,
+            dead_letter_store=dead_letter_store,
+            stream_name=settings.events.stream_name,
+            group_name=settings.events.consumer_group,
+            min_idle_ms=settings.events.consumer_min_idle_ms,
+            poll_timeout_ms=settings.events.consumer_poll_timeout_ms,
+            max_retries=settings.events.consumer_max_retries,
+            batch_size=settings.events.consumer_batch_size,
+        )
+        await event_consumer.start()
+        app.state.event_consumer = event_consumer
+        app.state.dead_letter_store = dead_letter_store
+
     logger.info("AI service started")
     try:
         yield
     finally:
+        if event_consumer is not None:
+            await event_consumer.stop()
         await drain_pending_persist_tasks(timeout=5.0)
         if audit_trail is not None:
             audit_trail.close()

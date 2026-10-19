@@ -12,7 +12,12 @@ from app.config.providers import (
     OpenAISettings,
 )
 from app.config.rag import RagSettings
-from app.config.runtime import GuardSettings, LimitSettings, SessionSettings
+from app.config.runtime import (
+    EventSettings,
+    GuardSettings,
+    LimitSettings,
+    SessionSettings,
+)
 from app.config.server import ServerSettings
 from app.config.services import JwtSettings, ServiceSettings
 
@@ -37,6 +42,7 @@ class Settings(BaseSettings):
     guards: GuardSettings = Field(default_factory=GuardSettings)
     session: SessionSettings = Field(default_factory=SessionSettings)
     limits: LimitSettings = Field(default_factory=LimitSettings)
+    events: EventSettings = Field(default_factory=EventSettings)
 
     @model_validator(mode="after")
     def resolve_jwks_url_and_guards(self) -> "Settings":

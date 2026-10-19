@@ -166,3 +166,43 @@ class LimitSettings(BaseSettings):
     @classmethod
     def empty_as_none(cls, value: object) -> object:
         return _empty_as_none(value)
+
+
+class EventSettings(BaseSettings):
+    model_config = _group_config()
+
+    stream_name: str = Field(
+        default="stream:events:domain",
+        validation_alias="AI_EVENTS_STREAM_NAME",
+    )
+    consumer_group: str = Field(
+        default="group:brain-ai",
+        validation_alias="AI_EVENTS_CONSUMER_GROUP",
+    )
+    consumer_min_idle_ms: int = Field(
+        default=30000,
+        ge=1000,
+        validation_alias="AI_EVENTS_CONSUMER_MIN_IDLE_MS",
+    )
+    consumer_poll_timeout_ms: int = Field(
+        default=2000,
+        ge=100,
+        le=30000,
+        validation_alias="AI_EVENTS_POLL_TIMEOUT_MS",
+    )
+    consumer_max_retries: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        validation_alias="AI_EVENTS_MAX_RETRIES",
+    )
+    consumer_batch_size: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        validation_alias="AI_EVENTS_BATCH_SIZE",
+    )
+    consumer_enabled: bool = Field(
+        default=True,
+        validation_alias="AI_EVENTS_CONSUMER_ENABLED",
+    )

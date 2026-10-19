@@ -31,6 +31,8 @@ class InsightCache(Protocol):
 
     async def delete(self, store_id: str, tool: str, window: str) -> None: ...
 
+    async def invalidate_store(self, store_id: str) -> int: ...
+
 
 def _format_cache_key(store_id: str, tool: str, window: str) -> str:
     cleaned_store = str(store_id).strip()
@@ -56,6 +58,9 @@ class NoOpInsightCache:
 
     async def delete(self, store_id: str, tool: str, window: str) -> None:
         return None
+
+    async def invalidate_store(self, store_id: str) -> int:
+        return 0
 
 
 class InMemoryInsightCache:
@@ -93,6 +98,16 @@ class InMemoryInsightCache:
     async def delete(self, store_id: str, tool: str, window: str) -> None:
         key = _format_cache_key(store_id, tool, window)
         self._store.pop(key, None)
+
+    async def invalidate_store(self, store_id: str) -> int:
+        cleaned_store = str(store_id).strip()
+        if not _STORE_ID_RE.match(cleaned_store):
+            return 0
+        prefix = f"ai:insight:{cleaned_store}:"
+        matched_keys = [k for k in self._store if k.startswith(prefix)]
+        for k in matched_keys:
+            self._store.pop(k, None)
+        return len(matched_keys)
 
 
 class RedisInsightCache:
@@ -148,6 +163,30 @@ class RedisInsightCache:
                 tool,
                 exc_info=True,
             )
+
+    async def invalidate_store(self, store_id: str) -> int:
+        cleaned_store = str(store_id).strip()
+        if not _STORE_ID_RE.match(cleaned_store):
+            logger.warning(
+                "Invalid store_id format for insight cache invalidation: %s",
+                store_id,
+            )
+            return 0
+        match_pattern = f"ai:insight:{cleaned_store}:*"
+        deleted = 0
+        try:
+            keys: list[str] = []
+            async for key in self._redis.scan_iter(match=match_pattern, count=100):
+                keys.append(key)
+            if keys:
+                deleted = await self._redis.delete(*keys)
+        except Exception:
+            logger.warning(
+                "Redis insight cache invalidate_store failed for %s",
+                store_id,
+                exc_info=True,
+            )
+        return deleted
 
 
 def build_insight_cache(
