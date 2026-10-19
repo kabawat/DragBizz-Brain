@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from app.core.exceptions import AppError
@@ -75,6 +75,80 @@ class AiGateway:
             call_type=call_type,
             round=round,
         )
+
+    async def generate_stream(
+        self,
+        request: GenerationRequest,
+        *,
+        budget: RequestBudget | None = None,
+        token_usage: RequestTokenUsage | None = None,
+        call_type: str = "stream",
+        round: int = 0,
+    ) -> AsyncIterator[str]:
+        provider, model = await self._resolve()
+        if model is not None:
+            request = request.model_copy(update={"model": model})
+
+        self._breaker.allow()
+        if budget is not None:
+            budget.begin_model_call(allow_synthesis=(call_type == "synthesize"))
+
+        yielded_any = False
+        started = time.perf_counter()
+        collected_text: list[str] = []
+
+        try:
+            async for chunk in provider.generate_stream(request):
+                yielded_any = True
+                collected_text.append(chunk)
+                yield chunk
+        except Exception:
+            if not yielded_any:
+                self._record(started, error=True, retry=False, fallback=False)
+                fallback = self._fallback_for(provider)
+                if fallback is not None:
+                    logger.warning(
+                        "Streaming provider %s failed before tokens; switching to %s",
+                        provider.name,
+                        fallback.name,
+                    )
+                    fallback_request = request.model_copy(update={"model": None})
+                    self._breaker.allow()
+                    try:
+                        async for chunk in fallback.generate_stream(fallback_request):
+                            yielded_any = True
+                            collected_text.append(chunk)
+                            yield chunk
+                    except Exception:
+                        self._record(started, error=True, retry=False, fallback=True)
+                        raise
+                    self._record(started, error=False, retry=False, fallback=True)
+                    self._breaker.record_success()
+                    return
+            self._record(started, error=True, retry=False, fallback=False)
+            raise
+
+        self._record(started, error=False, retry=False, fallback=False)
+        self._breaker.record_success()
+
+        full_text = "".join(collected_text)
+        from app.rag.chunker import estimate_tokens
+        output_tokens = estimate_tokens(full_text)
+        if budget is not None:
+            budget.record_tokens(output_tokens=output_tokens)
+        if token_usage is not None:
+            entry = token_usage.record(
+                model=request.model or "",
+                call_type=call_type,
+                round=round,
+                output_tokens=output_tokens,
+                provider=provider.name,
+            )
+            if self._metrics is not None:
+                self._metrics.record_token_usage(
+                    output_tokens=output_tokens,
+                    usage_source=entry.usage_source,
+                )
 
     async def generate_chat_turn(
         self,
@@ -241,6 +315,37 @@ class AiGateway:
             call_type="continue" if allow_tools else "synthesize",
             round=round,
         )
+
+    async def continue_or_synthesize_stream(
+        self,
+        conversation: list[ChatMessage],
+        *,
+        language: str,
+        temperature: float,
+        max_tokens: int,
+        budget: RequestBudget | None = None,
+        token_usage: RequestTokenUsage | None = None,
+        round: int = 0,
+    ) -> AsyncIterator[str]:
+        instruction = build_synthesis_instruction(language=language)
+        request_messages = [
+            *conversation,
+            ChatMessage(role="user", content=instruction),
+        ]
+        async for chunk in self.generate_stream(
+            GenerationRequest(
+                messages=request_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=None,
+                tool_choice="none",
+            ),
+            budget=budget,
+            token_usage=token_usage,
+            call_type="synthesize",
+            round=round,
+        ):
+            yield chunk
 
     async def _generate_with_retry_fallback(
         self,

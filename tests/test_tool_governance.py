@@ -16,6 +16,7 @@ from app.orchestrator.confirm_flow import handle_confirm
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.orchestrator.tool_loop import run_tool_loop
 from app.orchestrator.tool_selector import (
+    _CORE_UNKNOWN_TOOLS,
     looks_like_field_fill,
     narrow_field_fill_tools,
     resolve_turn_intent,
@@ -220,7 +221,8 @@ def test_unknown_and_empty_expose_reads_only() -> None:
     for text in ("maggi ke bare mein batao", "", "   "):
         intent = _intent(text)
         assert intent.routing == "unknown"
-        assert intent.tool_names == _READ
+        assert intent.tool_names == _CORE_UNKNOWN_TOOLS
+        assert intent.tool_names != _READ
         assert should_retrieve_docs(intent.routing)
         assert _WRITES.isdisjoint(intent.tool_names)
 
@@ -228,7 +230,8 @@ def test_unknown_and_empty_expose_reads_only() -> None:
 def test_unregistered_write_stays_out_of_the_read_set() -> None:
     available = set(_READ) | {"export_customers"}
     intent = resolve_turn_intent("kuch bhi", available=available)
-    assert intent.tool_names == _READ
+    assert intent.tool_names == _CORE_UNKNOWN_TOOLS
+    assert intent.tool_names != _READ
     assert "export_customers" not in intent.tool_names
 
 

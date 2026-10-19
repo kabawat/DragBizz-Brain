@@ -66,6 +66,8 @@ from app.schemas.chat import (
     ChatRequest,
     ChatResponse,
     ConfirmRequest,
+    GenerationRequest,
+    GenerationResponse,
     PendingConfirmation,
 )
 from app.sessions import (
@@ -449,16 +451,39 @@ class ChatService:
                 )
             elif tools:
                 max_tokens = min(max_tokens, 512)
-            generation = await self._gateway.generate_with_optional_parse_repair(
-                context.messages,
-                tools,
-                store_id=store_id,
-                temperature=self._settings.chat.temperature,
-                max_tokens=max_tokens,
-                describe_errors=_describe_errors,
-                budget=budget,
-                token_usage=token_usage,
-            )
+            if not tools and emit is not None:
+                collected_chunks: list[str] = []
+                async for chunk in self._gateway.generate_stream(
+                    GenerationRequest(
+                        messages=context.messages,
+                        temperature=self._settings.chat.temperature,
+                        max_tokens=max_tokens,
+                        tools=None,
+                        tool_choice="none",
+                    ),
+                    budget=budget,
+                    token_usage=token_usage,
+                    call_type="initial",
+                ):
+                    collected_chunks.append(chunk)
+                    await emit("assistant.delta", {"text": chunk})
+                generation = GenerationResponse(
+                    provider="stream",
+                    model="",
+                    content="".join(collected_chunks),
+                    tool_calls=[],
+                )
+            else:
+                generation = await self._gateway.generate_with_optional_parse_repair(
+                    context.messages,
+                    tools,
+                    store_id=store_id,
+                    temperature=self._settings.chat.temperature,
+                    max_tokens=max_tokens,
+                    describe_errors=_describe_errors,
+                    budget=budget,
+                    token_usage=token_usage,
+                )
 
             outcome = await run_tool_loop(
                 gateway=self._gateway,

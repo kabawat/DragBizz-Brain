@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
@@ -9,6 +10,8 @@ from typing import Any
 from app.observability.metrics import MetricsRegistry
 from app.orchestrator.cancel import CancelScope
 from app.schemas.chat import ChatRequest, ChatResponse
+
+logger = logging.getLogger(__name__)
 
 ChatHandler = Callable[..., Awaitable[ChatResponse]]
 StreamEvent = tuple[str, dict[str, Any]]
@@ -58,6 +61,7 @@ async def stream_chat(
     task = asyncio.create_task(_run())
     response: ChatResponse | None = None
     aborted = False
+    delta_emitted = False
     try:
         while True:
             if scope.cancelled:
@@ -73,16 +77,31 @@ async def stream_chat(
                     while not queue.empty():
                         item = queue.get_nowait()
                         if item is not None:
+                            if item[0] == "assistant.delta":
+                                delta_emitted = True
+                                if not ttft_recorded and metrics is not None:
+                                    elapsed = (time.perf_counter() - started) * 1000
+                                    metrics.record_stream_ttft(elapsed)
+                                    ttft_recorded = True
                             yield item
                     break
                 continue
             if item is None:
                 break
+            if item[0] == "assistant.delta":
+                delta_emitted = True
+                if not ttft_recorded and metrics is not None:
+                    metrics.record_stream_ttft((time.perf_counter() - started) * 1000)
+                    ttft_recorded = True
             yield item
 
         try:
             response = await task
         except asyncio.CancelledError:
+            aborted = True
+            response = None
+        except Exception as exc:
+            logger.exception("Stream worker failed: %s", exc)
             aborted = True
             response = None
     except asyncio.CancelledError:
@@ -100,20 +119,21 @@ async def stream_chat(
         yield ("request.aborted", {"requestId": request_id})
         return
 
-    message = response.message or ""
-    chunk_size = 48
-    for index in range(0, len(message), chunk_size):
-        if scope.cancelled:
-            if metrics is not None:
-                metrics.record_stream_aborted()
-                metrics.record_cancel()
-            yield ("request.aborted", {"requestId": request_id})
-            return
-        delta = message[index : index + chunk_size]
-        if not ttft_recorded and metrics is not None:
-            metrics.record_stream_ttft((time.perf_counter() - started) * 1000)
-            ttft_recorded = True
-        yield ("assistant.delta", {"text": delta})
+    if not delta_emitted:
+        message = response.message or ""
+        chunk_size = 48
+        for index in range(0, len(message), chunk_size):
+            if scope.cancelled:
+                if metrics is not None:
+                    metrics.record_stream_aborted()
+                    metrics.record_cancel()
+                yield ("request.aborted", {"requestId": request_id})
+                return
+            delta = message[index : index + chunk_size]
+            if not ttft_recorded and metrics is not None:
+                metrics.record_stream_ttft((time.perf_counter() - started) * 1000)
+                ttft_recorded = True
+            yield ("assistant.delta", {"text": delta})
 
     pending_payload = None
     if response.pending_confirmation is not None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -37,6 +38,8 @@ from app.schemas.chat import ChatMessage, GenerationResponse
 from app.schemas.tool import ToolCall, ToolDefinition, ToolResult, ToolRisk
 from app.tools.projection import project_tool_result
 from app.tools.registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 StreamEmitFn = Callable[[str, dict[str, Any]], Awaitable[None] | None]
 
@@ -241,6 +244,8 @@ async def run_tool_loop(
             )
 
         if not tool_calls:
+            if round_index == 0 and emit is not None and generation.content:
+                await _emit(emit, "assistant.delta", {"text": generation.content})
             break
 
         # Guard: never re-execute a (tool, args) pair already run this
@@ -251,17 +256,37 @@ async def run_tool_loop(
             if call_signature(call) not in executed_signatures
         ]
         if not tool_calls:
-            generation = await gateway.continue_or_synthesize(
-                conversation,
-                tools,
-                language=language,
-                allow_tools=False,
-                temperature=settings.chat.temperature,
-                max_tokens=settings.chat.synthesis_max_tokens,
-                budget=budget,
-                token_usage=token_usage,
-                round=round_index,
-            )
+            if emit is not None:
+                collected: list[str] = []
+                async for chunk in gateway.continue_or_synthesize_stream(
+                    conversation,
+                    language=language,
+                    temperature=settings.chat.temperature,
+                    max_tokens=settings.chat.synthesis_max_tokens,
+                    budget=budget,
+                    token_usage=token_usage,
+                    round=round_index,
+                ):
+                    collected.append(chunk)
+                    await _emit(emit, "assistant.delta", {"text": chunk})
+                generation = GenerationResponse(
+                    provider=generations[0].provider if generations else "stream",
+                    model=generations[0].model if generations else "",
+                    content="".join(collected),
+                    tool_calls=[],
+                )
+            else:
+                generation = await gateway.continue_or_synthesize(
+                    conversation,
+                    tools,
+                    language=language,
+                    allow_tools=False,
+                    temperature=settings.chat.temperature,
+                    max_tokens=settings.chat.synthesis_max_tokens,
+                    budget=budget,
+                    token_usage=token_usage,
+                    round=round_index,
+                )
             generations.append(generation)
             break
         executed_signatures.update(call_signature(call) for call in tool_calls)
@@ -566,20 +591,35 @@ async def run_tool_loop(
         conversation, removed = compact_conversation_for_next_round(conversation)
         compacted_tokens += removed
 
-        try:
-            generation = await gateway.continue_or_synthesize(
-                conversation,
-                continue_tools,
-                language=language,
-                allow_tools=allow_more_tools,
-                temperature=settings.chat.temperature,
-                max_tokens=settings.chat.synthesis_max_tokens,
-                budget=budget,
-                token_usage=token_usage,
-                round=round_index + 1,
-            )
-        except BudgetExceeded:
-            if allow_more_tools:
+        if not allow_more_tools and emit is not None:
+            collected: list[str] = []
+            try:
+                async for chunk in gateway.continue_or_synthesize_stream(
+                    conversation,
+                    language=language,
+                    temperature=settings.chat.temperature,
+                    max_tokens=settings.chat.synthesis_max_tokens,
+                    budget=budget,
+                    token_usage=token_usage,
+                    round=round_index + 1,
+                ):
+                    collected.append(chunk)
+                    await _emit(emit, "assistant.delta", {"text": chunk})
+                generation = GenerationResponse(
+                    provider=generations[0].provider if generations else "stream",
+                    model=generations[0].model if generations else "",
+                    content="".join(collected),
+                    tool_calls=[],
+                )
+            except BudgetExceeded:
+                raise
+            except Exception:
+                if collected:
+                    raise
+                logger.warning(
+                    "Synthesis streaming failed; using non-stream fallback",
+                    exc_info=True,
+                )
                 generation = await gateway.continue_or_synthesize(
                     conversation,
                     [],
@@ -591,8 +631,34 @@ async def run_tool_loop(
                     token_usage=token_usage,
                     round=round_index + 1,
                 )
-            else:
-                raise
+        else:
+            try:
+                generation = await gateway.continue_or_synthesize(
+                    conversation,
+                    continue_tools,
+                    language=language,
+                    allow_tools=allow_more_tools,
+                    temperature=settings.chat.temperature,
+                    max_tokens=settings.chat.synthesis_max_tokens,
+                    budget=budget,
+                    token_usage=token_usage,
+                    round=round_index + 1,
+                )
+            except BudgetExceeded:
+                if allow_more_tools:
+                    generation = await gateway.continue_or_synthesize(
+                        conversation,
+                        [],
+                        language=language,
+                        allow_tools=False,
+                        temperature=settings.chat.temperature,
+                        max_tokens=settings.chat.synthesis_max_tokens,
+                        budget=budget,
+                        token_usage=token_usage,
+                        round=round_index + 1,
+                    )
+                else:
+                    raise
         generations.append(generation)
         if not allow_more_tools:
             break

@@ -46,6 +46,15 @@ _READ_TOOLS = frozenset(
     }
 )
 
+_CORE_UNKNOWN_TOOLS = frozenset(
+    {
+        "today_sale",
+        "stock_summary",
+        "search_product",
+        "search_customer",
+    }
+)
+
 _FAMILY_READS: dict[str, frozenset[str]] = {
     "sale": frozenset({"today_sale", "invoice_summary"}),
     "stock": frozenset({"stock_summary", "search_product"}),
@@ -298,6 +307,11 @@ _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
             "bill for",
             "ke liye bill",
             "ke liye invoice",
+            "બિલ બનાવો",
+            "ઇનવોઇસ બનાવો",
+            "નવું બિલ",
+            "ચલણ બનાવો",
+            "બિલ બનાવી આપો",
         ),
         frozenset(
             {
@@ -362,6 +376,17 @@ _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
             "bijli bill",
             "electricity bill",
             "kharcha hua",
+            "ખર્ચ ઉમેરો",
+            "ખર્ચ નોંધો",
+            "ખર્ચ એડ",
+            "ખર્ચ લખો",
+            "ખર્ચો ઉમેરો",
+            "ખર્ચો લખો",
+            "દુકાનનો ખર્ચ ઉમેરો",
+            "દુકાન ખર્ચ ઉમેરો",
+            "ભાડું આપ્યું",
+            "ભાડું ભર્યું",
+            "બિલ ભર્યું",
         ),
         frozenset({"create_expense"}),
     ),
@@ -396,6 +421,26 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "total sell",
         "sell kitni",
         "sell kitna",
+        "dhandha",
+        "aaj ka dhandha",
+        "kitna dhandha",
+        "dhandha kitna",
+        "dhandha hua",
+        "kamai",
+        "aaj ki kamai",
+        "kitni kamai",
+        "aavak",
+        "bikri",
+        "vechan",
+        "aaj nu vechan",
+        "વેચાણ",
+        "આજનું વેચાણ",
+        "ધંધો",
+        "આજનો ધંધો",
+        "કમાણી",
+        "આવક",
+        "કેટલું વેચાણ",
+        "કેટલો ધંધો",
     ),
     "stock": (
         "stock me",
@@ -406,6 +451,21 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "stock bacha",
         "stock summary",
         "low stock",
+        "maal",
+        "kitna maal",
+        "maal kitna",
+        "maal bacha",
+        "stock check",
+        "stock tapaso",
+        "jaththo",
+        "માલ",
+        "જથ્થો",
+        "સ્ટોક",
+        "સ્ટોક તપાસો",
+        "માલ સ્ટોક",
+        "કેટલો માલ",
+        "કેટલો સ્ટોક",
+        "માલ કેટલો",
     ),
     "product": (
         "current price",
@@ -444,8 +504,27 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "payment history",
         "payment dikhao",
         "recent payment",
+        "recent payments",
         "payment aaye",
         "payments aaye",
+        "payment diya",
+        "kitna payment",
+        "payment mila",
+        "payment received",
+        "customer payment",
+        "customer payments",
+        "payment list",
+        "payments list",
+        "ચુકવણી",
+        "પૈસા",
+        "ચુકવ્યા",
+        "પૈસા મળ્યા",
+        "ચુકવણી ઇતિહાસ",
+        "ચુકવણી કરી",
+        "પૈસા આપ્યા",
+        "કેટલી ચુકવણી",
+        "કેટલા પૈસા આવ્યા",
+        "ચુકવણી લિસ્ટ",
     ),
     "payment_detail": (
         "payment detail",
@@ -543,13 +622,36 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "khata jama",
     ),
     "customer_ledger": (
+        "ledger",
         "customer ledger",
         "khata ledger",
+        "account ledger",
+        "customer's ledger",
         "ledger dikhao",
         "ledger lines",
         "ledger history",
         "khata history",
         "transaction history",
+        "khata",
+        "khate",
+        "udhar",
+        "udhari",
+        "baaki",
+        "jama",
+        "baaki hisaab",
+        "khata batao",
+        "khata dikhao",
+        "ખાતું",
+        "ગ્રાહક",
+        "ગ્રાહકો",
+        "ઉધાર",
+        "ઉધારી",
+        "બાકી",
+        "જમા",
+        "ગ્રાહક ખાતું",
+        "ખાતું બતાવો",
+        "બાકી લિસ્ટ",
+        "ચોપડો",
     ),
     "customer_accounts": (
         "due list",
@@ -582,6 +684,12 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "bill for",
         "ke liye bill",
         "ke liye invoice",
+        "બિલ",
+        "ચલણ",
+        "રસીદ",
+        "બિલ બનાવો",
+        "બિલ બનાવી આપો",
+        "ઇનવોઇસ",
     ),
     "store": (
         "store ka name",
@@ -765,6 +873,11 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "aaj ka kharcha",
         "pichle kharche",
         "expense report",
+        "ખર્ચ",
+        "ખર્ચા",
+        "રોજના ખર્ચા",
+        "ખર્ચ લિસ્ટ",
+        "ટોટલ ખર્ચ",
     ),
     "cashbook": (
         "cashbook",
@@ -898,6 +1011,23 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "dukan badhane",
         "sales badhane",
         "store audit",
+        "business overview",
+        "shop overview",
+        "store overview",
+        "business summary",
+        "store summary",
+        "improve my shop",
+        "improve shop",
+        "improve business",
+        "business kaisa",
+        "kaisa chal raha hai",
+        "dukan ka overview",
+        "shop performance",
+        "store performance",
+        "what should i do",
+        "help me improve",
+        "ધંધાની સ્થિતિ",
+        "દુકાનની પ્રગતિ",
     ),
 }
 
@@ -1135,10 +1265,15 @@ _STOCK_ADD_FLEX_RE = re.compile(
 _EXPENSE_ADD_FLEX_RE = re.compile(
     r"\b(?:add|daal|dalo|likho|record|banao)\s+(?:karo\s+)?(?:\S+\s+){0,4}(?:kharch[aeo]|expense)\b"
     r"|\b(?:kharch[aeo]|expense)\s*(?:me(?:in)?)?\s+(?:\S+\s+){0,6}(?:add|daal|dalo|likho|record|karo)\b"
+    r"|(?:ઉમેરો|નોંધો|લખો|કરો|એડ)\s*(?:કરો\s+)?(?:\S+\s+){0,4}(?:ખર્ચ[ઓા]?)(?:\b|\s|$|[^\w])"
+    r"|(?:ખર્ચ[ઓા]?)\s*(?:માં)?\s+(?:\S+\s+){0,6}(?:ઉમેરો|નોંધો|લખો|કરો|એડ)(?:\b|\s|$|[^\w])"
     r"|\b(?:rent|kiraya)\s+(?:\S+\s+){0,3}(?:diya|bhara|bhra|pay)\b"
+    r"|(?:ભાડું|ભાડુ)\s+(?:\S+\s+){0,3}(?:આપ્યું|ભર્યું|ચુકવ્યું|આપ્યુ|ભર્યુ)(?:\b|\s|$|[^\w])"
     r"|\b(?:light|bijli|electricity|water|pani|wifi|phone|gas)\s+(?:ka\s+)?bill\b"
     r"|\bbill\s+(?:\S+\s+){0,2}(?:bhara|bhra|diya|pay)\b"
-    r"|\b(?:store|dukaan|shop)\s+ka\s+rent\b",
+    r"|બિલ\s+(?:\S+\s+){0,2}(?:ભર્યું|આપ્યું|ભર્યુ|આપ્યુ)(?:\b|\s|$|[^\w])"
+    r"|\b(?:store|dukaan|shop)\s+ka\s+rent\b"
+    r"|(?:દુકાન|સ્ટોર)\s*(?:નું|નો)\s*ભાડું(?:\b|\s|$|[^\w])",
     re.IGNORECASE,
 )
 _EXPENSE_UPDATE_FLEX_RE = re.compile(
@@ -1237,9 +1372,11 @@ def resolve_turn_intent(
 ) -> TurnIntent:
     available_set = frozenset(available)
     text = question.strip()
-    read_only = _READ_TOOLS & available_set
     if not text:
-        return TurnIntent(routing="unknown", tool_names=read_only)
+        return TurnIntent(
+            routing="unknown",
+            tool_names=_CORE_UNKNOWN_TOOLS & available_set,
+        )
 
     matched_reads: set[str] = set()
     for family, pattern in _FAMILY_RES.items():
@@ -1283,7 +1420,7 @@ def resolve_turn_intent(
             re.IGNORECASE,
         ):
             current.add("update_expense")
-        tool_names = (read_only | carried | current) & available_set
+        tool_names = (_CORE_UNKNOWN_TOOLS | carried | current) & available_set
 
     write_exposure = _exposure_tools(text) - _READ_TOOLS
     customer_only = matched_reads <= _FAMILY_READS["customer"]
