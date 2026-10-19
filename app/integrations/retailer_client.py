@@ -917,6 +917,56 @@ class RetailerClient:
             params=params,
         )
 
+    async def create_purchase_order(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        supplier_id: str,
+        items: list[dict[str, Any]],
+        payment_terms: str | None = None,
+        payment_by: str | None = None,
+        reference: str | None = None,
+        notes: str | None = None,
+        expected_delivery_date: str | None = None,
+        advance_amount: float | None = None,
+        idempotency_key: str | None = None,
+    ) -> RetailerResponse:
+        products = [
+            {
+                "product": item.get("productId") or item.get("product"),
+                "quantity": item.get("quantity", 0),
+            }
+            for item in items
+        ]
+        body: dict[str, Any] = {
+            "supplier": supplier_id,
+            "products": products,
+        }
+        if payment_terms:
+            body["paymentTerms"] = payment_terms
+        if payment_by:
+            body["paymentBy"] = payment_by
+        if reference:
+            body["reference"] = reference
+        if notes:
+            body["note"] = notes
+            body["notes"] = notes
+        if expected_delivery_date:
+            body["expectedDeliveryDate"] = expected_delivery_date
+        if advance_amount is not None:
+            body["advanceAmount"] = advance_amount
+        if idempotency_key:
+            body["idempotencyKey"] = idempotency_key
+            body["clientLocalId"] = idempotency_key
+        return await self._request(
+            "POST",
+            "/purchase-order",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
     async def get_bill_analytics(
         self, *, access_token: str, store_id: str
     ) -> RetailerResponse:

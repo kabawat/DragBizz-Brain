@@ -1393,5 +1393,75 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "required": ["storeId", "title", "amount", "category"],
         },
     ),
+    ToolDefinition(
+        name="create_purchase_order",
+        description=(
+            "Draft a purchase order to order inventory from a supplier. "
+            "Requires supplierId, items with productId and quantity. "
+            "Requires user confirmation before execution."
+        ),
+        risk=ToolRisk.SENSITIVE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "supplierId": {
+                    **_OBJECT_ID_PROP,
+                    "description": "Supplier ObjectId (from search_supplier)",
+                },
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "productId": {
+                                **_OBJECT_ID_PROP,
+                                "description": "Product ObjectId (from search_product)",
+                            },
+                            "quantity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Quantity to order",
+                            },
+                            "productName": {
+                                "type": "string",
+                                "maxLength": 200,
+                                "description": "Display name of product",
+                            },
+                        },
+                        "required": ["productId", "quantity"],
+                    },
+                },
+                "supplierName": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Display name of supplier",
+                },
+                "paymentTerms": {
+                    "type": "string",
+                    "description": "Payment terms (e.g. '30_DAYS', 'IMMEDIATE')",
+                },
+                "reference": {
+                    "type": "string",
+                    "maxLength": 100,
+                    "description": "Optional reference or memo",
+                },
+                "notes": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Optional notes or instructions",
+                },
+                "expectedDeliveryDate": {
+                    "type": "string",
+                    "description": "Optional expected delivery date (YYYY-MM-DD)",
+                },
+            },
+            "required": ["storeId", "supplierId", "items"],
+        },
+    ),
 )
 

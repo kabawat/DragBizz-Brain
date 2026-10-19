@@ -663,6 +663,124 @@ async def create_expense(
     )
 
 
+async def create_purchase_order(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    supplier_id = arguments.get("supplierId")
+    if not isinstance(supplier_id, str) or not supplier_id.strip():
+        return ToolResult(
+            tool="create_purchase_order",
+            success=False,
+            data={"code": "TOOL_ARGS_INVALID", "message": "supplierId is required"},
+        )
+    raw_items = arguments.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        return ToolResult(
+            tool="create_purchase_order",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "items must be a non-empty list",
+            },
+        )
+    sanitized_items: list[dict[str, Any]] = []
+    total_qty = 0
+    for idx, raw in enumerate(raw_items):
+        if not isinstance(raw, dict):
+            return ToolResult(
+                tool="create_purchase_order",
+                success=False,
+                data={
+                    "code": "TOOL_ARGS_INVALID",
+                    "message": f"item at index {idx} must be an object",
+                },
+            )
+        product_id = raw.get("productId")
+        if not isinstance(product_id, str) or not product_id.strip():
+            return ToolResult(
+                tool="create_purchase_order",
+                success=False,
+                data={
+                    "code": "TOOL_ARGS_INVALID",
+                    "message": f"item at index {idx} requires productId",
+                },
+            )
+        qty = raw.get("quantity")
+        if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
+            return ToolResult(
+                tool="create_purchase_order",
+                success=False,
+                data={
+                    "code": "TOOL_ARGS_INVALID",
+                    "message": (
+                        f"item at index {idx} "
+                        "requires positive integer quantity"
+                    ),
+                },
+            )
+        item_entry: dict[str, Any] = {
+            "productId": product_id.strip(),
+            "quantity": qty,
+        }
+        if isinstance(raw.get("productName"), str) and raw["productName"].strip():
+            item_entry["productName"] = raw["productName"].strip()
+        sanitized_items.append(item_entry)
+        total_qty += qty
+
+    idempotency_key = arguments.get("idempotencyKey")
+    try:
+        response = await context.retailer.create_purchase_order(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            supplier_id=supplier_id.strip(),
+            items=sanitized_items,
+            payment_terms=arguments.get("paymentTerms")
+            if isinstance(arguments.get("paymentTerms"), str)
+            else None,
+            reference=arguments.get("reference")
+            if isinstance(arguments.get("reference"), str)
+            else None,
+            notes=arguments.get("notes")
+            if isinstance(arguments.get("notes"), str)
+            else None,
+            expected_delivery_date=arguments.get("expectedDeliveryDate")
+            if isinstance(arguments.get("expectedDeliveryDate"), str)
+            else None,
+            idempotency_key=str(idempotency_key).strip()
+            if isinstance(idempotency_key, str) and idempotency_key.strip()
+            else None,
+        )
+    except RetailerHttpError as exc:
+        return ToolResult(
+            tool="create_purchase_order",
+            success=False,
+            data={"code": exc.code, "message": exc.message},
+        )
+    data = response.body.get("data") if isinstance(response.body, dict) else {}
+    payload = data if isinstance(data, dict) else {}
+    po_id = payload.get("id") or payload.get("_id") or ""
+    po_number = payload.get("poNumber") or ""
+    open_path = (
+        f"/dashboard/purchase-orders/{po_id}"
+        if po_id
+        else "/dashboard/purchase-orders"
+    )
+    return ToolResult(
+        tool="create_purchase_order",
+        success=True,
+        data={
+            "id": po_id,
+            "poNumber": po_number,
+            "supplierId": supplier_id.strip(),
+            "supplierName": arguments.get("supplierName"),
+            "itemCount": len(sanitized_items),
+            "totalQuantity": total_qty,
+            "status": payload.get("status") or "DRAFT",
+            "openPath": open_path,
+        },
+    )
+
+
 SENSITIVE_TOOL_HANDLERS = {
     "release_invoice": release_invoice,
     "ledger_credit": ledger_credit,
@@ -675,5 +793,6 @@ SENSITIVE_TOOL_HANDLERS = {
     "create_collect_link": create_collect_link,
     "send_payment_reminder": send_payment_reminder,
     "create_expense": create_expense,
+    "create_purchase_order": create_purchase_order,
 }
 

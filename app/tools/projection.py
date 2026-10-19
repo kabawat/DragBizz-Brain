@@ -353,6 +353,32 @@ def project_create_expense(data: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def project_create_purchase_order(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("status") == "pending_confirmation":
+        out: dict[str, Any] = {"status": "pending_confirmation"}
+        if isinstance(data.get("confirmationId"), str):
+            out["confirmationId"] = data["confirmationId"]
+        if isinstance(data.get("draftId"), str):
+            out["draftId"] = data["draftId"]
+        summary = data.get("summary")
+        if isinstance(summary, dict):
+            out["summary"] = summary
+        return out
+    return _pick(
+        data,
+        (
+            "id",
+            "poNumber",
+            "supplierId",
+            "supplierName",
+            "itemCount",
+            "totalQuantity",
+            "status",
+            "openPath",
+        ),
+    )
+
+
 def project_update_expense(data: dict[str, Any]) -> dict[str, Any]:
     return _pick(
         data,
@@ -1401,5 +1427,6 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "invoice_detailed_analytics": project_invoice_detailed_analytics,
     "create_expense": project_create_expense,
     "update_expense": project_update_expense,
+    "create_purchase_order": project_create_purchase_order,
 }
 

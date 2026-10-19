@@ -83,7 +83,9 @@ _FAMILY_READS: dict[str, frozenset[str]] = {
     "supplier": frozenset(
         {"search_supplier", "supplier_summary", "bill_summary"}
     ),
-    "purchase_order": frozenset({"list_purchase_orders", "search_supplier"}),
+    "purchase_order": frozenset(
+        {"list_purchase_orders", "search_supplier", "search_product"}
+    ),
     "bill": frozenset({"bill_summary", "supplier_summary", "search_supplier"}),
     "gst": frozenset({"gst_summary", "invoice_summary"}),
     "sales_order": frozenset({"list_sales_orders", "search_customer"}),
@@ -403,6 +405,30 @@ _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
             "payment overdue",
         ),
         frozenset({"update_expense"}),
+    ),
+    (
+        (
+            "create purchase order",
+            "draft purchase order",
+            "new purchase order",
+            "make purchase order",
+            "purchase order create",
+            "purchase order draft",
+            "create po",
+            "draft po",
+            "new po",
+            "po create",
+            "po draft",
+            "po banao",
+            "purchase order banao",
+            "order from supplier",
+            "supplier order",
+            "maal order",
+            "stock order",
+            "સામાન ઓર્ડર",
+            "પરચેસ ઓર્ડર",
+        ),
+        frozenset({"create_purchase_order"}),
     ),
 )
 
@@ -1227,6 +1253,27 @@ _SENSITIVE_ACTION_CUES: dict[str, tuple[str, ...]] = {
         "electricity bill",
         "kharcha hua",
     ),
+    "create_purchase_order": (
+        "create purchase order",
+        "draft purchase order",
+        "new purchase order",
+        "make purchase order",
+        "purchase order create",
+        "purchase order draft",
+        "create po",
+        "draft po",
+        "new po",
+        "po create",
+        "po draft",
+        "po banao",
+        "purchase order banao",
+        "order from supplier",
+        "supplier order",
+        "maal order",
+        "stock order",
+        "સામાન ઓર્ડર",
+        "પરચેસ ઓર્ડર",
+    ),
 }
 _SENSITIVE_ACTION_RES = {
     name: re.compile("|".join(re.escape(cue) for cue in cues), re.IGNORECASE)
@@ -1514,4 +1561,8 @@ def narrow_field_fill_tools(tool_names: frozenset[str]) -> frozenset[str]:
         companions.add("search_product")
     if writes & {"create_expense", "update_expense"}:
         companions.update({"expense_summary", "list_expenses"})
+    if writes & {"create_purchase_order"}:
+        companions.update(
+            {"search_supplier", "search_product", "list_purchase_orders"}
+        )
     return frozenset(writes | (companions & tool_names))

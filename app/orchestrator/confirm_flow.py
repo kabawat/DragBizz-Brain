@@ -9,6 +9,7 @@ from app.confirmations import (
     CONFIRMATION_TYPE_ADD_STOCK,
     CONFIRMATION_TYPE_CREATE_COLLECT_LINK,
     CONFIRMATION_TYPE_CREATE_EXPENSE,
+    CONFIRMATION_TYPE_CREATE_PURCHASE_ORDER,
     CONFIRMATION_TYPE_LEDGER_CREDIT,
     CONFIRMATION_TYPE_LEDGER_DEBIT,
     CONFIRMATION_TYPE_MERGE_CUSTOMERS,
@@ -376,6 +377,11 @@ def _unknown_message(record: PendingConfirmationRecord) -> str:
         )
     if record.type == CONFIRMATION_TYPE_CREATE_EXPENSE:
         return "Expense creation status is unclear. Check Expenses before retrying."
+    if record.type == CONFIRMATION_TYPE_CREATE_PURCHASE_ORDER:
+        return (
+            "Purchase order status is unclear. "
+            "Check Purchase Orders before retrying."
+        )
     if record.type in _CUSTOMER_ACTION_TYPES:
         return (
             "Customer action status is unclear — it may or may not have "
@@ -397,6 +403,8 @@ def _reject_message(record: PendingConfirmationRecord) -> str:
         return "Stock add cancelled. No inventory was changed."
     if record.type == CONFIRMATION_TYPE_CREATE_EXPENSE:
         return "Kharcha record cancel kar diya gaya. Koi entry save nahi hui."
+    if record.type == CONFIRMATION_TYPE_CREATE_PURCHASE_ORDER:
+        return "Purchase order creation was cancelled. No order was drafted."
     if record.type in _CUSTOMER_ACTION_TYPES:
         return "Cancelled. No customer change was saved."
     return (
@@ -472,6 +480,22 @@ def _approve_message(
             "Kharcha record nahi ho paya"
             + (f": {err}" if err else ".")
             + " Koi entry save nahi hui."
+        )
+
+    if record.type == CONFIRMATION_TYPE_CREATE_PURCHASE_ORDER:
+        if result is not None and result.success:
+            res_data = result.data if isinstance(result.data, dict) else {}
+            po_num = res_data.get("poNumber")
+            po_str = f" ({po_num})" if po_num else ""
+            return (
+                f"Purchase order draft{po_str} created successfully. "
+                "[Purchase Orders dekhein](/dashboard/purchase-orders)"
+            )
+        err = _result_error(result)
+        return (
+            "Could not create purchase order"
+            + (f": {err}" if err else ".")
+            + " Nothing was drafted."
         )
 
     if record.type in _CUSTOMER_ACTION_TYPES:

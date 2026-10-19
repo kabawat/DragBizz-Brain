@@ -18,6 +18,7 @@ CONFIRMATION_TYPE_UPDATE_CUSTOMER_PAYMENT = "update_customer_payment"
 CONFIRMATION_TYPE_CREATE_COLLECT_LINK = "create_collect_link"
 CONFIRMATION_TYPE_SEND_PAYMENT_REMINDER = "send_payment_reminder"
 CONFIRMATION_TYPE_CREATE_EXPENSE = "create_expense"
+CONFIRMATION_TYPE_CREATE_PURCHASE_ORDER = "create_purchase_order"
 
 ConfirmationStatus = Literal[
     "PENDING",

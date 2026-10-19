@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from app.confirmations import (
     CONFIRMATION_TYPE_ADD_STOCK,
     CONFIRMATION_TYPE_CREATE_COLLECT_LINK,
     CONFIRMATION_TYPE_CREATE_EXPENSE,
+    CONFIRMATION_TYPE_CREATE_PURCHASE_ORDER,
     CONFIRMATION_TYPE_INVOICE_RELEASE,
     CONFIRMATION_TYPE_LEDGER_CREDIT,
     CONFIRMATION_TYPE_LEDGER_DEBIT,
@@ -217,6 +219,16 @@ async def stage_from_sensitive_calls(
             audit_trail=audit_trail,
             metrics=metrics,
             question=question,
+        )
+    if call.name == CONFIRMATION_TYPE_CREATE_PURCHASE_ORDER:
+        return await _stage_create_purchase_order_call(
+            store,
+            user_id=user_id,
+            store_id=store_id,
+            session_id=session_id,
+            call=call,
+            audit_trail=audit_trail,
+            metrics=metrics,
         )
     if call.name != "release_invoice":
         raise AppError(
@@ -821,4 +833,108 @@ async def _stage_create_expense_call(
     )
     _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
     return record
+
+
+async def _stage_create_purchase_order_call(
+    store: ConfirmationStore,
+    *,
+    user_id: str,
+    store_id: str,
+    session_id: str,
+    call: ToolCall,
+    audit_trail: AuditTrail | None = None,
+    metrics: MetricsRegistry | None = None,
+) -> PendingConfirmationRecord:
+    args = dict(call.arguments)
+    supplier_id = args.get("supplierId")
+    if not isinstance(supplier_id, str) or not supplier_id.strip():
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message="create_purchase_order requires supplierId",
+            status_code=400,
+        )
+    raw_items = args.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        raise AppError(
+            code="TOOL_ARGS_INVALID",
+            message="create_purchase_order requires at least one item",
+            status_code=400,
+        )
+    sanitized_items: list[dict[str, Any]] = []
+    total_qty = 0
+    for idx, raw in enumerate(raw_items):
+        if not isinstance(raw, dict):
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message=f"create_purchase_order item at index {idx} must be an object",
+                status_code=400,
+            )
+        product_id = raw.get("productId")
+        if not isinstance(product_id, str) or not product_id.strip():
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message=f"create_purchase_order item at index {idx} requires productId",
+                status_code=400,
+            )
+        qty = raw.get("quantity")
+        if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message=(
+                    f"create_purchase_order item at index {idx} "
+                    "requires positive integer quantity"
+                ),
+                status_code=400,
+            )
+        item_entry: dict[str, Any] = {
+            "productId": product_id.strip(),
+            "quantity": qty,
+        }
+        if isinstance(raw.get("productName"), str) and raw["productName"].strip():
+            item_entry["productName"] = raw["productName"].strip()
+        sanitized_items.append(item_entry)
+        total_qty += qty
+
+    supplier_id = supplier_id.strip()
+    supplier_name = (
+        args["supplierName"].strip()
+        if isinstance(args.get("supplierName"), str) and args["supplierName"].strip()
+        else "Supplier"
+    )
+    draft_id = f"po_{uuid.uuid4().hex[:8]}"
+
+    args["supplierId"] = supplier_id
+    args["items"] = sanitized_items
+    args["storeId"] = store_id
+
+    summary: dict[str, Any] = {
+        "action": "create_purchase_order",
+        "prompt": "Create purchase order",
+        "supplierId": supplier_id,
+        "supplierName": supplier_name,
+        "itemCount": len(sanitized_items),
+        "totalQuantity": total_qty,
+        "items": sanitized_items,
+        "paymentTerms": args.get("paymentTerms") or "30_DAYS",
+    }
+    if args.get("reference"):
+        summary["reference"] = str(args["reference"]).strip()
+    if args.get("notes"):
+        summary["notes"] = str(args["notes"]).strip()
+    if args.get("expectedDeliveryDate"):
+        summary["expectedDeliveryDate"] = str(args["expectedDeliveryDate"]).strip()
+
+    record = await store.create(
+        user_id=user_id,
+        store_id=store_id,
+        session_id=session_id,
+        type=CONFIRMATION_TYPE_CREATE_PURCHASE_ORDER,
+        draft_id=draft_id,
+        summary=summary,
+        tool_name=call.name,
+        arguments=args,
+    )
+    _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
+    return record
+
 
