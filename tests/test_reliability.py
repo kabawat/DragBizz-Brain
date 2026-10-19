@@ -1439,4 +1439,23 @@ def test_resolve_turn_intent_sales_and_breakdown_cues() -> None:
     assert "today_sale" in intent3.tool_names
 
 
+def test_request_token_usage_record_default_arguments() -> None:
+    from app.orchestrator.token_usage import RequestTokenUsage
+
+    usage = RequestTokenUsage()
+    # Calling record with output_tokens only should not raise TypeError
+    entry = usage.record(
+        model="gemini-3.1-flash-lite",
+        call_type="synthesize",
+        round=1,
+        output_tokens=150,
+        provider="google_ai",
+    )
+    assert entry.output_tokens == 150
+    assert entry.input_tokens is None
+    assert entry.usage_source == "estimated"
+    assert entry.total_tokens == 150
+
+
+
 
