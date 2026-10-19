@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
@@ -24,6 +25,8 @@ from app.schemas.chat import (
     ConfirmRequest,
     assert_valid_store_id,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
 
@@ -109,7 +112,13 @@ async def chat(
             with contextlib.suppress(asyncio.CancelledError):
                 await watcher
         if concurrency_gate is not None and lease is not None:
-            await concurrency_gate.release(lease)
+            try:
+                await concurrency_gate.release(lease)
+            except Exception:
+                logger.warning(
+                    "Failed to release concurrency lease in chat endpoint",
+                    exc_info=True,
+                )
         reset_auth_context(auth_tokens)
 
 
@@ -189,7 +198,13 @@ async def chat_stream(
             with contextlib.suppress(asyncio.CancelledError):
                 await watcher
             if concurrency_gate is not None and lease is not None:
-                await concurrency_gate.release(lease)
+                try:
+                    await concurrency_gate.release(lease)
+                except Exception:
+                    logger.warning(
+                        "Failed to release concurrency lease in chat_stream",
+                        exc_info=True,
+                    )
             reset_auth_context(auth_tokens)
 
     return StreamingResponse(
@@ -259,5 +274,11 @@ async def confirm_chat(
         )
     finally:
         if concurrency_gate is not None and lease is not None:
-            await concurrency_gate.release(lease)
+            try:
+                await concurrency_gate.release(lease)
+            except Exception:
+                logger.warning(
+                    "Failed to release concurrency lease in confirm_chat",
+                    exc_info=True,
+                )
         reset_auth_context(auth_tokens)

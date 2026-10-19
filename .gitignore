@@ -36,6 +36,7 @@ ENGINEERING.md
 
 # Logs
 logs/
+docs/
 *.log
 
 # Storage / local persisted data

@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import time
 from types import SimpleNamespace
+from typing import Any
+from unittest.mock import MagicMock, patch
 
+import jwt
 import pytest
 from pydantic import ValidationError
 
@@ -142,9 +145,16 @@ class FakeRedis:
             raise ConnectionError("redis down")
         return 1 if self._data.pop(key, None) is not None else 0
 
-    async def eval(self, *_args, **_kwargs):
+    async def eval(self, script: str, numkeys: int, *keys_and_args: Any) -> Any:
         if self.fail:
             raise ConnectionError("redis down")
+        if 'redis.call("get", KEYS[1]) == ARGV[1]' in script:
+            key = str(keys_and_args[0])
+            token = str(keys_and_args[1])
+            if self._data.get(key) == token:
+                self._data.pop(key, None)
+                return 1
+            return 0
         raise NotImplementedError
 
 
@@ -727,3 +737,214 @@ async def _confirm_redis_down() -> None:
             arguments={"storeId": STORE},
         )
     assert caught.value.status_code == 503
+
+
+# --- Phase 1: JWKS, Concurrency Lua, & Endpoint Teardown Regressions ----------
+
+
+@pytest.mark.asyncio
+async def test_jwks_async_thread_offload_and_error_mapping() -> None:
+    from app.integrations.auth_jwks import JwksTokenVerifier
+
+    mock_client = MagicMock()
+    mock_key = MagicMock()
+    mock_key.key = "fake-public-key"
+    mock_client.get_signing_key_from_jwt.return_value = mock_key
+
+    settings = SimpleNamespace(
+        jwt=SimpleNamespace(
+            url="https://auth.example.com/.well-known/jwks.json",
+            cache_ttl_seconds=300,
+            algorithms=["RS256"],
+            audience="retailer-admin",
+            issuer="dragbizz-auth",
+            clock_skew_seconds=0,
+        )
+    )
+    verifier = JwksTokenVerifier(settings=settings, jwks_client=mock_client)  # type: ignore[arg-type]
+
+    # 1. Success case and to_thread offload
+    with (
+        patch("jwt.decode") as mock_decode,
+        patch("asyncio.to_thread", wraps=asyncio.to_thread) as spy_to_thread,
+    ):
+        mock_decode.return_value = {
+            "sub": "user-123",
+            "agencyId": "agency-456",
+            "tenant": "Tenant-A",
+            "exp": int(time.time()) + 3600,
+            "iat": int(time.time()),
+        }
+        claims = await verifier.verify("valid.token", None)  # type: ignore[arg-type]
+        assert claims["sub"] == "user-123"
+        assert claims["tenant"] == "tenant-a"
+        assert spy_to_thread.called
+
+    # 2. PyJWKClientConnectionError maps to 503 AUTH_UNAVAILABLE
+    mock_client.get_signing_key_from_jwt.side_effect = (
+        jwt.PyJWKClientConnectionError("Connection refused")
+    )
+    with pytest.raises(AppError) as exc_conn:
+        await verifier.verify("token", None)  # type: ignore[arg-type]
+    assert exc_conn.value.status_code == 503
+    assert exc_conn.value.code == "AUTH_UNAVAILABLE"
+
+    # 3. PyJWKError maps to 401 AUTH_INVALID
+    mock_client.get_signing_key_from_jwt.side_effect = jwt.PyJWKError(
+        "Signing key not found"
+    )
+    with pytest.raises(AppError) as exc_jwk:
+        await verifier.verify("token", None)  # type: ignore[arg-type]
+    assert exc_jwk.value.status_code == 401
+    assert exc_jwk.value.code == "AUTH_INVALID"
+
+    # 4. ExpiredSignatureError maps to 401 AUTH_EXPIRED
+    mock_client.get_signing_key_from_jwt.side_effect = None
+    mock_client.get_signing_key_from_jwt.return_value = mock_key
+    with patch("jwt.decode", side_effect=jwt.ExpiredSignatureError("Token expired")):
+        with pytest.raises(AppError) as exc_exp:
+            await verifier.verify("token", None)  # type: ignore[arg-type]
+        assert exc_exp.value.status_code == 401
+        assert exc_exp.value.code == "AUTH_EXPIRED"
+
+    # 5. InvalidTokenError maps to 401 AUTH_INVALID
+    with patch("jwt.decode", side_effect=jwt.InvalidTokenError("Malformed")):
+        with pytest.raises(AppError) as exc_inv:
+            await verifier.verify("token", None)  # type: ignore[arg-type]
+        assert exc_inv.value.status_code == 401
+        assert exc_inv.value.code == "AUTH_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_redis_concurrency_release_atomic_lua() -> None:
+    from app.limits.concurrency import ConcurrencyGate
+
+    fake_redis = FakeRedis()
+    gate = ConcurrencyGate(fake_redis, max_chat=1)
+
+    # Acquire lease (slot 0)
+    lease = await gate.acquire_chat(user_id="u1", store_id=STORE)
+    assert lease.slot == 0
+
+    # Wrong token cannot release (Lua returns 0, key remains)
+    wrong_lease = Lease(
+        kind=lease.kind,
+        user_id=lease.user_id,
+        store_id=lease.store_id,
+        token="wrong-token",
+        slot=lease.slot,
+    )
+    await gate.release(wrong_lease)
+
+    # Next acquire fails because slot 0 is still held
+    with pytest.raises(AppError) as exc:
+        await gate.acquire_chat(user_id="u1", store_id=STORE)
+    assert exc.value.code == "AI_CONCURRENCY_LIMIT"
+
+    # Correct token releases atomically
+    await gate.release(lease)
+
+    # Slot is now available
+    reacquired = await gate.acquire_chat(user_id="u1", store_id=STORE)
+    assert reacquired.slot == 0
+    await gate.release(reacquired)
+
+
+@pytest.mark.asyncio
+async def test_redis_concurrency_release_failure_does_not_raise() -> None:
+    from app.limits.concurrency import ConcurrencyGate
+
+    failing_redis = FakeRedis(fail=True)
+    gate = ConcurrencyGate(failing_redis, max_chat=1)
+    lease = Lease(kind="chat", user_id="u1", store_id=STORE, token="t", slot=0)
+
+    # Release on failing Redis must suppress error, log warning, and NOT raise
+    await gate.release(lease)
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoints_teardown_swallows_release_error() -> None:
+    from fastapi import Request
+
+    from app.api.v1.chat import chat, chat_stream, confirm_chat
+    from app.schemas.chat import ChatRequest, ChatResponse, ConfirmRequest
+
+    class ExplodingGate:
+        async def acquire_chat(self, *args: Any, **kwargs: Any) -> Lease:
+            return Lease(kind="chat", user_id="u1", store_id=STORE, token="t", slot=0)
+
+        async def acquire_confirm(self, *args: Any, **kwargs: Any) -> Lease:
+            return Lease(
+                kind="confirm",
+                user_id="u1",
+                store_id=STORE,
+                token="t",
+                slot=0,
+            )
+
+        async def release(self, lease: Any) -> None:
+            raise RuntimeError("Redis exploded during release")
+
+    class MockChatService:
+        async def handle(self, *args: Any, **kwargs: Any) -> ChatResponse:
+            return ChatResponse(
+                message="hello from mock",
+                session_id=SESSION,
+                request_id="req-1",
+                user_id="u1",
+                provider="mock-p",
+                model="mock-m",
+            )
+
+        async def handle_stream(self, *args: Any, **kwargs: Any) -> Any:
+            yield ("token", {"delta": "hello"})
+            yield ("done", {"message": "hello"})
+
+        async def confirm(self, *args: Any, **kwargs: Any) -> ChatResponse:
+            return ChatResponse(
+                message="confirmed from mock",
+                session_id=SESSION,
+                request_id="req-1",
+                user_id="u1",
+                provider="mock-p",
+                model="mock-m",
+            )
+
+    app_mock = MagicMock()
+    app_mock.state.concurrency_gate = ExplodingGate()
+    app_mock.state.rate_limiter = None
+
+    scope = {
+        "type": "http",
+        "app": app_mock,
+        "state": {
+            "access_token": "valid.token",
+            "request_id": "req-1",
+        },
+    }
+    mock_request = Request(scope)
+    user = {"sub": "u1", "agencyId": "ag1"}
+    chat_service = MockChatService()
+
+    # 1. /chat endpoint teardown resilience
+    req_body = ChatRequest(text="hi", sessionId=SESSION, storeId=STORE)
+    resp = await chat(req_body, mock_request, user, chat_service)  # type: ignore[arg-type]
+    assert resp.message == "hello from mock"
+
+    # 2. /chat/stream endpoint teardown resilience
+    stream_resp = await chat_stream(req_body, mock_request, user, chat_service)  # type: ignore[arg-type]
+    events = []
+    async for chunk in stream_resp.body_iterator:
+        events.append(chunk)
+    assert len(events) == 2
+
+    # 3. /chat/confirm endpoint teardown resilience
+    conf_body = ConfirmRequest(
+        sessionId=SESSION,
+        storeId=STORE,
+        confirmationId="c" * 24,
+        draftId=CUSTOMER,
+        action="approve",
+    )
+    conf_resp = await confirm_chat(conf_body, mock_request, user, chat_service)  # type: ignore[arg-type]
+    assert conf_resp.message == "confirmed from mock"

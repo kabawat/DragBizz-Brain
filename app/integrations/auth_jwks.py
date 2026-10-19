@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -58,7 +59,13 @@ class JwksTokenVerifier:
                 message="Access token expired",
                 status_code=401,
             ) from exc
-        except jwt.InvalidTokenError as exc:
+        except jwt.PyJWKClientConnectionError as exc:
+            raise AppError(
+                code="AUTH_UNAVAILABLE",
+                message="Auth service unavailable",
+                status_code=503,
+            ) from exc
+        except (jwt.InvalidTokenError, jwt.PyJWKError) as exc:
             raise AppError(
                 code="AUTH_INVALID",
                 message="Invalid access token",
@@ -68,9 +75,9 @@ class JwksTokenVerifier:
         return normalize_access_claims(payload)
 
     async def _get_signing_key(self, token: str):
-        # Sync JWKS lookup; to_thread can wrap this later if needed.
-        # Phase 1 keeps it simple — keys are cached after first fetch.
-        return self._jwks_client.get_signing_key_from_jwt(token)
+        return await asyncio.to_thread(
+            self._jwks_client.get_signing_key_from_jwt, token
+        )
 
 
 _verifier: JwksTokenVerifier | None = None

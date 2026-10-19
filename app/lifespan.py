@@ -40,6 +40,7 @@ from app.sessions import (
     MongoHistoryStore,
     NoOpHistoryStore,
     RedisSessionStore,
+    drain_pending_persist_tasks,
 )
 from app.tools.definitions import (
     READ_TOOL_DEFINITIONS,
@@ -308,6 +309,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await drain_pending_persist_tasks(timeout=5.0)
         if audit_trail is not None:
             audit_trail.close()
         if redis_client is not None:

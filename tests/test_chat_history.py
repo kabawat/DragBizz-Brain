@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
+from typing import Any
+
 import pytest
 
 from app.core.exceptions import AppError
 from app.sessions.history import (
     InMemoryHistoryStore,
     NoOpHistoryStore,
+    drain_pending_persist_tasks,
+    get_pending_persist_tasks,
     persist_turn_safe,
+    schedule_persist_turn,
     title_from_text,
 )
-
 
 USER = "user-1"
 OTHER_USER = "user-2"
@@ -159,3 +164,62 @@ def test_title_from_text_truncates() -> None:
     title = title_from_text(long)
     assert title.endswith("…")
     assert len(title) == 43
+
+
+@pytest.mark.asyncio
+async def test_persist_task_tracking_and_completion() -> None:
+    store = InMemoryHistoryStore()
+    schedule_persist_turn(
+        store,
+        session_id=SESSION,
+        user_id=USER,
+        store_id=STORE,
+        user_text="test q",
+        assistant_text="test a",
+    )
+    pending = get_pending_persist_tasks()
+    assert len(pending) >= 1
+    drained = await drain_pending_persist_tasks(timeout=2.0)
+    assert drained >= 1
+    assert len(get_pending_persist_tasks()) == 0
+    detail = await store.get_session(session_id=SESSION, user_id=USER, store_id=STORE)
+    assert len(detail.messages) == 2
+
+
+@pytest.mark.asyncio
+async def test_persist_task_exception_handled_cleanly() -> None:
+    class ErrorStore(InMemoryHistoryStore):
+        async def append_messages(self, **kwargs: Any) -> None:
+            raise RuntimeError("Database connection died")
+
+    schedule_persist_turn(
+        ErrorStore(),
+        session_id=SESSION,
+        user_id=USER,
+        store_id=STORE,
+        user_text="q",
+        assistant_text="a",
+    )
+    drained = await drain_pending_persist_tasks(timeout=2.0)
+    assert drained >= 1
+    assert len(get_pending_persist_tasks()) == 0
+
+
+@pytest.mark.asyncio
+async def test_persist_task_timeout_cancellation() -> None:
+    class StalledStore(InMemoryHistoryStore):
+        async def append_messages(self, **kwargs: Any) -> None:
+            await asyncio.sleep(5.0)
+
+    schedule_persist_turn(
+        StalledStore(),
+        session_id=SESSION,
+        user_id=USER,
+        store_id=STORE,
+        user_text="stalled q",
+        assistant_text="stalled a",
+    )
+    # Bounded shutdown: timeout at 0.05s cancels stalled tasks
+    drained = await drain_pending_persist_tasks(timeout=0.05)
+    assert drained == 0
+    assert len(get_pending_persist_tasks()) == 0

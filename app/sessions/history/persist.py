@@ -56,6 +56,14 @@ async def persist_turn_safe(
         )
 
 
+_PENDING_PERSIST_TASKS: set[asyncio.Task[None]] = set()
+
+
+def get_pending_persist_tasks() -> set[asyncio.Task[None]]:
+    """Return an immutable snapshot of currently in-flight persist tasks."""
+    return set(_PENDING_PERSIST_TASKS)
+
+
 def schedule_persist_turn(
     history: DurableHistoryStore | None,
     *,
@@ -80,11 +88,16 @@ def schedule_persist_turn(
             tool_results=tool_results,
         )
     )
+    _PENDING_PERSIST_TASKS.add(task)
 
     def _done(done: asyncio.Task[None]) -> None:
+        _PENDING_PERSIST_TASKS.discard(done)
         if done.cancelled():
             return
-        exc = done.exception()
+        try:
+            exc = done.exception()
+        except asyncio.CancelledError:
+            return
         if exc is not None:
             logger.warning(
                 "Durable history background task failed for session %s: %s",
@@ -93,3 +106,43 @@ def schedule_persist_turn(
             )
 
     task.add_done_callback(_done)
+
+
+async def drain_pending_persist_tasks(timeout: float = 5.0) -> int:
+    """Await active in-flight persist tasks up to timeout seconds during shutdown.
+
+    Note: In-memory task tracking buffers tasks across the process lifespan,
+    but does not provide crash-proof durability against ungraceful SIGKILL, OOM,
+    or power loss.
+    """
+    if not _PENDING_PERSIST_TASKS:
+        return 0
+    tasks = list(_PENDING_PERSIST_TASKS)
+    logger.info(
+        "Draining %d pending history persistence tasks (timeout=%.1fs)",
+        len(tasks),
+        timeout,
+    )
+    done, pending = await asyncio.wait(tasks, timeout=timeout)
+    for t in done:
+        if not t.cancelled():
+            try:
+                exc = t.exception()
+                if exc is not None:
+                    logger.warning(
+                        "History persistence task completed with error: %s", exc
+                    )
+            except asyncio.CancelledError:
+                pass
+    if pending:
+        logger.warning(
+            "%d history persistence tasks exceeded the shutdown timeout of "
+            "%.1fs; cancelling",
+            len(pending),
+            timeout,
+        )
+        for t in pending:
+            t.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+    return len(done)
+

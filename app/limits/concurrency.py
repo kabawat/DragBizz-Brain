@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 
 _KEY_PREFIX = "ai:concurrency"
 
+_RELEASE_LUA = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+else
+    return 0
+end
+"""
+
 
 @dataclass(frozen=True)
 class Lease:
@@ -62,16 +70,9 @@ class ConcurrencyGate:
             return
         key = self._slot_key(lease.kind, lease.user_id, lease.store_id, lease.slot)
         try:
-            current = await self._redis.get(key)
-            if current == lease.token:
-                await self._redis.delete(key)
-        except Exception as exc:
-            logger.warning("Concurrency release failed", exc_info=True)
-            raise AppError(
-                code="AI_STORE_UNAVAILABLE",
-                message="Concurrency store unavailable",
-                status_code=503,
-            ) from exc
+            await self._redis.eval(_RELEASE_LUA, 1, key, lease.token)
+        except Exception:
+            logger.warning("Concurrency release failed for key %s", key, exc_info=True)
 
     async def _acquire(
         self,
