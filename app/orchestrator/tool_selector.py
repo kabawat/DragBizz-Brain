@@ -338,6 +338,33 @@ _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
         ),
         frozenset({"add_stock", "search_product"}),
     ),
+    (
+        (
+            "add kharcha",
+            "kharcha add",
+            "add karo kharcha",
+            "add karo kharche",
+            "kharche me add",
+            "kharcha me add",
+            "add expense",
+            "expense add",
+            "kharcha record",
+            "record expense",
+            "kharcha dalo",
+            "kharcha daalo",
+            "kharcha likho",
+            "kharcha banao",
+            "rent diya",
+            "kiraya diya",
+            "bill bhara",
+            "bill bhra",
+            "light bill",
+            "bijli bill",
+            "electricity bill",
+            "kharcha hua",
+        ),
+        frozenset({"create_expense"}),
+    ),
 )
 
 _FAMILY_CUES: dict[str, tuple[str, ...]] = {
@@ -1035,6 +1062,10 @@ _SENSITIVE_ACTION_CUES: dict[str, tuple[str, ...]] = {
     "create_expense": (
         "add kharcha",
         "kharcha add",
+        "add karo kharcha",
+        "add karo kharche",
+        "kharche me add",
+        "kharcha me add",
         "add expense",
         "expense add",
         "kharcha record",
@@ -1046,6 +1077,10 @@ _SENSITIVE_ACTION_CUES: dict[str, tuple[str, ...]] = {
         "rent diya",
         "kiraya diya",
         "bill bhara",
+        "bill bhra",
+        "light bill",
+        "bijli bill",
+        "electricity bill",
         "kharcha hua",
     ),
 }
@@ -1084,9 +1119,11 @@ _STOCK_ADD_FLEX_RE = re.compile(
     re.IGNORECASE,
 )
 _EXPENSE_ADD_FLEX_RE = re.compile(
-    r"\b(?:add|daal|dalo|likho|record)\s+(?:karo\s+)?(?:aaj\s+ka\s+)?(?:kharcha|expense)\b"
-    r"|\b(?:kharcha|expense)\s+(?:me(?:in)?\s+)?(?:\S+\s+){0,6}(?:add|daal|dalo|likho|record)\b"
-    r"|\b(?:rent|kiraya)\s+(?:diya|bhara|pay)\b"
+    r"\b(?:add|daal|dalo|likho|record|banao)\s+(?:karo\s+)?(?:\S+\s+){0,4}(?:kharch[aeo]|expense)\b"
+    r"|\b(?:kharch[aeo]|expense)\s*(?:me(?:in)?)?\s+(?:\S+\s+){0,6}(?:add|daal|dalo|likho|record|karo)\b"
+    r"|\b(?:rent|kiraya)\s+(?:\S+\s+){0,3}(?:diya|bhara|bhra|pay)\b"
+    r"|\b(?:light|bijli|electricity|water|pani|wifi|phone|gas)\s+(?:ka\s+)?bill\b"
+    r"|\bbill\s+(?:\S+\s+){0,2}(?:bhara|bhra|diya|pay)\b"
     r"|\b(?:store|dukaan|shop)\s+ka\s+rent\b",
     re.IGNORECASE,
 )

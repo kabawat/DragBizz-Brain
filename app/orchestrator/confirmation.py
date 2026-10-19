@@ -775,6 +775,8 @@ async def _stage_create_expense_call(
         "date": resolved_date,
         "currency": "INR",
     }
+    if isinstance(args.get("notes"), str) and args.get("notes").strip():
+        summary["notes"] = args["notes"].strip()
 
     record = await store.create(
         user_id=user_id,

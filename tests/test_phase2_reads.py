@@ -944,3 +944,31 @@ def test_fast_conversational_bypasses_business_queries() -> None:
     assert try_fast_conversational_turn("500 rupaye jama karo") is None
     assert try_fast_conversational_turn("create invoice draft") is None
     assert try_fast_conversational_turn("customer ram ka ledger dikhao") is None
+
+
+def test_light_bill_expense_selection() -> None:
+    from app.orchestrator.tool_selector import (
+        resolve_turn_intent,
+        user_requested_sensitive_action,
+    )
+    from app.tools.definitions import (
+        READ_TOOL_DEFINITIONS,
+        SENSITIVE_TOOL_DEFINITIONS,
+        WRITE_TOOL_DEFINITIONS,
+    )
+    from app.tools.registry import ToolRegistry
+
+    reg = ToolRegistry()
+    for d in (
+        READ_TOOL_DEFINITIONS + WRITE_TOOL_DEFINITIONS + SENSITIVE_TOOL_DEFINITIONS
+    ):
+        reg.register(d, lambda: None)
+    available = {d.name for d in reg.definitions()}
+
+    q = (
+        "1900 light bill bhra last month ka, isko add karo kharche me "
+        "aur note bhi likhna last month sept ka"
+    )
+    intent = resolve_turn_intent(q, available=available)
+    assert "create_expense" in intent.tool_names
+    assert user_requested_sensitive_action(q, "create_expense") is True

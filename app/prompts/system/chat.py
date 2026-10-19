@@ -373,7 +373,8 @@ def build_chat_system_prompt(
             parts.append(
                 "- create_expense: STAGE expense creation (needs confirm). "
                 "When the user asks to add or record an expense, call "
-                "create_expense with title, amount, category, and date. "
+                "create_expense with title, amount, category, date, "
+                "and optional notes. "
                 f"For date: if user said 'aaj' or current expense, pass "
                 f"'{today_date}'. "
                 "Category MUST be one of: 'daily-expenses' (Chai, tea, snacks, "
