@@ -1403,3 +1403,40 @@ async def test_confirmation_nested_argument_modification_rejected() -> None:
     assert caught.value.code == "CONFIRMATION_ARGUMENTS_INVALID"
 
 
+def test_request_budget_record_tokens_default_arguments() -> None:
+    budget = RequestBudget()
+    # Calling with output_tokens only should not fail with TypeError
+    budget.record_tokens(output_tokens=25)
+    assert budget.output_tokens == 25
+    assert budget.input_tokens == 0
+
+    # Calling with input_tokens only should not fail with TypeError
+    budget.record_tokens(input_tokens=40)
+    assert budget.input_tokens == 40
+    assert budget.output_tokens == 25
+
+
+def test_resolve_turn_intent_sales_and_breakdown_cues() -> None:
+    from app.orchestrator.tool_selector import resolve_turn_intent
+
+    available = ["today_sale", "invoice_summary", "list_invoices", "search_product"]
+
+    # Test colloquial queries
+    q1 = "bhai mene ek aur bill banaya he abhi to updated sales bata na lode"
+    intent1 = resolve_turn_intent(q1, available=available)
+    assert intent1.routing == "tools"
+    assert "today_sale" in intent1.tool_names
+    assert "list_invoices" in intent1.tool_names
+
+    q2 = "aaj ka sale batao"
+    intent2 = resolve_turn_intent(q2, available=available)
+    assert intent2.routing == "tools"
+    assert "today_sale" in intent2.tool_names
+
+    q3 = "4820 kese hua breakdown dena"
+    intent3 = resolve_turn_intent(q3, available=available)
+    assert intent3.routing == "tools"
+    assert "today_sale" in intent3.tool_names
+
+
+

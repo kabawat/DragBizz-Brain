@@ -49,7 +49,7 @@ class RequestBudget:
         self.model_calls += 1
 
     def record_tokens(
-        self, *, input_tokens: int | None, output_tokens: int | None
+        self, *, input_tokens: int | None = None, output_tokens: int | None = None
     ) -> None:
         if input_tokens:
             self.input_tokens += input_tokens

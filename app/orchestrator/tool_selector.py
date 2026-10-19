@@ -60,7 +60,7 @@ _CORE_UNKNOWN_TOOLS = frozenset(
 )
 
 _FAMILY_READS: dict[str, frozenset[str]] = {
-    "sale": frozenset({"today_sale", "invoice_summary"}),
+    "sale": frozenset({"today_sale", "invoice_summary", "list_invoices"}),
     "stock": frozenset({"stock_summary", "search_product"}),
     "stock_items": frozenset(
         {"stock_items", "stock_summary", "search_product"}
@@ -453,18 +453,34 @@ _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
 _FAMILY_CUES: dict[str, tuple[str, ...]] = {
     "sale": (
         "aaj ki sale",
+        "aaj ka sale",
+        "aaj ke sales",
         "today's sale",
+        "todays sale",
         "today sale",
+        "today sales",
+        "updated sales",
+        "updated sale",
+        "sales bata",
+        "sale bata",
+        "sale batao",
+        "sales batao",
         "sale kitni",
         "sale kitna",
-        "sale batao",
         "kitne bill",
         "bill bane",
+        "bill banaya",
+        "naya bill",
+        "ek aur bill",
         "bills today",
         "today's bills",
         "total sell",
+        "total sale",
+        "total sales",
         "sell kitni",
         "sell kitna",
+        "breakdown",
+        "breakdown dena",
         "dhandha",
         "aaj ka dhandha",
         "kitna dhandha",
