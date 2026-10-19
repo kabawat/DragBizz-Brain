@@ -780,6 +780,46 @@ class RetailerClient:
             json_body=body,
         )
 
+    async def update_expense(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        expense_id: str,
+        title: str | None = None,
+        amount: float | None = None,
+        category: str | None = None,
+        date: str | None = None,
+        payment_mode: str | None = None,
+        notes: str | None = None,
+        description: str | None = None,
+        status: str | None = None,
+    ) -> RetailerResponse:
+        body: dict[str, Any] = {}
+        if title is not None:
+            body["title"] = title
+        if amount is not None:
+            body["amount"] = amount
+        if category is not None:
+            body["category"] = category
+        if date is not None:
+            body["date"] = date
+        if payment_mode is not None:
+            body["paymentMode"] = payment_mode
+        if status is not None:
+            body["status"] = status
+        desc_val = description if description is not None else notes
+        if desc_val is not None:
+            body["description"] = desc_val
+            body["notes"] = desc_val
+        return await self._request(
+            "PUT",
+            f"/expense/{expense_id}",
+            access_token=access_token,
+            store_id=store_id,
+            json_body=body,
+        )
+
 
     async def get_cashbook_summary(
         self,

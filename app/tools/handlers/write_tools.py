@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.confirmations.categories import normalize_expense_category
 from app.integrations.retailer_client import RetailerHttpError
 from app.schemas.tool import ToolResult
 from app.tools.context import ToolContext
@@ -284,9 +285,94 @@ def _failure(tool: str, exc: RetailerHttpError) -> ToolResult:
     )
 
 
+async def update_expense(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    expense_id = arguments.get("expenseId")
+    if not isinstance(expense_id, str) or not expense_id.strip():
+        return ToolResult(
+            tool="update_expense",
+            success=False,
+            data={"code": "TOOL_ARGS_INVALID", "message": "expenseId is required"},
+        )
+
+    title = arguments.get("title")
+    amount = arguments.get("amount")
+    category = arguments.get("category")
+    date = arguments.get("date")
+    payment_mode = arguments.get("paymentMode")
+    desc = arguments.get("description") or arguments.get("notes")
+    status = arguments.get("status")
+
+    clean_status = (
+        status.strip().upper()
+        if isinstance(status, str) and status.strip()
+        else None
+    )
+    clean_cat = (
+        category.strip()
+        if isinstance(category, str) and category.strip()
+        else None
+    )
+    if clean_cat is not None:
+        clean_cat, _ = normalize_expense_category(
+            clean_cat, title=title if isinstance(title, str) else ""
+        )
+
+    try:
+        response = await context.retailer.update_expense(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            expense_id=expense_id.strip(),
+            title=title.strip() if isinstance(title, str) and title.strip() else None,
+            amount=(
+                float(amount)
+                if (
+                    isinstance(amount, (int, float))
+                    and not isinstance(amount, bool)
+                    and amount > 0
+                )
+                else None
+            ),
+            category=clean_cat,
+            date=date.strip() if isinstance(date, str) and date.strip() else None,
+            payment_mode=(
+                payment_mode.strip()
+                if isinstance(payment_mode, str) and payment_mode.strip()
+                else None
+            ),
+            description=(
+                desc.strip()
+                if isinstance(desc, str) and desc.strip()
+                else None
+            ),
+            status=clean_status,
+        )
+    except RetailerHttpError as exc:
+        return _failure("update_expense", exc)
+
+    data = response.body.get("data") if isinstance(response.body, dict) else {}
+    payload = data if isinstance(data, dict) else {}
+    eid = payload.get("id") or payload.get("_id") or expense_id.strip()
+    return ToolResult(
+        tool="update_expense",
+        success=True,
+        data={
+            "id": eid,
+            "title": payload.get("title") or title,
+            "amount": payload.get("amount") or amount,
+            "category": payload.get("category") or clean_cat,
+            "status": payload.get("status") or clean_status,
+            "date": payload.get("date") or date,
+            "openPath": "/dashboard/expenses",
+        },
+    )
+
+
 WRITE_TOOL_HANDLERS = {
     "create_customer": create_customer,
     "update_customer": update_customer,
     "create_invoice_draft": create_invoice_draft,
     "update_invoice_draft": update_invoice_draft,
+    "update_expense": update_expense,
 }

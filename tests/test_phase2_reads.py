@@ -972,3 +972,92 @@ def test_light_bill_expense_selection() -> None:
     intent = resolve_turn_intent(q, available=available)
     assert "create_expense" in intent.tool_names
     assert user_requested_sensitive_action(q, "create_expense") is True
+
+
+@pytest.mark.asyncio
+async def test_update_expense_flow_and_entity_resolution() -> None:
+    import json
+    from unittest.mock import AsyncMock
+
+    from app.orchestrator.chat_context import _extract_recent_expense
+    from app.orchestrator.tool_selector import resolve_turn_intent
+    from app.sessions import SessionTurn
+    from app.tools.handlers.write_tools import update_expense
+    from app.tools.projection import project_update_expense
+
+    # 1. Selector routing on update intent
+    available = frozenset(
+        {"update_expense", "create_expense", "list_expenses", "expense_summary"}
+    )
+    intent = resolve_turn_intent(
+        "nahi nahi yeh update karo iska overdue he payment",
+        available=available,
+    )
+    assert "update_expense" in intent.tool_names
+
+    intent2 = resolve_turn_intent(
+        "iska payment overdue he",
+        available=available,
+        prior_user_texts=["light bill 1900 bhra"],
+    )
+    assert "update_expense" in intent2.tool_names
+
+    # 2. Entity extraction from prior turn tool_context
+    prior_turns = [
+        SessionTurn(
+            user_text="rent 20000 diya",
+            assistant_text="Staged expense creation",
+            tool_context=json.dumps(
+                [
+                    {
+                        "tool": "create_expense",
+                        "success": True,
+                        "data": {
+                            "id": "exp_abc999",
+                            "title": "Electricity bill",
+                            "amount": 1900.0,
+                            "category": "utilities",
+                            "status": "PAID",
+                        },
+                    }
+                ]
+            ),
+        )
+    ]
+    extracted = _extract_recent_expense(prior_turns)
+    assert extracted is not None
+    assert extracted["id"] == "exp_abc999"
+    assert extracted["title"] == "Electricity bill"
+    assert extracted["amount"] == 1900.0
+
+    # 3. Tool execution
+    mock_retailer = AsyncMock()
+    mock_retailer.update_expense.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "_id": "exp_abc999",
+                "title": "Electricity bill",
+                "amount": 1900.0,
+                "status": "OVERDUE",
+            }
+        },
+    )
+    ctx = _dummy_context(mock_retailer)
+    res = await update_expense(
+        {
+            "storeId": STORE_ID,
+            "expenseId": extracted["id"],
+            "status": "OVERDUE",
+        },
+        ctx,
+    )
+    assert res.success is True
+    assert res.data["status"] == "OVERDUE"
+    assert res.data["id"] == "exp_abc999"
+
+    # 4. Projection
+    projected = project_update_expense(res.data)
+    assert projected["id"] == "exp_abc999"
+    assert projected["status"] == "OVERDUE"
+    assert projected["openPath"] == "/dashboard/expenses"

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from app.config import Settings
 from app.core.exceptions import AppError
@@ -87,6 +89,33 @@ async def retrieve_documentation(
             reason=exc.message,
         )
         return [], True
+
+
+def _extract_recent_expense(
+    prior_turns: list[SessionTurn],
+) -> dict[str, Any] | None:
+    for turn in reversed(prior_turns):
+        if not turn.tool_context:
+            continue
+        try:
+            items = json.loads(turn.tool_context)
+            if isinstance(items, list):
+                for item in reversed(items):
+                    if item.get("tool") in ("create_expense", "update_expense"):
+                        data = item.get("data")
+                        if isinstance(data, dict):
+                            eid = data.get("id") or data.get("_id")
+                            if eid:
+                                return {
+                                    "id": str(eid).strip(),
+                                    "title": data.get("title"),
+                                    "amount": data.get("amount"),
+                                    "status": data.get("status"),
+                                    "category": data.get("category"),
+                                }
+        except Exception:
+            continue
+    return None
 
 
 async def build_chat_context(
@@ -187,6 +216,7 @@ async def build_chat_context(
         [turn.user_text for turn in prior_turns],
         question,
     )
+    active_expense = _extract_recent_expense(prior_turns)
     system_content = build_chat_system_prompt(
         language=language,
         store_id=store_id,
@@ -194,6 +224,7 @@ async def build_chat_context(
         documentation=documentation,
         routing=routing,
         abuse_strikes=abuse_strikes,
+        active_expense=active_expense,
     )
     messages = [
         ChatMessage(role="system", content=system_content),

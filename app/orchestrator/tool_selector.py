@@ -365,6 +365,20 @@ _EXPOSURE: tuple[tuple[tuple[str, ...], frozenset[str]], ...] = (
         ),
         frozenset({"create_expense"}),
     ),
+    (
+        (
+            "update expense",
+            "expense update",
+            "kharcha update",
+            "overdue mark",
+            "mark overdue",
+            "status update",
+            "status badal",
+            "status badlo",
+            "payment overdue",
+        ),
+        frozenset({"update_expense"}),
+    ),
 )
 
 _FAMILY_CUES: dict[str, tuple[str, ...]] = {
@@ -1127,6 +1141,19 @@ _EXPENSE_ADD_FLEX_RE = re.compile(
     r"|\b(?:store|dukaan|shop)\s+ka\s+rent\b",
     re.IGNORECASE,
 )
+_EXPENSE_UPDATE_FLEX_RE = re.compile(
+    r"\b(?:update|badal|badlo|change|edit|correct)\b.*?"
+    r"\b(?:expense|kharch[aeo]|bill|payment|status)\b"
+    r"|\b(?:expense|kharch[aeo]|bill|payment|status)\b.*?"
+    r"\b(?:update|badal|badlo|change|edit|correct)\b"
+    r"|\b(?:overdue|pending|paid|unpaid|cancel(?:led)?)\b.*?"
+    r"\b(?:karo|kar do|mark|status|update|h(?:ai|e))\b"
+    r"|\b(?:karo|kar do|mark|update)\b.*?"
+    r"\b(?:overdue|pending|paid|unpaid|cancel(?:led)?)\b"
+    r"|\biska\s+(?:payment\s+)?(?:status\s+)?(?:overdue|pending|paid|unpaid|cancel(?:led)?)\b"
+    r"|\b(?:yeh|iska|iski)\s+update\s+karo\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -1150,6 +1177,8 @@ def _exposure_tools(text: str) -> set[str]:
         names.update({"add_stock", "search_product"})
     if _EXPENSE_ADD_FLEX_RE.search(text):
         names.add("create_expense")
+    if _EXPENSE_UPDATE_FLEX_RE.search(text):
+        names.add("update_expense")
     return names
 
 
@@ -1226,7 +1255,17 @@ def resolve_turn_intent(
         tool_names = frozenset(matched_reads) & available_set
     elif has_tools:
         routing = "tools"
-        tool_names = (matched_reads | _exposure_tools(text)) & available_set
+        carried = _prior_exposure_tools(prior_user_texts)
+        current = _exposure_tools(text)
+        if ("create_expense" in carried or "update_expense" in carried) and re.search(
+            r"\b(overdue|pending|paid|unpaid|update|badal|badlo|change|cancel)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            current.add("update_expense")
+        tool_names = (
+            matched_reads | current | (carried & {"create_expense", "update_expense"})
+        ) & available_set
     elif has_howto:
         routing = "docs"
         tool_names = frozenset()
@@ -1238,6 +1277,12 @@ def resolve_turn_intent(
         # Keep prior writes + apply current-turn exposure cues.
         carried = _prior_exposure_tools(prior_user_texts)
         current = _exposure_tools(text)
+        if ("create_expense" in carried or "update_expense" in carried) and re.search(
+            r"\b(overdue|pending|paid|unpaid|update|badal|badlo|change|cancel)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            current.add("update_expense")
         tool_names = (read_only | carried | current) & available_set
 
     write_exposure = _exposure_tools(text) - _READ_TOOLS
@@ -1330,4 +1375,6 @@ def narrow_field_fill_tools(tool_names: frozenset[str]) -> frozenset[str]:
         companions.update({"payment_history", "get_customer_payment"})
     if writes & {"add_stock"}:
         companions.add("search_product")
+    if writes & {"create_expense", "update_expense"}:
+        companions.update({"expense_summary", "list_expenses"})
     return frozenset(writes | (companions & tool_names))

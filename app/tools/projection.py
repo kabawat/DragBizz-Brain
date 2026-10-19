@@ -353,6 +353,22 @@ def project_create_expense(data: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def project_update_expense(data: dict[str, Any]) -> dict[str, Any]:
+    return _pick(
+        data,
+        (
+            "id",
+            "title",
+            "amount",
+            "category",
+            "date",
+            "paymentMode",
+            "status",
+            "openPath",
+        ),
+    )
+
+
 def project_today_sale(data: dict[str, Any]) -> dict[str, Any]:
     return _pick(data, ("revenue", "profit", "sales"))
 
@@ -1384,5 +1400,6 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "customer_detailed_analytics": project_customer_detailed_analytics,
     "invoice_detailed_analytics": project_invoice_detailed_analytics,
     "create_expense": project_create_expense,
+    "update_expense": project_update_expense,
 }
 

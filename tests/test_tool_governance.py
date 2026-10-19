@@ -62,6 +62,7 @@ _WRITES = frozenset(
         "create_collect_link",
         "send_payment_reminder",
         "create_expense",
+        "update_expense",
     }
 )
 

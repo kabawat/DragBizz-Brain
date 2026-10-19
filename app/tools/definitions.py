@@ -898,6 +898,71 @@ WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "required": ["storeId", "invoiceId"],
         },
     ),
+    ToolDefinition(
+        name="update_expense",
+        description=(
+            "Update an existing expense by its expenseId (e.g. change payment status "
+            "to 'OVERDUE', 'PAID', 'PENDING', or 'CANCELLED', update amount, title, "
+            "category, date, or description/note). Only provide fields to update."
+        ),
+        risk=ToolRisk.WRITE,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "expenseId": {
+                    **_OBJECT_ID_PROP,
+                    "description": (
+                        "Existing expense ObjectId from prior context or search"
+                    ),
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Optional updated title/name of expense",
+                },
+                "amount": {
+                    "type": "number",
+                    "minimum": 0.01,
+                    "description": "Optional updated expense amount in INR (> 0)",
+                },
+                "category": {
+                    "type": "string",
+                    "description": (
+                        "Optional updated expense category: 'daily-expenses', "
+                        "'rent', 'transport', 'staff-wages', 'utilities', "
+                        "'shop-supplies', 'office-supplies', 'maintenance', "
+                        "'marketing', or 'miscellaneous'"
+                    ),
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Optional updated ISO date (YYYY-MM-DD)",
+                },
+                "paymentMode": {
+                    "type": "string",
+                    "description": (
+                        "Optional updated payment mode: 'CASH', 'UPI', "
+                        "'BANK_TRANSFER', 'CARD', 'OTHER'"
+                    ),
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 500,
+                    "description": "Optional updated description or note",
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["PAID", "PENDING", "OVERDUE", "CANCELLED"],
+                    "description": (
+                        "Payment status to set: 'PAID', 'PENDING', 'OVERDUE', "
+                        "or 'CANCELLED'"
+                    ),
+                },
+            },
+            "required": ["storeId", "expenseId"],
+        },
+    ),
 )
 
 _LEDGER_PARAMETERS = {

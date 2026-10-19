@@ -1,3 +1,5 @@
+from typing import Any
+
 from app.core.dates import (
     current_ist_date_str,
     current_ist_human_str,
@@ -154,6 +156,7 @@ def build_chat_system_prompt(
     documentation: str = "",
     routing: str = "unknown",
     abuse_strikes: int = 0,
+    active_expense: dict[str, Any] | None = None,
 ) -> str:
     """Assemble system rules for the turn's routing + offered tools.
 
@@ -206,6 +209,18 @@ def build_chat_system_prompt(
             f"use {today_date}. NEVER use 2024 or 2025.\n"
         ),
     ]
+    if active_expense and active_expense.get("id"):
+        eid = active_expense["id"]
+        etitle = active_expense.get("title") or "Expense"
+        eamt = active_expense.get("amount")
+        estatus = active_expense.get("status") or "PAID"
+        parts.append(
+            f"- Active Expense in Session: Recently recorded expense ID='{eid}', "
+            f"Title='{etitle}', Amount=₹{eamt}, Status='{estatus}'. "
+            f"When the user asks to update or modify this expense or its status "
+            f"(e.g. 'iska overdue he payment', 'update karo', 'status badal do'), "
+            f"call update_expense with expenseId='{eid}' and updated fields.\n"
+        )
     if abuse_rule:
         parts.append(f"- {abuse_rule}")
 
@@ -402,6 +417,21 @@ def build_chat_system_prompt(
                 "card below to confirm. Do NOT output markdown links like "
                 "'[yahan click karke](...)'. Do not claim the expense is saved "
                 "until confirmed.\n"
+            )
+        if "update_expense" in tool_names:
+            parts.append(
+                "- update_expense: DIRECTLY UPDATE an existing expense. "
+                "Use this tool whenever the user asks to update, modify, or change "
+                "an expense (e.g. change status to 'OVERDUE', 'PAID', 'PENDING', "
+                "or 'CANCELLED', or change amount, title, date, or note). "
+                "Entity resolution: Inspect recent session context or prior tool "
+                "results ([Prior store data]) for the expenseId (ObjectId). "
+                "If the user refers to the recent expense (e.g. 'yeh update karo', "
+                "'iska overdue he payment', 'iska status badal do'), use that "
+                "expenseId. Never invent an expenseId. "
+                "Pass expenseId and the fields to update (e.g. status='OVERDUE'). "
+                "This tool executes immediately. Confirm the update clearly to "
+                "the user once done.\n"
             )
 
 
