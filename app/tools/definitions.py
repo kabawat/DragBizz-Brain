@@ -1310,8 +1310,9 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                     "type": "string",
                     "maxLength": 500,
                     "description": (
-                        "Optional description or note for the expense "
-                        "(e.g. 'last month sept ka')"
+                        "Optional professional description or note for the "
+                        "expense (e.g. 'Electricity bill for September 2026'). "
+                        "Intelligently formulate from user context."
                     ),
                 },
                 "notes": {
