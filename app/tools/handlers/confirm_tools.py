@@ -610,6 +610,13 @@ async def create_expense(
         else None
     )
 
+    raw_status = arguments.get("status")
+    status_val = (
+        raw_status.strip().upper()
+        if isinstance(raw_status, str) and raw_status.strip()
+        else None
+    )
+
     try:
         response = await context.retailer.create_expense(
             access_token=context.access_token,
@@ -623,6 +630,7 @@ async def create_expense(
             else None,
             notes=desc,
             description=desc,
+            status=status_val,
         )
     except RetailerHttpError as exc:
         return ToolResult(

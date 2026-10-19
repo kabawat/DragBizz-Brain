@@ -1315,10 +1315,14 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                         "Intelligently formulate from user context."
                     ),
                 },
-                "notes": {
+                "status": {
                     "type": "string",
-                    "maxLength": 500,
-                    "description": "Alias for description",
+                    "enum": ["PAID", "PENDING", "OVERDUE", "CANCELLED"],
+                    "description": (
+                        "Optional payment status: 'PAID' (already paid / "
+                        "cleared, e.g. 'bill bhra'), 'PENDING' (yet to pay), "
+                        "or 'OVERDUE'. Default is 'PAID' if paid, else 'PENDING'."
+                    ),
                 },
             },
             "required": ["storeId", "title", "amount", "category"],

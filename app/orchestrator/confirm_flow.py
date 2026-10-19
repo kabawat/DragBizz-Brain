@@ -152,10 +152,15 @@ async def handle_confirm(
         tool=record.tool_name,
         business_idempotency_key=record.business_idempotency_key,
     )
+    tool_args = dict(record.arguments)
+    if body.updates and isinstance(body.updates, dict):
+        tool_args.update(body.updates)
+        if "status" in body.updates:
+            record.summary["status"] = body.updates["status"]
     tool_call = ToolCall(
         id=f"confirm_{record.confirmation_id[:12]}",
         name=record.tool_name,
-        arguments=dict(record.arguments),
+        arguments=tool_args,
     )
     confirm_task = asyncio.create_task(
         executor.execute_confirmations(

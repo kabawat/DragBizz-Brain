@@ -755,6 +755,7 @@ class RetailerClient:
         payment_mode: str | None = None,
         notes: str | None = None,
         description: str | None = None,
+        status: str | None = None,
     ) -> RetailerResponse:
         body: dict[str, Any] = {
             "title": title,
@@ -765,6 +766,8 @@ class RetailerClient:
             body["date"] = date
         if payment_mode:
             body["paymentMode"] = payment_mode
+        if status:
+            body["status"] = status
         desc_val = description or notes
         if desc_val:
             body["description"] = desc_val

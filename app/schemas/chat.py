@@ -74,6 +74,7 @@ class ConfirmRequest(BaseModel):
     )
     draft_id: str = Field(alias="draftId", min_length=1, max_length=64)
     action: Literal["approve", "reject"]
+    updates: dict[str, Any] | None = Field(default=None)
 
     model_config = {"populate_by_name": True}
 

@@ -755,11 +755,29 @@ async def _stage_create_expense_call(
     context_text = f"{question} {title}".strip()
     resolved_date = resolve_expense_date(args.get("date"), context_text=context_text)
 
+    raw_status = args.get("status")
+    if isinstance(raw_status, str) and raw_status.strip().upper() in {
+        "PAID",
+        "PENDING",
+        "OVERDUE",
+        "CANCELLED",
+    }:
+        initial_status = raw_status.strip().upper()
+    else:
+        q_lower = context_text.lower()
+        if any(w in q_lower for w in ("bhra", "paid", "de diya", "clear")):
+            initial_status = "PAID"
+        elif any(w in q_lower for w in ("baaki", "due", "pending", "unpaid")):
+            initial_status = "PENDING"
+        else:
+            initial_status = "PAID"
+
     args["title"] = title
     args["amount"] = amount
     args["category"] = category_key
     args["date"] = resolved_date
     args["storeId"] = store_id
+    args["status"] = initial_status
 
     draft_id = f"exp_{uuid.uuid4().hex[:8]}"
 
@@ -774,6 +792,8 @@ async def _stage_create_expense_call(
         "categoryLabel": category_label,
         "date": resolved_date,
         "currency": "INR",
+        "status": initial_status,
+        "statusOptions": ["PENDING", "PAID", "OVERDUE"],
     }
     desc = (
         args.get("description")
