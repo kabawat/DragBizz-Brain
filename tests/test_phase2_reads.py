@@ -864,4 +864,25 @@ def test_output_guard_allows_user_and_staged_numbers() -> None:
     assert decision.allowed is True
 
 
+def test_resolve_expense_date_prevents_llm_past_cutoff() -> None:
+    from app.core.dates import current_ist_date_str, resolve_expense_date
+
+    today = current_ist_date_str()
+
+    # 1. User says "aaj ka chai ka kharcha" with hallucinated 2025-01-24
+    d1 = resolve_expense_date(
+        "2025-01-24", context_text="add karo kharcha aaj ka chai ka 160 rupye"
+    )
+    assert d1 == today
+
+    # 2. Outdated year without context keyword should also be rejected
+    d2 = resolve_expense_date("2025-01-24", context_text="chai kharcha")
+    assert d2 == today
+
+    # 3. None should default to today
+    d3 = resolve_expense_date(None)
+    assert d3 == today
+
+
+
 

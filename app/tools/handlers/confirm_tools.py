@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.confirmations.categories import normalize_expense_category
+from app.core.dates import resolve_expense_date
 from app.integrations.retailer_client import RetailerHttpError
 from app.schemas.tool import ToolResult
 from app.tools.context import ToolContext
@@ -596,6 +597,10 @@ async def create_expense(
     category_key, _ = normalize_expense_category(
         arguments.get("category"), title=title.strip()
     )
+    context_text = f"{context.question} {title.strip()}".strip()
+    resolved_date = resolve_expense_date(
+        arguments.get("date"), context_text=context_text
+    )
 
     try:
         response = await context.retailer.create_expense(
@@ -604,9 +609,7 @@ async def create_expense(
             title=title.strip(),
             amount=float(amount),
             category=category_key,
-            date=arguments.get("date")
-            if isinstance(arguments.get("date"), str)
-            else None,
+            date=resolved_date,
             payment_mode=arguments.get("paymentMode")
             if isinstance(arguments.get("paymentMode"), str)
             else None,
@@ -631,6 +634,7 @@ async def create_expense(
             "title": title.strip(),
             "amount": float(amount),
             "category": category_key,
+            "date": resolved_date,
             "openPath": "/dashboard/expenses",
         },
     )

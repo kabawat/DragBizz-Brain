@@ -20,6 +20,7 @@ from app.confirmations import (
     PendingConfirmationRecord,
     normalize_expense_category,
 )
+from app.core.dates import resolve_expense_date
 from app.core.exceptions import AppError
 from app.integrations.retailer_client import RetailerClient, RetailerHttpError
 from app.observability.audit_trail import AuditTrail
@@ -162,6 +163,7 @@ async def stage_from_sensitive_calls(
     metrics: MetricsRegistry | None = None,
     retailer: RetailerClient | None = None,
     access_token: str | None = None,
+    question: str = "",
 ) -> PendingConfirmationRecord | None:
     """Stage at most one SENSITIVE confirmation per turn."""
     if not sensitive_calls:
@@ -214,6 +216,7 @@ async def stage_from_sensitive_calls(
             call=call,
             audit_trail=audit_trail,
             metrics=metrics,
+            question=question,
         )
     if call.name != "release_invoice":
         raise AppError(
@@ -726,6 +729,7 @@ async def _stage_create_expense_call(
     call: ToolCall,
     audit_trail: AuditTrail | None = None,
     metrics: MetricsRegistry | None = None,
+    question: str = "",
 ) -> PendingConfirmationRecord:
     import uuid
 
@@ -748,9 +752,13 @@ async def _stage_create_expense_call(
     category_key, category_label = normalize_expense_category(
         args.get("category"), title=title
     )
+    context_text = f"{question} {title}".strip()
+    resolved_date = resolve_expense_date(args.get("date"), context_text=context_text)
+
     args["title"] = title
     args["amount"] = amount
     args["category"] = category_key
+    args["date"] = resolved_date
     args["storeId"] = store_id
 
     draft_id = f"exp_{uuid.uuid4().hex[:8]}"
@@ -764,11 +772,9 @@ async def _stage_create_expense_call(
         "invoiceNumber": title,
         "category": category_key,
         "categoryLabel": category_label,
+        "date": resolved_date,
         "currency": "INR",
     }
-    date_val = args.get("date")
-    if isinstance(date_val, str) and date_val.strip():
-        summary["date"] = date_val.strip()
 
     record = await store.create(
         user_id=user_id,

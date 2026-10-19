@@ -1,3 +1,4 @@
+from app.core.dates import current_ist_date_str, current_ist_human_str
 from app.prompts.abuse import abuse_tone_rule
 from app.rag.chunker import estimate_tokens
 from app.rag.models import RetrievedChunk
@@ -181,11 +182,19 @@ def build_chat_system_prompt(
             "toward a store / DragBizz question. No corporate filler.\n"
         )
 
+    today_date = current_ist_date_str()
+    today_human = current_ist_human_str()
     parts: list[str] = [
         _PERSONA,
         f"Respond to the user in language tag: {language}.\n",
         f"Active storeId: {store_id}.\n",
+        f"Today's live date (IST): {today_date} ({today_human}).\n",
         "Rules:\n",
+        (
+            f"- Current Date Rule: Today's live date is {today_date}. Whenever "
+            "the user mentions 'aaj', 'today', 'current', or logs a new expense "
+            f"or bill, ALWAYS use {today_date}. NEVER use 2024 or 2025.\n"
+        ),
     ]
     if abuse_rule:
         parts.append(f"- {abuse_rule}")
@@ -355,6 +364,8 @@ def build_chat_system_prompt(
                 "- create_expense: STAGE expense creation (needs confirm). "
                 "When the user asks to add or record an expense, call "
                 "create_expense with title, amount, category, and date. "
+                f"For date: if user said 'aaj' or current expense, pass "
+                f"'{today_date}'. "
                 "Category MUST be one of: 'daily-expenses' (Chai, tea, snacks, "
                 "nashta, refreshments, food), 'rent' (Shop/Godown rent, kiraya), "
                 "'transport' (Delivery, dhulai, fuel, tempo), 'staff-wages' (Salary, "

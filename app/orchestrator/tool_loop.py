@@ -401,6 +401,7 @@ async def run_tool_loop(
                 metrics=metrics,
                 retailer=executor._retailer,
                 access_token=access_token,
+                question=question,
             )
         for call in sensitive_calls:
             await _emit(
@@ -499,6 +500,7 @@ async def run_tool_loop(
                     metrics=metrics,
                     retailer=executor._retailer,
                     access_token=access_token,
+                    question=question,
                 )
                 projected = project_tool_result(
                     _sensitive_placeholder(auto_ledger, staged_sensitive)
