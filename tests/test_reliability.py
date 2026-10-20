@@ -1457,5 +1457,21 @@ def test_request_token_usage_record_default_arguments() -> None:
     assert entry.total_tokens == 150
 
 
+def test_metrics_registry_record_token_usage_default_arguments() -> None:
+    from app.observability.metrics import MetricsRegistry
+
+    registry = MetricsRegistry()
+    # Calling record_token_usage with output_tokens only should not raise TypeError
+    registry.record_token_usage(
+        output_tokens=150,
+        usage_source="estimated",
+    )
+    snap = registry.snapshot()
+    assert snap["tokens"]["output"] == 150
+    assert snap["tokens"]["input"] == 0
+    assert snap["tokens"]["total"] == 150
+
+
+
 
 

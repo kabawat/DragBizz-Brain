@@ -146,6 +146,7 @@ class AiGateway:
             )
             if self._metrics is not None:
                 self._metrics.record_token_usage(
+                    input_tokens=None,
                     output_tokens=output_tokens,
                     usage_source=entry.usage_source,
                 )

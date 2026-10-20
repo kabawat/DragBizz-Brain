@@ -220,9 +220,9 @@ class MetricsRegistry:
     def record_token_usage(
         self,
         *,
-        input_tokens: int | None,
-        output_tokens: int | None,
-        usage_source: str,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        usage_source: str = "unavailable",
     ) -> None:
         if input_tokens:
             self._token_input += input_tokens
