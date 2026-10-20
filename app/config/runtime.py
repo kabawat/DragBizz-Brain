@@ -138,6 +138,12 @@ class LimitSettings(BaseSettings):
         le=300,
         validation_alias="AI_REQUEST_DEADLINE_SECONDS",
     )
+    tool_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0.5,
+        le=60.0,
+        validation_alias="AI_TOOL_TIMEOUT_SECONDS",
+    )
     breaker_failure_threshold: int = Field(
         default=5,
         ge=1,

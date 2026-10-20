@@ -330,6 +330,32 @@ async def run_tool_loop(
                         "tool.started",
                         {"tool": call.name, "toolCallId": call.id},
                     )
+
+                async def _on_read_complete(
+                    c: ToolCall,
+                    res: ToolResult,
+                    target_dict: dict[str, ToolResult] = results_by_id_raw,
+                    emit_cb=emit,
+                ) -> None:
+                    projected = project_tool_result(res)
+                    target_dict[c.id] = projected
+                    await _emit(
+                        emit_cb,
+                        "tool.completed",
+                        {
+                            "tool": c.name,
+                            "toolCallId": c.id,
+                            "success": projected.success,
+                            "summary": _tool_summary(projected),
+                        },
+                    )
+
+                limits_obj = getattr(settings, "limits", None)
+                tool_timeout = (
+                    getattr(limits_obj, "tool_timeout_seconds", 10.0)
+                    if limits_obj is not None
+                    else 10.0
+                )
                 stage_results = await executor.execute_reads(
                     list(stage.calls),
                     access_token=access_token,
@@ -339,21 +365,21 @@ async def run_tool_loop(
                     user_id=user_id,
                     question=question,
                     parallel=True,
+                    tool_timeout_seconds=tool_timeout,
+                    on_tool_complete=_on_read_complete,
                 )
-                for call, result in zip(stage.calls, stage_results, strict=True):
-                    projected = project_tool_result(result)
-                    results_by_id_raw[call.id] = projected
-                    await _emit(
-                        emit,
-                        "tool.completed",
-                        {
-                            "tool": call.name,
-                            "toolCallId": call.id,
-                            "success": projected.success,
-                            "summary": _tool_summary(projected),
-                        },
-                    )
+                for call, result in zip(
+                    stage.calls, stage_results, strict=True
+                ):
+                    if call.id not in results_by_id_raw:
+                        results_by_id_raw[call.id] = project_tool_result(result)
             elif stage.kind == StageKind.SEQUENTIAL_READ:
+                limits_obj = getattr(settings, "limits", None)
+                tool_timeout = (
+                    getattr(limits_obj, "tool_timeout_seconds", 10.0)
+                    if limits_obj is not None
+                    else 10.0
+                )
                 for call in stage.calls:
                     await _emit(
                         emit,
@@ -369,6 +395,7 @@ async def run_tool_loop(
                         user_id=user_id,
                         question=question,
                         parallel=False,
+                        tool_timeout_seconds=tool_timeout,
                     )
                     projected = project_tool_result(one[0])
                     results_by_id_raw[call.id] = projected

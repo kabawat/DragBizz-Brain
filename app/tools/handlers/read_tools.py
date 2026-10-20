@@ -63,10 +63,23 @@ async def search_product(
                 "status": item.get("status"),
             }
         )
+    data: dict[str, Any] = {
+        "items": items,
+        "count": len(items),
+        "found": bool(items),
+    }
+    if not items:
+        data["message"] = (
+            f"No products matching '{arguments.get('query', '')}' "
+            "found in this store."
+        )
+    elif len(items) > 1:
+        data["disambiguationRequired"] = True
+
     return ToolResult(
         tool="search_product",
         success=True,
-        data={"items": items},
+        data=data,
     )
 
 
@@ -1349,10 +1362,22 @@ async def search_supplier(
                 "totalDue": acc.get("totalDue") or s.get("totalDue") or 0.0,
             }
         )
+    data: dict[str, Any] = {
+        "count": len(suppliers),
+        "suppliers": suppliers,
+        "found": bool(suppliers),
+    }
+    if not suppliers:
+        data["message"] = (
+            f"No suppliers matching '{query}' found in this store."
+        )
+    elif len(suppliers) > 1:
+        data["disambiguationRequired"] = True
+
     return ToolResult(
         tool="search_supplier",
         success=True,
-        data={"count": len(suppliers), "suppliers": suppliers},
+        data=data,
     )
 
 

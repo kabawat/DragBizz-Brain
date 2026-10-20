@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
-from collections.abc import Collection
+from collections.abc import Awaitable, Callable, Collection
 from typing import Any
 
 from app.core.exceptions import AppError
@@ -53,6 +54,10 @@ class ToolExecutor:
         user_id: str | None = None,
         question: str = "",
         parallel: bool = False,
+        tool_timeout_seconds: float | None = None,
+        on_tool_complete: (
+            Callable[[ToolCall, ToolResult], Awaitable[None]] | None
+        ) = None,
     ) -> list[ToolResult]:
         if parallel and len(tool_calls) > 1:
             return await self._execute_reads_parallel(
@@ -63,16 +68,21 @@ class ToolExecutor:
                 session_id=session_id,
                 user_id=user_id,
                 question=question,
+                parallel=True,
+                tool_timeout_seconds=tool_timeout_seconds,
+                on_tool_complete=on_tool_complete,
             )
-        return await self._execute(
+        return await self._execute_reads_parallel(
             tool_calls,
             access_token=access_token,
             store_id=store_id,
-            allowed_risk=ToolRisk.READ,
+            allowed_names=allowed_names,
             session_id=session_id,
             user_id=user_id,
             question=question,
-            allowed_names=allowed_names,
+            parallel=False,
+            tool_timeout_seconds=tool_timeout_seconds,
+            on_tool_complete=on_tool_complete,
         )
 
     async def _execute_reads_parallel(
@@ -85,8 +95,24 @@ class ToolExecutor:
         session_id: str | None,
         user_id: str | None,
         question: str,
+        parallel: bool = True,
+        tool_timeout_seconds: float | None = None,
+        on_tool_complete: (
+            Callable[[ToolCall, ToolResult], Awaitable[None]] | None
+        ) = None,
     ) -> list[ToolResult]:
-        if self._metrics is not None:
+        for call in tool_calls:
+            _assert_allowed(call, allowed_names)
+            _assert_request_store(call, store_id)
+            definition = self._registry.get_definition(call.name)
+            if definition.risk != ToolRisk.READ:
+                raise AppError(
+                    code="TOOL_NOT_EXECUTABLE",
+                    message=f"Tool '{call.name}' is not auto-executable as read",
+                    status_code=500,
+                )
+
+        if self._metrics is not None and parallel:
             self._metrics.record_parallel_batch(len(tool_calls))
 
         context = ToolContext(
@@ -96,28 +122,51 @@ class ToolExecutor:
             question=question,
             insight_cache=self._insight_cache,
         )
+        timeout = (
+            tool_timeout_seconds if tool_timeout_seconds is not None else 10.0
+        )
 
         async def _one(call: ToolCall) -> ToolResult:
             try:
-                return await self._run_read(
-                    call,
-                    context=context,
-                    allowed_names=allowed_names,
-                    store_id=store_id,
-                    session_id=session_id,
-                    user_id=user_id,
+                res = await asyncio.wait_for(
+                    self._run_read(
+                        call,
+                        context=context,
+                        allowed_names=allowed_names,
+                        store_id=store_id,
+                        session_id=session_id,
+                        user_id=user_id,
+                        skip_prechecks=True,
+                    ),
+                    timeout=timeout,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "Tool %s timed out after %ss", call.name, timeout
+                )
+                res = ToolResult(
+                    tool=call.name,
+                    success=False,
+                    data={
+                        "code": "TOOL_TIMEOUT",
+                        "message": (
+                            f"Tool '{call.name}' timed out after {timeout}s"
+                        ),
+                    },
                 )
             except asyncio.CancelledError:
                 raise
             except AppError as exc:
-                return ToolResult(
+                res = ToolResult(
                     tool=call.name,
                     success=False,
                     data={"code": exc.code, "message": exc.message},
                 )
             except Exception:
-                logger.exception("Parallel read failed", extra={"tool": call.name})
-                return ToolResult(
+                logger.exception(
+                    "Parallel read failed", extra={"tool": call.name}
+                )
+                res = ToolResult(
                     tool=call.name,
                     success=False,
                     data={
@@ -125,11 +174,28 @@ class ToolExecutor:
                         "message": "Tool execution failed",
                     },
                 )
+            if on_tool_complete is not None:
+                try:
+                    await on_tool_complete(call, res)
+                except Exception:
+                    logger.exception(
+                        "on_tool_complete callback error for %s", call.name
+                    )
+            return res
 
-        gathered = await asyncio.gather(
-            *[_one(call) for call in tool_calls],
-            return_exceptions=True,
-        )
+        if parallel and len(tool_calls) > 1:
+            gathered = await asyncio.gather(
+                *[_one(call) for call in tool_calls],
+                return_exceptions=True,
+            )
+        else:
+            gathered = []
+            for call in tool_calls:
+                try:
+                    res = await _one(call)
+                    gathered.append(res)
+                except BaseException as exc:
+                    gathered.append(exc)
         results: list[ToolResult] = []
         for call, item in zip(tool_calls, gathered, strict=True):
             if isinstance(item, asyncio.CancelledError):
@@ -245,6 +311,7 @@ class ToolExecutor:
                 "record_customer_payment",
                 "add_stock",
                 "create_expense",
+                "create_purchase_order",
             }:
                 arguments["idempotencyKey"] = key
             result = await handler(arguments, context)
@@ -394,7 +461,10 @@ class ToolExecutor:
                     status_code=500,
                 ) from exc
 
-        result = await handler(call.arguments, context)
+        if inspect.iscoroutinefunction(handler):
+            result = await handler(call.arguments, context)
+        else:
+            result = await asyncio.to_thread(handler, call.arguments, context)
         # Read tools: at most one retry on ambiguous Retailer errors.
         if (
             not result.success
@@ -402,7 +472,12 @@ class ToolExecutor:
             and result.data.get("code")
             in {"RETAILER_TIMEOUT", "RETAILER_UNAVAILABLE"}
         ):
-            result = await handler(call.arguments, context)
+            if inspect.iscoroutinefunction(handler):
+                result = await handler(call.arguments, context)
+            else:
+                result = await asyncio.to_thread(
+                    handler, call.arguments, context
+                )
         latency_ms = (time.perf_counter() - started) * 1000
         self._audit(
             session_id=session_id,

@@ -229,6 +229,8 @@ async def stage_from_sensitive_calls(
             call=call,
             audit_trail=audit_trail,
             metrics=metrics,
+            retailer=retailer,
+            access_token=access_token,
         )
     if call.name != "release_invoice":
         raise AppError(
@@ -844,6 +846,8 @@ async def _stage_create_purchase_order_call(
     call: ToolCall,
     audit_trail: AuditTrail | None = None,
     metrics: MetricsRegistry | None = None,
+    retailer: RetailerClient | None = None,
+    access_token: str | None = None,
 ) -> PendingConfirmationRecord:
     args = dict(call.arguments)
     supplier_id = args.get("supplierId")
@@ -853,6 +857,8 @@ async def _stage_create_purchase_order_call(
             message="create_purchase_order requires supplierId",
             status_code=400,
         )
+    supplier_id = supplier_id.strip()
+
     raw_items = args.get("items")
     if not isinstance(raw_items, list) or not raw_items:
         raise AppError(
@@ -862,6 +868,8 @@ async def _stage_create_purchase_order_call(
         )
     sanitized_items: list[dict[str, Any]] = []
     total_qty = 0
+    total_amount = 0.0
+
     for idx, raw in enumerate(raw_items):
         if not isinstance(raw, dict):
             raise AppError(
@@ -876,6 +884,17 @@ async def _stage_create_purchase_order_call(
                 message=f"create_purchase_order item at index {idx} requires productId",
                 status_code=400,
             )
+        product_id = product_id.strip()
+        if product_id == supplier_id:
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message=(
+                    f"create_purchase_order item at index {idx} has productId equal to "
+                    f"supplierId ({product_id}). "
+                    "A valid product ObjectId from search_product is required."
+                ),
+                status_code=400,
+            )
         qty = raw.get("quantity")
         if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
             raise AppError(
@@ -887,23 +906,113 @@ async def _stage_create_purchase_order_call(
                 status_code=400,
             )
         item_entry: dict[str, Any] = {
-            "productId": product_id.strip(),
+            "productId": product_id,
             "quantity": qty,
         }
         if isinstance(raw.get("productName"), str) and raw["productName"].strip():
             item_entry["productName"] = raw["productName"].strip()
+        if isinstance(raw.get("unit"), str) and raw["unit"].strip():
+            item_entry["unit"] = raw["unit"].strip()
+
+        price_val = (
+            raw.get("purchasePrice")
+            if "purchasePrice" in raw
+            else raw.get("price")
+            if "price" in raw
+            else raw.get("unitPrice")
+        )
+        if (
+            isinstance(price_val, (int, float))
+            and not isinstance(price_val, bool)
+            and price_val > 0
+        ):
+            item_entry["purchasePrice"] = float(price_val)
+            item_entry["totalPrice"] = round(float(price_val) * qty, 2)
+            total_amount += item_entry["totalPrice"]
+
         sanitized_items.append(item_entry)
         total_qty += qty
 
-    supplier_id = supplier_id.strip()
     supplier_name = (
         args["supplierName"].strip()
         if isinstance(args.get("supplierName"), str) and args["supplierName"].strip()
         else "Supplier"
     )
+
+    if retailer is not None and access_token:
+        if supplier_name == "Supplier":
+            try:
+                sup_res = await retailer.get_suppliers(
+                    access_token=access_token,
+                    store_id=store_id,
+                    query=supplier_id,
+                    limit=5,
+                )
+                sup_data = sup_res.body.get("data")
+                s_list = (
+                    sup_data.get("suppliers", [])
+                    if isinstance(sup_data, dict)
+                    else sup_data
+                    if isinstance(sup_data, list)
+                    else []
+                )
+                for s in s_list:
+                    if (
+                        isinstance(s, dict)
+                        and str(s.get("id") or s.get("_id")) == supplier_id
+                        and s.get("name")
+                    ):
+                        supplier_name = str(s["name"]).strip()
+                        break
+            except Exception:
+                pass
+
+        for item in sanitized_items:
+            if "purchasePrice" not in item or not item.get("productName"):
+                try:
+                    prod_res = await retailer.get_products(
+                        access_token=access_token,
+                        store_id=store_id,
+                        query=item["productId"],
+                        limit=5,
+                    )
+                    p_data = prod_res.body.get("data") or []
+                    for p in p_data:
+                        if (
+                            isinstance(p, dict)
+                            and str(p.get("id") or p.get("_id")) == item["productId"]
+                        ):
+                            if not item.get("productName") and p.get("name"):
+                                item["productName"] = p["name"]
+                            if "purchasePrice" not in item:
+                                pricing = (
+                                    p.get("pricing")
+                                    if isinstance(p.get("pricing"), dict)
+                                    else {}
+                                )
+                                p_price = (
+                                    pricing.get("purchasePrice")
+                                    or pricing.get("sellingPrice")
+                                    or p.get("sellingPrice")
+                                )
+                                if (
+                                    isinstance(p_price, (int, float))
+                                    and not isinstance(p_price, bool)
+                                    and p_price > 0
+                                ):
+                                    item["purchasePrice"] = float(p_price)
+                                    item["totalPrice"] = round(
+                                        float(p_price) * item["quantity"], 2
+                                    )
+                                    total_amount += item["totalPrice"]
+                            break
+                except Exception:
+                    pass
+
     draft_id = f"po_{uuid.uuid4().hex[:8]}"
 
     args["supplierId"] = supplier_id
+    args["supplierName"] = supplier_name
     args["items"] = sanitized_items
     args["storeId"] = store_id
 
@@ -914,15 +1023,20 @@ async def _stage_create_purchase_order_call(
         "supplierName": supplier_name,
         "itemCount": len(sanitized_items),
         "totalQuantity": total_qty,
+        "currency": "INR",
         "items": sanitized_items,
         "paymentTerms": args.get("paymentTerms") or "30_DAYS",
     }
+    if total_amount > 0:
+        summary["totalAmount"] = round(total_amount, 2)
     if args.get("reference"):
         summary["reference"] = str(args["reference"]).strip()
     if args.get("notes"):
         summary["notes"] = str(args["notes"]).strip()
     if args.get("expectedDeliveryDate"):
-        summary["expectedDeliveryDate"] = str(args["expectedDeliveryDate"]).strip()
+        summary["expectedDeliveryDate"] = str(
+            args["expectedDeliveryDate"]
+        ).strip()
 
     record = await store.create(
         user_id=user_id,

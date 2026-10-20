@@ -72,6 +72,10 @@ class ChatSettings(BaseSettings):
         ge=0,
         validation_alias="AI_CHAT_OUTPUT_USD_PER_MILLION_TOKENS",
     )
+    domain_routing_enabled: bool = Field(
+        default=True,
+        validation_alias="AI_CHAT_DOMAIN_ROUTING_ENABLED",
+    )
 
 
 class GoogleAISettings(BaseSettings):

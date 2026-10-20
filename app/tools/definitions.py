@@ -1,4 +1,4 @@
-from app.schemas.tool import ToolDefinition, ToolRisk
+from app.schemas.tool import ToolDefinition, ToolDomain, ToolRisk
 
 _STORE_ID_PROP = {
     "type": "string",
@@ -17,7 +17,7 @@ _PHONE_PROP = {
     "description": "Indian 10-digit mobile number (required if email omitted)",
 }
 
-READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
+_RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="search_product",
         description="Search live products by name/SKU (price, stock, status).",
@@ -842,7 +842,7 @@ _COMPANY_DETAILS_FIELDS = {
     },
 }
 
-WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
+_RAW_WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="create_customer",
         description=(
@@ -1092,7 +1092,7 @@ _LEDGER_PARAMETERS = {
     "required": ["storeId", "customerId", "amount"],
 }
 
-SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
+_RAW_SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="release_invoice",
         description=(
@@ -1568,5 +1568,152 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
             "required": ["storeId", "supplierId", "items"],
         },
     ),
+)
+
+
+TOOL_DOMAINS: dict[str, ToolDomain] = {
+    # Inventory
+    "search_product": ToolDomain.INVENTORY,
+    "stock_summary": ToolDomain.INVENTORY,
+    "product_summary": ToolDomain.INVENTORY,
+    "stock_items": ToolDomain.INVENTORY,
+    "inventory_velocity": ToolDomain.INVENTORY,
+    "add_stock": ToolDomain.INVENTORY,
+    # Procurement
+    "search_supplier": ToolDomain.PROCUREMENT,
+    "supplier_summary": ToolDomain.PROCUREMENT,
+    "list_purchase_orders": ToolDomain.PROCUREMENT,
+    "bill_summary": ToolDomain.PROCUREMENT,
+    "create_purchase_order": ToolDomain.PROCUREMENT,
+    # Sales
+    "today_sale": ToolDomain.SALES,
+    "invoice_summary": ToolDomain.SALES,
+    "list_invoices": ToolDomain.SALES,
+    "list_sales_orders": ToolDomain.SALES,
+    "invoice_detailed_analytics": ToolDomain.SALES,
+    "sales_pareto": ToolDomain.SALES,
+    "create_invoice_draft": ToolDomain.SALES,
+    "update_invoice_draft": ToolDomain.SALES,
+    "release_invoice": ToolDomain.SALES,
+    # Khata
+    "search_customer": ToolDomain.KHATA,
+    "customer_dossier": ToolDomain.KHATA,
+    "top_customers": ToolDomain.KHATA,
+    "payment_history": ToolDomain.KHATA,
+    "customer_summary": ToolDomain.KHATA,
+    "get_customer_ledger": ToolDomain.KHATA,
+    "list_customer_accounts": ToolDomain.KHATA,
+    "get_customer_payment": ToolDomain.KHATA,
+    "list_payment_reminders": ToolDomain.KHATA,
+    "customer_detailed_analytics": ToolDomain.KHATA,
+    "payment_mix": ToolDomain.KHATA,
+    "create_customer": ToolDomain.KHATA,
+    "update_customer": ToolDomain.KHATA,
+    "merge_customers": ToolDomain.KHATA,
+    "set_opening_balance": ToolDomain.KHATA,
+    "ledger_credit": ToolDomain.KHATA,
+    "ledger_debit": ToolDomain.KHATA,
+    "record_customer_payment": ToolDomain.KHATA,
+    "update_customer_payment": ToolDomain.KHATA,
+    "create_collect_link": ToolDomain.KHATA,
+    "send_payment_reminder": ToolDomain.KHATA,
+    # Finance
+    "expense_summary": ToolDomain.FINANCE,
+    "list_expenses": ToolDomain.FINANCE,
+    "cashbook_summary": ToolDomain.FINANCE,
+    "gst_summary": ToolDomain.FINANCE,
+    "create_expense": ToolDomain.FINANCE,
+    "update_expense": ToolDomain.FINANCE,
+    # General / Overview
+    "list_stores": ToolDomain.GENERAL,
+    "list_staff": ToolDomain.GENERAL,
+    "store_brief": ToolDomain.GENERAL,
+}
+
+TOOL_PERMISSIONS: dict[str, tuple[str, ...]] = {
+    # Inventory
+    "search_product": ("inventory:read",),
+    "stock_summary": ("inventory:read",),
+    "product_summary": ("inventory:read",),
+    "stock_items": ("inventory:read",),
+    "inventory_velocity": ("inventory:read",),
+    "add_stock": ("inventory:write",),
+    # Procurement
+    "search_supplier": ("suppliers:read",),
+    "supplier_summary": ("suppliers:read",),
+    "list_purchase_orders": ("purchase_orders:read",),
+    "bill_summary": ("bills:read",),
+    "create_purchase_order": ("purchase_orders:write",),
+    # Sales
+    "today_sale": ("sales:read",),
+    "invoice_summary": ("invoices:read",),
+    "list_invoices": ("invoices:read",),
+    "list_sales_orders": ("sales:read",),
+    "invoice_detailed_analytics": ("invoices:read",),
+    "sales_pareto": ("sales:read",),
+    "create_invoice_draft": ("invoices:write",),
+    "update_invoice_draft": ("invoices:write",),
+    "release_invoice": ("invoices:write",),
+    # Khata
+    "search_customer": ("customers:read",),
+    "customer_dossier": ("customers:read",),
+    "top_customers": ("customers:read",),
+    "payment_history": ("payments:read",),
+    "customer_summary": ("customers:read",),
+    "get_customer_ledger": ("ledger:read",),
+    "list_customer_accounts": ("customers:read",),
+    "get_customer_payment": ("payments:read",),
+    "list_payment_reminders": ("reminders:read",),
+    "customer_detailed_analytics": ("customers:read",),
+    "payment_mix": ("payments:read",),
+    "create_customer": ("customers:write",),
+    "update_customer": ("customers:write",),
+    "merge_customers": ("customers:write",),
+    "set_opening_balance": ("ledger:write",),
+    "ledger_credit": ("ledger:write",),
+    "ledger_debit": ("ledger:write",),
+    "record_customer_payment": ("payments:write",),
+    "update_customer_payment": ("payments:write",),
+    "create_collect_link": ("payments:write",),
+    "send_payment_reminder": ("reminders:write",),
+    # Finance
+    "expense_summary": ("expenses:read",),
+    "list_expenses": ("expenses:read",),
+    "cashbook_summary": ("cashbook:read",),
+    "gst_summary": ("gst:read",),
+    "create_expense": ("expenses:write",),
+    "update_expense": ("expenses:write",),
+    # General / Overview
+    "list_stores": ("stores:read",),
+    "list_staff": ("staff:read",),
+    "store_brief": ("stores:read",),
+}
+
+
+def _enrich_definition(defn: ToolDefinition) -> ToolDefinition:
+    domain = TOOL_DOMAINS.get(defn.name, ToolDomain.GENERAL)
+    permissions = TOOL_PERMISSIONS.get(defn.name, ())
+    return defn.model_copy(
+        update={
+            "domain": domain,
+            "required_permissions": permissions,
+        }
+    )
+
+
+READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = tuple(
+    _enrich_definition(defn) for defn in _RAW_READ_TOOL_DEFINITIONS
+)
+
+WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = tuple(
+    _enrich_definition(defn) for defn in _RAW_WRITE_TOOL_DEFINITIONS
+)
+
+SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = tuple(
+    _enrich_definition(defn) for defn in _RAW_SENSITIVE_TOOL_DEFINITIONS
+)
+
+ALL_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
+    READ_TOOL_DEFINITIONS + WRITE_TOOL_DEFINITIONS + SENSITIVE_TOOL_DEFINITIONS
 )
 

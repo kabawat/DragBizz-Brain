@@ -1,11 +1,11 @@
-"""Turn intent: routing label + exposed tools for this message."""
-
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal
+
+from app.schemas.tool import ToolDomain
 
 _PRIOR_EXPOSURE_TURNS = 4
 
@@ -56,6 +56,109 @@ _CORE_UNKNOWN_TOOLS = frozenset(
         "stock_summary",
         "search_product",
         "search_customer",
+    }
+)
+
+DOMAIN_BUNDLES: dict[ToolDomain, frozenset[str]] = {
+    ToolDomain.INVENTORY: frozenset(
+        {
+            "search_product",
+            "stock_summary",
+            "product_summary",
+            "stock_items",
+            "inventory_velocity",
+            "add_stock",
+            "search_supplier",
+        }
+    ),
+    ToolDomain.PROCUREMENT: frozenset(
+        {
+            "create_purchase_order",
+            "list_purchase_orders",
+            "search_supplier",
+            "supplier_summary",
+            "bill_summary",
+            "search_product",
+            "stock_summary",
+        }
+    ),
+    ToolDomain.SALES: frozenset(
+        {
+            "today_sale",
+            "invoice_summary",
+            "list_invoices",
+            "create_invoice_draft",
+            "update_invoice_draft",
+            "release_invoice",
+            "search_product",
+            "search_customer",
+            "customer_summary",
+            "list_sales_orders",
+            "invoice_detailed_analytics",
+            "sales_pareto",
+        }
+    ),
+    ToolDomain.KHATA: frozenset(
+        {
+            "search_customer",
+            "customer_dossier",
+            "customer_summary",
+            "get_customer_ledger",
+            "list_customer_accounts",
+            "get_customer_payment",
+            "payment_history",
+            "list_payment_reminders",
+            "ledger_credit",
+            "ledger_debit",
+            "record_customer_payment",
+            "update_customer_payment",
+            "create_customer",
+            "update_customer",
+            "set_opening_balance",
+            "merge_customers",
+            "create_collect_link",
+            "send_payment_reminder",
+            "today_sale",
+        }
+    ),
+    ToolDomain.FINANCE: frozenset(
+        {
+            "create_expense",
+            "update_expense",
+            "expense_summary",
+            "list_expenses",
+            "cashbook_summary",
+            "gst_summary",
+            "today_sale",
+        }
+    ),
+    ToolDomain.GENERAL: frozenset(
+        {
+            "store_brief",
+            "today_sale",
+            "stock_summary",
+            "customer_summary",
+            "invoice_summary",
+            "search_product",
+            "search_customer",
+            "list_staff",
+            "list_stores",
+        }
+    ),
+}
+
+SAFE_BROAD_STORE_FALLBACK: frozenset[str] = frozenset(
+    {
+        "today_sale",
+        "stock_summary",
+        "search_product",
+        "search_customer",
+        "invoice_summary",
+        "expense_summary",
+        "search_supplier",
+        "list_purchase_orders",
+        "get_customer_ledger",
+        "store_brief",
     }
 )
 
@@ -1552,12 +1655,202 @@ def extract_who_is_query(question: str) -> str | None:
     return cleaned[:200]
 
 
-def resolve_turn_intent(
+_PURE_CHITCHAT_RE = re.compile(
+    r"^(hi+|hello+|hey+|hola|namaste|kem\s+cho|kaise\s+ho|kya\s+haal\s+hai?|"
+    r"good\s+(morning|afternoon|evening|night)|"
+    r"thank\s*(you|s)?|dhanyawad|shukriya|thx|"
+    r"who\s+(are\s+you|made\s+you)|what\s+can\s+you\s+do|aap\s+kaun\s+ho|tum\s+kaun\s+ho|"
+    r"bye+|alvida|tata|see\s+you|"
+    r"ok|okay|theek\s+hai|achha|sahi\s+hai|cool|nice|great|sure)[.!?\s]*$",
+    re.IGNORECASE,
+)
+
+_STORE_OPERATIONAL_CUES_RE = re.compile(
+    r"\b(sale|sales|bikri|invoice|bill|stock|inventory|maal|saman|saaman|"
+    r"product|item|supplier|vendor|purchase|po\b|order|customer|grahak|"
+    r"khata|udhaar|udhari|jama|baki|due|balance|ledger|expense|kharcha|kharch|"
+    r"cashbook|galla|counter\s+cash|staff|store|dukan|dukaan|gst|tax|"
+    r"price|rate|cost|profit|rupaye|rs\.?|₹|\d+\s*(qty|packet|kg|gm|piece|box|nag))\b",
+    re.IGNORECASE,
+)
+
+_DOMAIN_PATTERNS: dict[ToolDomain, re.Pattern[str]] = {
+    ToolDomain.INVENTORY: re.compile(
+        r"\b(stock|inventory|maal|saman|saaman|product|item|items|sku|godown|"
+        r"godam|velocity|low\s+stock|out\s+of\s+stock|maal\s+aya|stock\s+add|"
+        r"item\s+add|inventory\s+velocity|products?)\b",
+        re.IGNORECASE,
+    ),
+    ToolDomain.PROCUREMENT: re.compile(
+        r"\b(supplier|suppliers|vendor|vendors|purchase\s+order|po\b|"
+        r"order\s+from\s+supplier|supplier\s+se|purane\s+bill|kharidari|"
+        r"purchase\s+bill|po\s+create|po\s+banao|po\s+banana|po\s+bana|"
+        r"po\s+draft|draft\s+po|maal\s+order)\b",
+        re.IGNORECASE,
+    ),
+    ToolDomain.SALES: re.compile(
+        r"\b(sale|sales|bikri|invoice|invoices|challan|sales\s+order|pareto|"
+        r"becha|bechi|parchi|create\s+invoice|draft\s+invoice|bill\s+bana|"
+        r"bill\s+kata|aaj\s+ki\s+sale|today\s+sale|revenue)\b",
+        re.IGNORECASE,
+    ),
+    ToolDomain.KHATA: re.compile(
+        r"\b(customer|customers|grahak|khata|udhaar|udhari|jama|baki|due|dues|"
+        r"payment|payments|reminder|reminders|collect\s+link|ledger|hisab|"
+        r"hisaab|account|accounts|party)\b",
+        re.IGNORECASE,
+    ),
+    ToolDomain.FINANCE: re.compile(
+        r"\b(expense|expenses|kharcha|kharch|cashbook|galla|counter\s+cash|"
+        r"petrol|diesel|rent|kiraya|bijli|electricity|water|salary|pagar|"
+        r"wages|chai|nashta|gst|tax)\b",
+        re.IGNORECASE,
+    ),
+    ToolDomain.GENERAL: re.compile(
+        r"\b(staff|karamchari|employees?|brief|daily\s+brief|store\s+brief|"
+        r"overview|dukan\s+ka|dukaan|store\s+overview|all\s+stores)\b",
+        re.IGNORECASE,
+    ),
+}
+
+
+def is_pure_chitchat(text: str) -> bool:
+    """True if query is conversational chit-chat with zero store operational intent."""
+    cleaned = text.strip()
+    if not cleaned:
+        return False
+    if _STORE_OPERATIONAL_CUES_RE.search(cleaned):
+        return False
+    return bool(_PURE_CHITCHAT_RE.match(cleaned) or _NEITHER_RE.match(cleaned))
+
+
+def detect_query_domains(text: str) -> set[ToolDomain]:
+    """Detect store operational domains relevant to the user query."""
+    domains: set[ToolDomain] = set()
+    cleaned = text.strip()
+    if not cleaned:
+        return domains
+
+    for domain, pattern in _DOMAIN_PATTERNS.items():
+        if pattern.search(cleaned):
+            domains.add(domain)
+
+    if any(
+        _FAMILY_RES[k].search(cleaned)
+        for k in ("stock", "stock_items", "product", "product_stats")
+    ):
+        domains.add(ToolDomain.INVENTORY)
+    if any(
+        _FAMILY_RES[k].search(cleaned)
+        for k in ("supplier", "purchase_order", "bill")
+    ):
+        domains.add(ToolDomain.PROCUREMENT)
+    if any(
+        _FAMILY_RES[k].search(cleaned)
+        for k in ("sale", "invoice", "invoices", "invoice_stats", "sales_order")
+    ):
+        domains.add(ToolDomain.SALES)
+    if any(
+        _FAMILY_RES[k].search(cleaned)
+        for k in (
+            "customer",
+            "customer_ledger",
+            "customer_accounts",
+            "customer_stats",
+            "payment",
+            "payment_detail",
+            "payment_reminders",
+        )
+    ):
+        domains.add(ToolDomain.KHATA)
+    if any(
+        _FAMILY_RES[k].search(cleaned)
+        for k in ("expense", "cashbook", "gst")
+    ):
+        domains.add(ToolDomain.FINANCE)
+    if any(
+        _FAMILY_RES[k].search(cleaned)
+        for k in ("staff", "store_brief", "detailed_analytics")
+    ):
+        domains.add(ToolDomain.GENERAL)
+
+    return domains
+
+
+def resolve_domain_turn_intent(
     question: str,
     *,
     available: Iterable[str],
     prior_user_texts: Sequence[str] | None = None,
 ) -> TurnIntent:
+    available_set = frozenset(available)
+    text = question.strip()
+    if not text:
+        return TurnIntent(
+            routing="unknown",
+            tool_names=SAFE_BROAD_STORE_FALLBACK & available_set,
+        )
+
+    # 1. Pure Chit-Chat -> 0 tools, routing="neither"
+    if is_pure_chitchat(text):
+        return TurnIntent(routing="neither", tool_names=frozenset())
+
+    has_howto = bool(_HOW_TO_RE.search(text))
+    domains = detect_query_domains(text)
+
+    # 2. Domains matched -> expose full domain bundles + write cues
+    if domains:
+        bundle_tools: set[str] = set()
+        for domain in domains:
+            bundle_tools |= DOMAIN_BUNDLES.get(domain, frozenset())
+
+        carried = _prior_exposure_tools(prior_user_texts)
+        current_writes = _exposure_tools(text)
+        if (
+            "create_expense" in carried or "update_expense" in carried
+        ) and re.search(
+            r"\b(overdue|pending|paid|unpaid|update|badal|badlo|change|cancel)\b",
+            text,
+            re.IGNORECASE,
+        ):
+            current_writes.add("update_expense")
+
+        tool_names = (
+            bundle_tools
+            | current_writes
+            | (carried & {"create_expense", "update_expense"})
+        ) & available_set
+
+        routing: RoutingLabel = "both" if has_howto else "tools"
+        return TurnIntent(routing=routing, tool_names=frozenset(tool_names))
+
+    # 3. No store domain matched: check if pure how-to / docs query
+    if has_howto:
+        return TurnIntent(routing="docs", tool_names=frozenset())
+
+    # 4. Ambiguous or unfamiliar store-related request ->
+    # Safe broad fallback (READ only)
+    carried = _prior_exposure_tools(prior_user_texts)
+    current_writes = _exposure_tools(text)
+    tool_names = (
+        SAFE_BROAD_STORE_FALLBACK | carried | current_writes
+    ) & available_set
+    return TurnIntent(routing="unknown", tool_names=frozenset(tool_names))
+
+
+def resolve_turn_intent(
+    question: str,
+    *,
+    available: Iterable[str],
+    prior_user_texts: Sequence[str] | None = None,
+    use_domain_routing: bool = False,
+) -> TurnIntent:
+    if use_domain_routing:
+        return resolve_domain_turn_intent(
+            question,
+            available=available,
+            prior_user_texts=prior_user_texts,
+        )
     available_set = frozenset(available)
     text = question.strip()
     if not text:

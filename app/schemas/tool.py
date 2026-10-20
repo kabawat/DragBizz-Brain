@@ -10,14 +10,42 @@ class ToolRisk(StrEnum):
     SENSITIVE = "sensitive"
 
 
+class ToolDomain(StrEnum):
+    INVENTORY = "inventory"
+    PROCUREMENT = "procurement"
+    SALES = "sales"
+    KHATA = "khata"
+    FINANCE = "finance"
+    GENERAL = "general"
+
+
+class ToolAccessType(StrEnum):
+    READ = "read"
+    WRITE = "write"
+
+
 class ToolDefinition(BaseModel):
     name: str = Field(pattern=r"^[a-z][a-z0-9_]{1,63}$")
     description: str = Field(min_length=1, max_length=500)
     risk: ToolRisk
+    domain: ToolDomain = ToolDomain.GENERAL
     allows_parallel: bool = False
+    required_permissions: tuple[str, ...] = Field(default_factory=tuple)
     parameters: dict[str, Any] = Field(
         default_factory=lambda: {"type": "object", "properties": {}}
     )
+
+    @property
+    def access_type(self) -> ToolAccessType:
+        return (
+            ToolAccessType.READ
+            if self.risk == ToolRisk.READ
+            else ToolAccessType.WRITE
+        )
+
+    @property
+    def requires_confirmation(self) -> bool:
+        return self.risk == ToolRisk.SENSITIVE
 
 
 class ToolCall(BaseModel):

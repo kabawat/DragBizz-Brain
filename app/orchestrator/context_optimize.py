@@ -82,6 +82,7 @@ def compact_result_for_model(result: ToolResult) -> ToolResult:
     out = dict(data)
     if result.tool in {
         "search_product",
+        "search_supplier",
         "payment_history",
         "search_customer",
         "stock_items",
@@ -92,6 +93,7 @@ def compact_result_for_model(result: ToolResult) -> ToolResult:
         "top_customers",
     }:
         _truncate_list_field(out, "items", _MODEL_MAX_LIST)
+        _truncate_list_field(out, "suppliers", _MODEL_MAX_LIST)
         _truncate_list_field(out, "invoices", _MODEL_MAX_LIST)
         _truncate_list_field(out, "expenses", _MODEL_MAX_LIST)
         _truncate_list_field(out, "orders", _MODEL_MAX_LIST)
@@ -212,6 +214,7 @@ def _ids_only(data: dict[str, Any]) -> dict[str, Any]:
     for key in (
         "id",
         "customerId",
+        "supplierId",
         "invoiceId",
         "status",
         "confirmationId",
@@ -230,4 +233,19 @@ def _ids_only(data: dict[str, Any]) -> dict[str, Any]:
                 refs.append(ref)
         if refs:
             out["items"] = refs
+    suppliers = data.get("suppliers")
+    if isinstance(suppliers, list):
+        sup_refs: list[dict[str, Any]] = []
+        for s in suppliers[:_MODEL_MAX_LIST]:
+            if not isinstance(s, dict):
+                continue
+            sup_ref = {
+                k: s[k]
+                for k in ("id", "name", "companyName")
+                if k in s
+            }
+            if sup_ref:
+                sup_refs.append(sup_ref)
+        if sup_refs:
+            out["suppliers"] = sup_refs
     return out or {"compacted": True}

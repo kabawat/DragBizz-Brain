@@ -44,15 +44,7 @@ from app.sessions import (
     RedisSessionStore,
     drain_pending_persist_tasks,
 )
-from app.tools.definitions import (
-    READ_TOOL_DEFINITIONS,
-    SENSITIVE_TOOL_DEFINITIONS,
-    WRITE_TOOL_DEFINITIONS,
-)
-from app.tools.handlers.confirm_tools import SENSITIVE_TOOL_HANDLERS
-from app.tools.handlers.read_tools import READ_TOOL_HANDLERS
-from app.tools.handlers.write_tools import WRITE_TOOL_HANDLERS
-from app.tools.registry import ToolRegistry
+from app.tools.registry import build_unified_tool_registry
 from app.usage import InMemoryUsageStore, RedisUsageStore
 
 logger = logging.getLogger(__name__)
@@ -163,16 +155,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.usage_store = usage_store
 
     retailer = RetailerClient(http_client, settings.services.retailer_url)
-    tool_registry = ToolRegistry()
-    for definition in READ_TOOL_DEFINITIONS:
-        handler = READ_TOOL_HANDLERS[definition.name]
-        tool_registry.register(definition, handler)
-    for definition in WRITE_TOOL_DEFINITIONS:
-        handler = WRITE_TOOL_HANDLERS[definition.name]
-        tool_registry.register(definition, handler)
-    for definition in SENSITIVE_TOOL_DEFINITIONS:
-        handler = SENSITIVE_TOOL_HANDLERS[definition.name]
-        tool_registry.register(definition, handler)
+    tool_registry = build_unified_tool_registry()
 
     idempotency_store = (
         RedisIdempotencyStore(

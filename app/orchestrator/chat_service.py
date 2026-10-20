@@ -220,6 +220,7 @@ class ChatService:
             body.text,
             available=available,
             prior_user_texts=[turn.user_text for turn in prior_turns],
+            use_domain_routing=self._settings.chat.domain_routing_enabled,
         )
         tool_names = intent.tool_names
         field_fill = looks_like_field_fill(body.text)
