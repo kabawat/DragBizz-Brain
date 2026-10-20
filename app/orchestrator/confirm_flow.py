@@ -202,9 +202,7 @@ async def handle_confirm(
         else:
             tool_results = None
         if tool_results is None:
-            await confirmations.complete(
-                record.confirmation_id, status="UNKNOWN"
-            )
+            await confirmations.complete(record.confirmation_id, status="UNKNOWN")
             audit_confirmation(
                 audit_trail=audit_trail,
                 metrics=metrics,
@@ -238,9 +236,7 @@ async def handle_confirm(
                 tool_calls=[tool_call],
             )
     except Exception:
-        await confirmations.complete(
-            record.confirmation_id, status="UNKNOWN"
-        )
+        await confirmations.complete(record.confirmation_id, status="UNKNOWN")
         audit_confirmation(
             audit_trail=audit_trail,
             metrics=metrics,
@@ -279,15 +275,11 @@ async def handle_confirm(
 
     if result is not None and result.success:
         terminal = "SUCCEEDED"
-        await confirmations.complete(
-            record.confirmation_id, status="SUCCEEDED"
-        )
+        await confirmations.complete(record.confirmation_id, status="SUCCEEDED")
         message = _approve_message(record, result)
     elif _is_ambiguous_failure(result):
         terminal = "UNKNOWN"
-        await confirmations.complete(
-            record.confirmation_id, status="UNKNOWN"
-        )
+        await confirmations.complete(record.confirmation_id, status="UNKNOWN")
         message = _unknown_message(record)
     else:
         terminal = "FAILED"
@@ -379,8 +371,7 @@ def _unknown_message(record: PendingConfirmationRecord) -> str:
         return "Expense creation status is unclear. Check Expenses before retrying."
     if record.type == CONFIRMATION_TYPE_CREATE_PURCHASE_ORDER:
         return (
-            "Purchase order status is unclear. "
-            "Check Purchase Orders before retrying."
+            "Purchase order status is unclear. Check Purchase Orders before retrying."
         )
     if record.type in _CUSTOMER_ACTION_TYPES:
         return (
@@ -396,9 +387,7 @@ def _unknown_message(record: PendingConfirmationRecord) -> str:
 
 def _reject_message(record: PendingConfirmationRecord) -> str:
     if record.type in _LEDGER_TYPES:
-        return (
-            "Khata entry cancelled. Nothing was written to the customer ledger."
-        )
+        return "Khata entry cancelled. Nothing was written to the customer ledger."
     if record.type == CONFIRMATION_TYPE_ADD_STOCK:
         return "Stock add cancelled. No inventory was changed."
     if record.type == CONFIRMATION_TYPE_CREATE_EXPENSE:
@@ -412,7 +401,6 @@ def _reject_message(record: PendingConfirmationRecord) -> str:
         "no stock was deducted. "
         f"[Open invoice](/dashboard/invoices/{record.draft_id})"
     )
-
 
 
 def _money(value: object) -> float | None:
@@ -443,9 +431,7 @@ def _approve_message(
         if result is not None and result.success:
             total = _format_inr(record.summary.get("total"))
             label = (
-                "Payment"
-                if record.type == CONFIRMATION_TYPE_LEDGER_CREDIT
-                else "Debit"
+                "Payment" if record.type == CONFIRMATION_TYPE_LEDGER_CREDIT else "Debit"
             )
             amount = f" of ₹{total}" if total is not None else ""
             return f"{label}{amount} recorded on the customer khata."
@@ -529,17 +515,13 @@ def _approve_message(
         if not isinstance(open_path, str) or not open_path.strip():
             open_path = f"/dashboard/invoices/{record.draft_id}"
         already = (
-            isinstance(result.data, dict)
-            and result.data.get("alreadyReleased") is True
+            isinstance(result.data, dict) and result.data.get("alreadyReleased") is True
         )
         if already:
             return f"Invoice was already released. [Open invoice]({open_path})"
         total = _format_inr(record.summary.get("total"))
         total_bit = f" Total ₹{total}." if total is not None else ""
-        return (
-            f"Invoice released successfully.{total_bit} "
-            f"[Open invoice]({open_path})"
-        )
+        return f"Invoice released successfully.{total_bit} [Open invoice]({open_path})"
 
     err = _result_error(result)
     return (

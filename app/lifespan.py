@@ -111,13 +111,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             chat_per_minute=limits.chat_rate_per_minute,
             confirm_per_minute=limits.confirm_rate_per_minute,
         )
-        concurrency_gate: ConcurrencyGate | InMemoryConcurrencyGate = (
-            ConcurrencyGate(
-                redis_client,
-                max_chat=limits.max_concurrent_chats,
-                max_confirm=limits.max_concurrent_confirms,
-                lease_seconds=limits.concurrency_lease_seconds,
-            )
+        concurrency_gate: ConcurrencyGate | InMemoryConcurrencyGate = ConcurrencyGate(
+            redis_client,
+            max_chat=limits.max_concurrent_chats,
+            max_confirm=limits.max_concurrent_confirms,
+            lease_seconds=limits.concurrency_lease_seconds,
         )
     else:
         rate_limiter = InMemoryRateLimiter(
@@ -293,6 +291,69 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pricing=pricing_from_settings(settings),
     )
 
+    # Phase 7: Proactive Retail Intelligence
+    from app.integrations.core_grpc_client import CoreGrpcClient
+    from app.proactive import (
+        CoreStoreProvider,
+        DailyBriefingScheduler,
+        InMemoryAlertDedupStore,
+        InMemoryNotificationStore,
+        LowStockMonitor,
+        MongoNotificationStore,
+        RedisAlertDedupStore,
+    )
+
+    core_grpc_client = CoreGrpcClient(
+        target_address=settings.services.retailer_grpc_address,
+        timeout=settings.services.request_timeout_seconds,
+    )
+    app.state.core_grpc_client = core_grpc_client
+
+    notification_store = (
+        MongoNotificationStore(mongo_client.get_default_database())
+        if mongo_client is not None
+        else InMemoryNotificationStore()
+    )
+    if isinstance(notification_store, MongoNotificationStore):
+        await notification_store.ensure_indexes()
+    app.state.notification_store = notification_store
+
+    alert_dedup_store = (
+        RedisAlertDedupStore(redis_client)
+        if redis_client is not None
+        else InMemoryAlertDedupStore()
+    )
+    app.state.alert_dedup_store = alert_dedup_store
+
+    stock_monitor = LowStockMonitor(
+        dedup_store=alert_dedup_store,
+        notification_store=notification_store,
+        grpc_client=core_grpc_client,
+        retailer_client=retailer,
+        enabled=settings.proactive.alerts_enabled,
+        cooldown_seconds=settings.proactive.low_stock_cooldown_seconds,
+        claim_ttl_seconds=settings.proactive.claim_ttl_seconds,
+    )
+    app.state.stock_monitor = stock_monitor
+
+    briefing_scheduler = DailyBriefingScheduler(
+        notification_store=notification_store,
+        grpc_client=core_grpc_client,
+        retailer_client=retailer,
+        redis_client=redis_client,
+        enabled=settings.proactive.daily_brief_enabled,
+        briefing_time=settings.proactive.daily_brief_time,
+        timezone_str=settings.proactive.daily_brief_timezone,
+    )
+    app.state.briefing_scheduler = briefing_scheduler
+    if settings.proactive.daily_brief_enabled:
+        await briefing_scheduler.start(
+            store_provider=CoreStoreProvider(
+                grpc_client=core_grpc_client,
+                retailer_client=retailer,
+            )
+        )
+
     event_consumer = None
     if redis_client is not None and settings.events.consumer_enabled:
         dead_letter_store = DeadLetterStore(
@@ -308,6 +369,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             poll_timeout_ms=settings.events.consumer_poll_timeout_ms,
             max_retries=settings.events.consumer_max_retries,
             batch_size=settings.events.consumer_batch_size,
+            stock_monitor=stock_monitor,
         )
         await event_consumer.start()
         app.state.event_consumer = event_consumer
@@ -317,6 +379,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        if briefing_scheduler is not None:
+            await briefing_scheduler.stop()
         if event_consumer is not None:
             await event_consumer.stop()
         await drain_pending_persist_tasks(timeout=5.0)
@@ -328,4 +392,5 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             mongo_client.close()
         await vector_store.close()
         await http_client.aclose()
+        core_grpc_client.close()
         logger.info("AI service stopped")

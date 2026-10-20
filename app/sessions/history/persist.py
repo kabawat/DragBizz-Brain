@@ -28,9 +28,7 @@ async def persist_turn_safe(
         serialized = []
         for item in tool_results:
             if hasattr(item, "model_dump"):
-                serialized.append(
-                    item.model_dump(by_alias=True, exclude_none=True)
-                )
+                serialized.append(item.model_dump(by_alias=True, exclude_none=True))
             elif isinstance(item, dict):
                 serialized.append(item)
     try:
@@ -145,4 +143,3 @@ async def drain_pending_persist_tasks(timeout: float = 5.0) -> int:
             t.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
     return len(done)
-

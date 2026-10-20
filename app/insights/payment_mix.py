@@ -26,9 +26,9 @@ def _is_valid_released_invoice(invoice: dict[str, Any]) -> bool:
         return False
     if invoice.get("cancelledAt") or invoice.get("cancellationReason"):
         return False
-    doc_type = str(
-        invoice.get("docType") or invoice.get("invoiceType") or ""
-    ).upper().strip()
+    doc_type = (
+        str(invoice.get("docType") or invoice.get("invoiceType") or "").upper().strip()
+    )
     return doc_type != "CREDIT_NOTE"
 
 

@@ -77,9 +77,7 @@ class RedisConfirmationStore:
         session_id: str,
     ) -> PendingConfirmationRecord:
         record = await self._load(confirmation_id)
-        _assert_owner(
-            record, user_id=user_id, store_id=store_id, session_id=session_id
-        )
+        _assert_owner(record, user_id=user_id, store_id=store_id, session_id=session_id)
         _assert_unused(record)
         return record
 

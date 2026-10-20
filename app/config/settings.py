@@ -16,6 +16,7 @@ from app.config.runtime import (
     EventSettings,
     GuardSettings,
     LimitSettings,
+    ProactiveSettings,
     SessionSettings,
 )
 from app.config.server import ServerSettings
@@ -43,6 +44,7 @@ class Settings(BaseSettings):
     session: SessionSettings = Field(default_factory=SessionSettings)
     limits: LimitSettings = Field(default_factory=LimitSettings)
     events: EventSettings = Field(default_factory=EventSettings)
+    proactive: ProactiveSettings = Field(default_factory=ProactiveSettings)
 
     @model_validator(mode="after")
     def resolve_jwks_url_and_guards(self) -> "Settings":
@@ -66,9 +68,7 @@ class Settings(BaseSettings):
             and self.cheaper_inference.api_key
             and not self.cheaper_inference.base_url.startswith("https://")
         ):
-            raise ValueError(
-                "Cheaper Inference base URL must use HTTPS in production"
-            )
+            raise ValueError("Cheaper Inference base URL must use HTTPS in production")
 
         if (
             self.server.environment == "production"

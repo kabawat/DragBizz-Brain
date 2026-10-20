@@ -46,9 +46,7 @@ def _format_cache_key(store_id: str, tool: str, window: str) -> str:
 class NoOpInsightCache:
     """Disabled cache."""
 
-    async def get(
-        self, store_id: str, tool: str, window: str
-    ) -> dict[str, Any] | None:
+    async def get(self, store_id: str, tool: str, window: str) -> dict[str, Any] | None:
         return None
 
     async def set(
@@ -70,9 +68,7 @@ class InMemoryInsightCache:
         self._ttl_seconds = ttl_seconds
         self._store: dict[str, tuple[float, str]] = {}
 
-    async def get(
-        self, store_id: str, tool: str, window: str
-    ) -> dict[str, Any] | None:
+    async def get(self, store_id: str, tool: str, window: str) -> dict[str, Any] | None:
         key = _format_cache_key(store_id, tool, window)
         entry = self._store.get(key)
         if entry is None:
@@ -119,9 +115,7 @@ class RedisInsightCache:
         self._redis = redis_client
         self._ttl_seconds = ttl_seconds
 
-    async def get(
-        self, store_id: str, tool: str, window: str
-    ) -> dict[str, Any] | None:
+    async def get(self, store_id: str, tool: str, window: str) -> dict[str, Any] | None:
         try:
             key = _format_cache_key(store_id, tool, window)
             raw = await self._redis.get(key)

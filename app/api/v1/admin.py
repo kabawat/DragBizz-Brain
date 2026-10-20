@@ -167,9 +167,7 @@ async def set_model_selection(
             }
         },
     )
-    return await _selection_response(
-        model_router, _selection_store(request), settings
-    )
+    return await _selection_response(model_router, _selection_store(request), settings)
 
 
 @router.get(

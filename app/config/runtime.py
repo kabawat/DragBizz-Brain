@@ -212,3 +212,35 @@ class EventSettings(BaseSettings):
         default=True,
         validation_alias="AI_EVENTS_CONSUMER_ENABLED",
     )
+
+
+class ProactiveSettings(BaseSettings):
+    model_config = _group_config()
+
+    alerts_enabled: bool = Field(
+        default=False,
+        validation_alias="AI_PROACTIVE_ALERTS_ENABLED",
+    )
+    daily_brief_enabled: bool = Field(
+        default=False,
+        validation_alias="AI_DAILY_BRIEF_ENABLED",
+    )
+    low_stock_cooldown_seconds: int = Field(
+        default=86400,
+        ge=60,
+        validation_alias="AI_LOW_STOCK_COOLDOWN_SECONDS",
+    )
+    daily_brief_time: str = Field(
+        default="08:00",
+        validation_alias="AI_DAILY_BRIEF_TIME",
+    )
+    daily_brief_timezone: str = Field(
+        default="Asia/Kolkata",
+        validation_alias="AI_DAILY_BRIEF_TIMEZONE",
+    )
+    claim_ttl_seconds: int = Field(
+        default=60,
+        ge=10,
+        le=600,
+        validation_alias="AI_PROACTIVE_CLAIM_TTL_SECONDS",
+    )

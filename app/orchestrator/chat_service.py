@@ -168,12 +168,8 @@ class ChatService:
     ) -> ChatResponse:
         started = time.perf_counter()
         user_id = str(user["sub"])
-        agency_id = (
-            str(user["agencyId"]).strip() if user.get("agencyId") else None
-        )
-        tenant_id = (
-            str(user["tenant"]).strip().lower() if user.get("tenant") else None
-        )
+        agency_id = str(user["agencyId"]).strip() if user.get("agencyId") else None
+        tenant_id = str(user["tenant"]).strip().lower() if user.get("tenant") else None
         await self._enforce_usage_cap(store_id)
         refusal = self._guard_input(body)
         if refusal is not None:
@@ -213,9 +209,7 @@ class ChatService:
             user_id=user_id,
             store_id=store_id,
         )
-        prior_numbers = _extract_prior_numbers(
-            prior_turns, current_user_text=body.text
-        )
+        prior_numbers = _extract_prior_numbers(prior_turns, current_user_text=body.text)
         intent = resolve_turn_intent(
             body.text,
             available=available,
@@ -447,9 +441,7 @@ class ChatService:
                 cancel.raise_if_cancelled()
             max_tokens = self._settings.chat.max_tokens
             if field_fill:
-                max_tokens = min(
-                    max_tokens, self._settings.chat.synthesis_max_tokens
-                )
+                max_tokens = min(max_tokens, self._settings.chat.synthesis_max_tokens)
             elif tools:
                 max_tokens = min(max_tokens, 512)
             if not tools and emit is not None:
@@ -593,9 +585,7 @@ class ChatService:
             turn=SessionTurn(
                 user_text=body.text,
                 assistant_text=message,
-                tool_context=self._sessions.compact_tool_context(
-                    outcome.all_results
-                ),
+                tool_context=self._sessions.compact_tool_context(outcome.all_results),
             ),
         )
         schedule_persist_turn(
@@ -626,9 +616,7 @@ class ChatService:
             model=outcome.generation.model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            usage_source=(
-                "actual" if usage_source == "actual" else "estimated"
-            ),
+            usage_source=("actual" if usage_source == "actual" else "estimated"),
         )
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
 

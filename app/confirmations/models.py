@@ -52,9 +52,9 @@ class PendingConfirmationRecord:
             "type": self.type,
             "draftId": self.draft_id,
             "summary": dict(self.summary),
-            "expiresAt": datetime.fromtimestamp(
-                self.expires_at, tz=UTC
-            ).isoformat().replace("+00:00", "Z"),
+            "expiresAt": datetime.fromtimestamp(self.expires_at, tz=UTC)
+            .isoformat()
+            .replace("+00:00", "Z"),
         }
 
 
@@ -108,5 +108,3 @@ class ConfirmationStore(Protocol):
         session_id: str,
         draft_id: str | None = None,
     ) -> PendingConfirmationRecord: ...
-
-

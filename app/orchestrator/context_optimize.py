@@ -45,8 +45,7 @@ def tools_for_continue(
 
     has_product = bool(success_by_tool.get("search_product"))
     has_customer = bool(
-        success_by_tool.get("search_customer")
-        or success_by_tool.get("create_customer")
+        success_by_tool.get("search_customer") or success_by_tool.get("create_customer")
     )
     write_names = {
         name
@@ -55,15 +54,12 @@ def tools_for_continue(
     }
     if has_product and has_customer and write_names:
         for name in list(remaining):
-            if (
-                registry.get_definition(name).risk == ToolRisk.READ
-                and name not in {"search_product", "search_customer"}
-            ):
+            if registry.get_definition(name).risk == ToolRisk.READ and name not in {
+                "search_product",
+                "search_customer",
+            }:
                 remaining.discard(name)
-        if (
-            "create_invoice_draft" in remaining
-            or "update_invoice_draft" in remaining
-        ):
+        if "create_invoice_draft" in remaining or "update_invoice_draft" in remaining:
             remaining.discard("search_product")
             remaining.discard("search_customer")
 
@@ -132,9 +128,7 @@ def compact_conversation_for_next_round(
     removed = 0
     out: list[ChatMessage] = []
     tool_indexes = [
-        index
-        for index, message in enumerate(conversation)
-        if message.role == "tool"
+        index for index, message in enumerate(conversation) if message.role == "tool"
     ]
     keep_from = tool_indexes[-6] if len(tool_indexes) > 6 else -1
 
@@ -143,27 +137,21 @@ def compact_conversation_for_next_round(
             stripped, delta = _strip_documentation(message.content)
             removed += delta
             out.append(
-                message.model_copy(update={"content": stripped})
-                if delta
-                else message
+                message.model_copy(update={"content": stripped}) if delta else message
             )
             continue
         if message.role == "tool" and keep_from >= 0 and index < keep_from:
             compacted, delta = _compact_tool_message(message.content)
             removed += delta
             out.append(
-                message.model_copy(update={"content": compacted})
-                if delta
-                else message
+                message.model_copy(update={"content": compacted}) if delta else message
             )
             continue
         out.append(message)
     return out, removed
 
 
-def _truncate_list_field(
-    data: dict[str, Any], key: str, limit: int
-) -> bool:
+def _truncate_list_field(data: dict[str, Any], key: str, limit: int) -> bool:
     items = data.get(key)
     if not isinstance(items, list) or len(items) <= limit:
         return False
@@ -180,10 +168,7 @@ def _strip_documentation(content: str) -> tuple[str, int]:
     # Tiny docs can be smaller than the stub; leave them alone.
     if estimate_tokens(docs) < 40:
         return content, 0
-    stub = (
-        head
-        + "\nDocumentation: (earlier turn; use tool results for live data)\n"
-    )
+    stub = head + "\nDocumentation: (earlier turn; use tool results for live data)\n"
     removed = max(0, estimate_tokens(content) - estimate_tokens(stub))
     return stub, removed
 
@@ -239,11 +224,7 @@ def _ids_only(data: dict[str, Any]) -> dict[str, Any]:
         for s in suppliers[:_MODEL_MAX_LIST]:
             if not isinstance(s, dict):
                 continue
-            sup_ref = {
-                k: s[k]
-                for k in ("id", "name", "companyName")
-                if k in s
-            }
+            sup_ref = {k: s[k] for k in ("id", "name", "companyName") if k in s}
             if sup_ref:
                 sup_refs.append(sup_ref)
         if sup_refs:

@@ -130,9 +130,7 @@ class InMemorySessionStore:
         record.expires_at = self._clock() + self._ttl_seconds
 
     @staticmethod
-    def _assert_owner(
-        record: _SessionRecord, *, user_id: str, store_id: str
-    ) -> None:
+    def _assert_owner(record: _SessionRecord, *, user_id: str, store_id: str) -> None:
         if record.user_id != user_id or record.store_id != store_id:
             raise AppError(
                 code="SESSION_FORBIDDEN",
@@ -256,9 +254,7 @@ class RedisSessionStore:
         return f"{_KEY_PREFIX}:{session_id}"
 
     @staticmethod
-    def _assert_owner(
-        record: _SessionRecord, *, user_id: str, store_id: str
-    ) -> None:
+    def _assert_owner(record: _SessionRecord, *, user_id: str, store_id: str) -> None:
         if record.user_id != user_id or record.store_id != store_id:
             raise AppError(
                 code="SESSION_FORBIDDEN",

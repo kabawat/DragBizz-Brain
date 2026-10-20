@@ -47,11 +47,7 @@ _STOP = frozenset(
 
 
 def _tokens(text: str) -> set[str]:
-    return {
-        token
-        for token in _TOKEN_RE.findall(text.lower())
-        if token not in _STOP
-    }
+    return {token for token in _TOKEN_RE.findall(text.lower()) if token not in _STOP}
 
 
 def _strip_frontmatter(raw: str) -> str:

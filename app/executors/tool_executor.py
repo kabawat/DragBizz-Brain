@@ -122,9 +122,7 @@ class ToolExecutor:
             question=question,
             insight_cache=self._insight_cache,
         )
-        timeout = (
-            tool_timeout_seconds if tool_timeout_seconds is not None else 10.0
-        )
+        timeout = tool_timeout_seconds if tool_timeout_seconds is not None else 10.0
 
         async def _one(call: ToolCall) -> ToolResult:
             try:
@@ -141,17 +139,13 @@ class ToolExecutor:
                     timeout=timeout,
                 )
             except TimeoutError:
-                logger.warning(
-                    "Tool %s timed out after %ss", call.name, timeout
-                )
+                logger.warning("Tool %s timed out after %ss", call.name, timeout)
                 res = ToolResult(
                     tool=call.name,
                     success=False,
                     data={
                         "code": "TOOL_TIMEOUT",
-                        "message": (
-                            f"Tool '{call.name}' timed out after {timeout}s"
-                        ),
+                        "message": (f"Tool '{call.name}' timed out after {timeout}s"),
                     },
                 )
             except asyncio.CancelledError:
@@ -163,9 +157,7 @@ class ToolExecutor:
                     data={"code": exc.code, "message": exc.message},
                 )
             except Exception:
-                logger.exception(
-                    "Parallel read failed", extra={"tool": call.name}
-                )
+                logger.exception("Parallel read failed", extra={"tool": call.name})
                 res = ToolResult(
                     tool=call.name,
                     success=False,
@@ -267,9 +259,7 @@ class ToolExecutor:
             if definition.risk != ToolRisk.SENSITIVE:
                 raise AppError(
                     code="TOOL_NOT_EXECUTABLE",
-                    message=(
-                        f"Tool '{call.name}' is not confirmation-executable"
-                    ),
+                    message=(f"Tool '{call.name}' is not confirmation-executable"),
                     status_code=500,
                 )
             try:
@@ -446,9 +436,7 @@ class ToolExecutor:
             if definition.risk != ToolRisk.READ:
                 raise AppError(
                     code="TOOL_NOT_EXECUTABLE",
-                    message=(
-                        f"Tool '{call.name}' is not auto-executable as read"
-                    ),
+                    message=(f"Tool '{call.name}' is not auto-executable as read"),
                     status_code=500,
                 )
         if handler is None:
@@ -469,15 +457,12 @@ class ToolExecutor:
         if (
             not result.success
             and isinstance(result.data, dict)
-            and result.data.get("code")
-            in {"RETAILER_TIMEOUT", "RETAILER_UNAVAILABLE"}
+            and result.data.get("code") in {"RETAILER_TIMEOUT", "RETAILER_UNAVAILABLE"}
         ):
             if inspect.iscoroutinefunction(handler):
                 result = await handler(call.arguments, context)
             else:
-                result = await asyncio.to_thread(
-                    handler, call.arguments, context
-                )
+                result = await asyncio.to_thread(handler, call.arguments, context)
         latency_ms = (time.perf_counter() - started) * 1000
         self._audit(
             session_id=session_id,
@@ -556,9 +541,7 @@ class ToolExecutor:
             "tool": tool,
             "success": success,
             "errorCode": error_code,
-            "idempotencyKeyPrefix": (
-                idempotency_key[:40] if idempotency_key else None
-            ),
+            "idempotencyKeyPrefix": (idempotency_key[:40] if idempotency_key else None),
             "cacheHit": cache_hit,
         }
         event_with_name = {"event": TOOL_EXECUTION, **event}
@@ -575,9 +558,7 @@ class ToolExecutor:
         if self._audit_trail is not None:
             self._audit_trail.append(event_with_name)
         if self._metrics is not None:
-            self._metrics.record_tool(
-                tool, success=success, latency_ms=latency_ms
-            )
+            self._metrics.record_tool(tool, success=success, latency_ms=latency_ms)
 
 
 def _assert_allowed(call: ToolCall, allowed_names: Collection[str]) -> None:

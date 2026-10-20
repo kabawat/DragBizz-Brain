@@ -156,8 +156,7 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="payment_history",
         description=(
-            "Recent customer payments for this store. Not one customer's "
-            "ledger lines."
+            "Recent customer payments for this store. Not one customer's ledger lines."
         ),
         risk=ToolRisk.READ,
         allows_parallel=True,
@@ -291,8 +290,7 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="list_payment_reminders",
         description=(
-            "List payment reminders sent for this store (optional "
-            "customerId filter)."
+            "List payment reminders sent for this store (optional customerId filter)."
         ),
         risk=ToolRisk.READ,
         allows_parallel=True,
@@ -1716,4 +1714,3 @@ SENSITIVE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = tuple(
 ALL_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     READ_TOOL_DEFINITIONS + WRITE_TOOL_DEFINITIONS + SENSITIVE_TOOL_DEFINITIONS
 )
-

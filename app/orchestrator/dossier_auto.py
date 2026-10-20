@@ -58,9 +58,7 @@ def dossier_reply(data: dict[str, Any], *, language: str) -> str | None:
     due = account.get("totalDue") if isinstance(account, dict) else None
     if isinstance(due, (int, float)) and not isinstance(due, bool):
         if due == 0:
-            lines.append(
-                "Abhi koi due nahi hai." if hindi else "No dues right now."
-            )
+            lines.append("Abhi koi due nahi hai." if hindi else "No dues right now.")
         else:
             lines.append(f"Due **{_rupee(due)}**")
         lines.append("")
@@ -119,10 +117,7 @@ def _choice_reply(data: dict[str, Any], *, hindi: bool) -> str:
                 f"Email se {count} mile. Kaun sa?"
             )
         else:
-            head = (
-                f"No customer named **{name}**. "
-                f"{count} matched by email. Which one?"
-            )
+            head = f"No customer named **{name}**. {count} matched by email. Which one?"
     elif hindi:
         head = f"**{name}** naam se {count} customers mile. Kaun sa?"
     else:

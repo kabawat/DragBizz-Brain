@@ -50,6 +50,7 @@ def _sensitive_placeholder(
         data["customerId"] = customer_id.strip()
     return ToolResult(tool=call.name, success=True, data=data)
 
+
 _CURRENCY_AMOUNT_RE = re.compile(
     r"(?:₹|(?<![a-z])rs\.?|(?<![a-z])inr)[ \t]*([0-9][0-9,]*(?:\.[0-9]+)?)"
     r"|([0-9][0-9,]*(?:\.[0-9]+)?)[ \t]*(?:rupees?|rupaye|rs\b)",
@@ -148,9 +149,7 @@ def _customer_refs(results: list[ToolResult]) -> list[tuple[str, str]]:
             if isinstance(nested, dict) and isinstance(nested.get("name"), str):
                 name = nested.get("name")
             label = (
-                name.strip()
-                if isinstance(name, str) and name.strip()
-                else "customer"
+                name.strip() if isinstance(name, str) and name.strip() else "customer"
             )
             refs.append((customer_id, label))
     return refs
@@ -166,13 +165,11 @@ def maybe_auto_ledger_call(
 ) -> ToolCall | None:
     if already_called & {"ledger_debit", "ledger_credit"}:
         return None
-    want_debit = (
-        "ledger_debit" in allowed_names
-        and user_requested_sensitive_action(question, "ledger_debit")
+    want_debit = "ledger_debit" in allowed_names and user_requested_sensitive_action(
+        question, "ledger_debit"
     )
-    want_credit = (
-        "ledger_credit" in allowed_names
-        and user_requested_sensitive_action(question, "ledger_credit")
+    want_credit = "ledger_credit" in allowed_names and user_requested_sensitive_action(
+        question, "ledger_credit"
     )
     if want_debit == want_credit:
         return None
@@ -258,8 +255,7 @@ def _balance_line(
     credit_advance = tool_name == "ledger_credit" and remaining < 0
     if hindi and credit_left:
         return (
-            f" Abhi due ₹{due_shown} hai. "
-            f"Confirm ke baad ₹{remaining_shown} bachega. "
+            f" Abhi due ₹{due_shown} hai. Confirm ke baad ₹{remaining_shown} bachega. "
         )
     if hindi and credit_advance:
         return (
@@ -267,10 +263,7 @@ def _balance_line(
             f"Confirm ke baad ₹{remaining_shown} advance ho jayega. "
         )
     if credit_left:
-        return (
-            f" Due now ₹{due_shown}. "
-            f"After confirm, ₹{remaining_shown} will remain. "
-        )
+        return f" Due now ₹{due_shown}. After confirm, ₹{remaining_shown} will remain. "
     if credit_advance:
         return (
             f" Due now ₹{due_shown}. "
@@ -281,9 +274,7 @@ def _balance_line(
             f" Abhi due ₹{due_shown} hai. "
             f"Confirm ke baad ₹{remaining_shown} ho jayega. "
         )
-    return (
-        f" Due now ₹{due_shown}. After confirm, due will be ₹{remaining_shown}. "
-    )
+    return f" Due now ₹{due_shown}. After confirm, due will be ₹{remaining_shown}. "
 
 
 def _matched_by_email(results: list[ToolResult]) -> bool:
@@ -347,16 +338,12 @@ def extract_customer_query(question: str) -> str | None:
     return None
 
 
-def wanted_ledger_tool(
-    question: str, allowed_names: frozenset[str]
-) -> str | None:
-    want_debit = (
-        "ledger_debit" in allowed_names
-        and user_requested_sensitive_action(question, "ledger_debit")
+def wanted_ledger_tool(question: str, allowed_names: frozenset[str]) -> str | None:
+    want_debit = "ledger_debit" in allowed_names and user_requested_sensitive_action(
+        question, "ledger_debit"
     )
-    want_credit = (
-        "ledger_credit" in allowed_names
-        and user_requested_sensitive_action(question, "ledger_credit")
+    want_credit = "ledger_credit" in allowed_names and user_requested_sensitive_action(
+        question, "ledger_credit"
     )
     if want_debit == want_credit:
         return None

@@ -153,9 +153,7 @@ async def build_chat_context(
     docs_unavailable = False
     tool_names = frozenset(tool.name for tool in tools)
     if should_retrieve_docs(routing, tool_names=tool_names):
-        cached_docs = await cache.get_documentation_block(
-            question, budget=docs_budget
-        )
+        cached_docs = await cache.get_documentation_block(question, budget=docs_budget)
         if cached_docs is not None:
             documentation = cached_docs
             rag_cache_hit = True

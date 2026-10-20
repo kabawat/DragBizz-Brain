@@ -52,9 +52,7 @@ class OpenAICompatibleProvider(ModelProvider):
 
         payload: dict[str, Any] = {
             "model": request.model or self._default_model,
-            "messages": [
-                _to_openai_message(message) for message in request.messages
-            ],
+            "messages": [_to_openai_message(message) for message in request.messages],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
         }
@@ -109,9 +107,7 @@ class OpenAICompatibleProvider(ModelProvider):
 
         return _parse_completion(body, provider_name=self.name)
 
-    async def generate_stream(
-        self, request: GenerationRequest
-    ) -> AsyncIterator[str]:
+    async def generate_stream(self, request: GenerationRequest) -> AsyncIterator[str]:
         if not self._api_key:
             raise AppError(
                 code="AI_PROVIDER_NOT_CONFIGURED",
@@ -121,9 +117,7 @@ class OpenAICompatibleProvider(ModelProvider):
 
         payload: dict[str, Any] = {
             "model": request.model or self._default_model,
-            "messages": [
-                _to_openai_message(message) for message in request.messages
-            ],
+            "messages": [_to_openai_message(message) for message in request.messages],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": True,
@@ -150,9 +144,7 @@ class OpenAICompatibleProvider(ModelProvider):
                     response.raise_for_status()
                 except httpx.HTTPStatusError as exc:
                     status = (
-                        exc.response.status_code
-                        if exc.response is not None
-                        else None
+                        exc.response.status_code if exc.response is not None else None
                     )
                     raise AppError(
                         code="AI_PROVIDER_ERROR",

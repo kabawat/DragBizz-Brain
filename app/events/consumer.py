@@ -9,7 +9,7 @@ import contextlib
 import json
 import logging
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
@@ -18,6 +18,9 @@ from app.events.handlers.sales_event import SalesEventHandler
 from app.events.handlers.stock_event import StockEventHandler
 from app.events.schemas import DomainEventEnvelope
 from app.insights.cache import InsightCache
+
+if TYPE_CHECKING:
+    from app.proactive.stock_monitor import LowStockMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,7 @@ class RedisStreamConsumer:
         poll_timeout_ms: int = 2000,
         max_retries: int = 3,
         batch_size: int = 10,
+        stock_monitor: LowStockMonitor | None = None,
     ) -> None:
         self._redis = redis_client
         self._cache = insight_cache
@@ -61,9 +65,10 @@ class RedisStreamConsumer:
         self.poll_timeout_ms = poll_timeout_ms
         self.max_retries = max_retries
         self.batch_size = batch_size
+        self._stock_monitor = stock_monitor
 
-        self._sales_handler = SalesEventHandler(insight_cache)
-        self._stock_handler = StockEventHandler(insight_cache)
+        self._sales_handler = SalesEventHandler(insight_cache, stock_monitor)
+        self._stock_handler = StockEventHandler(insight_cache, stock_monitor)
 
         self._running = False
         self._task: asyncio.Task[None] | None = None
@@ -328,9 +333,7 @@ class RedisStreamConsumer:
            never cause the contiguous watermark to stall or forget previously
            processed events.
         """
-        await self._redis.set(
-            f"{SEQ_PROCESSED_PREFIX}{seq}", "1", ex=DEDUP_TTL_SECONDS
-        )
+        await self._redis.set(f"{SEQ_PROCESSED_PREFIX}{seq}", "1", ex=DEDUP_TTL_SECONDS)
 
         contig_raw = await self._redis.get(CHECKPOINT_CONTIGUOUS_SEQ_KEY)
         if isinstance(contig_raw, bytes):
@@ -350,9 +353,7 @@ class RedisStreamConsumer:
         pending_raw = await self._redis.get(CHECKPOINT_PENDING_PROCESSED_KEY)
         if isinstance(pending_raw, bytes):
             pending_raw = pending_raw.decode()
-        pending: set[int] = (
-            set(json.loads(pending_raw)) if pending_raw else set()
-        )
+        pending: set[int] = set(json.loads(pending_raw)) if pending_raw else set()
 
         gaps.discard(seq)
         if seq > contiguous_seq:
@@ -388,15 +389,11 @@ class RedisStreamConsumer:
 
         pending = {p for p in pending if p > contiguous_seq}
 
-        await self._redis.set(
-            CHECKPOINT_CONTIGUOUS_SEQ_KEY, str(contiguous_seq)
-        )
+        await self._redis.set(CHECKPOINT_CONTIGUOUS_SEQ_KEY, str(contiguous_seq))
         await self._redis.set(
             CHECKPOINT_PENDING_PROCESSED_KEY, json.dumps(sorted(list(pending)))
         )
-        await self._redis.set(
-            CHECKPOINT_GAPS_KEY, json.dumps(sorted(list(gaps)))
-        )
+        await self._redis.set(CHECKPOINT_GAPS_KEY, json.dumps(sorted(list(gaps))))
 
     async def _update_checkpoint_monotonically(
         self, occurred_at: str, event_id: str
@@ -416,10 +413,7 @@ class RedisStreamConsumer:
         should_advance = (
             (not curr_ts)
             or (occurred_at > curr_ts)
-            or (
-                occurred_at == curr_ts
-                and (curr_id is None or event_id > curr_id)
-            )
+            or (occurred_at == curr_ts and (curr_id is None or event_id > curr_id))
         )
 
         if should_advance:
@@ -467,9 +461,8 @@ class RedisStreamConsumer:
                         last_delivered = last_delivered.decode()
 
                     is_stream_truncated = (
-                        (last_delivered != "0-0" and first_msg_id > last_delivered)
-                        or (last_ts is not None and last_delivered == "0-0")
-                    )
+                        last_delivered != "0-0" and first_msg_id > last_delivered
+                    ) or (last_ts is not None and last_delivered == "0-0")
 
             if has_sequence_gap or is_stream_truncated:
                 existing_req_raw = await self._redis.get(REPLAY_REQUEST_KEY)
@@ -487,14 +480,16 @@ class RedisStreamConsumer:
                     except Exception:
                         pass
 
-                req_payload = json.dumps({
-                    "sinceSeq": contiguous_seq,
-                    "maxSeq": max_seq,
-                    "gaps": gaps,
-                    "sinceTimestamp": last_ts,
-                    "lastEventId": last_id,
-                    "consumer": self.consumer_name,
-                })
+                req_payload = json.dumps(
+                    {
+                        "sinceSeq": contiguous_seq,
+                        "maxSeq": max_seq,
+                        "gaps": gaps,
+                        "sinceTimestamp": last_ts,
+                        "lastEventId": last_id,
+                        "consumer": self.consumer_name,
+                    }
+                )
                 await self._redis.set(REPLAY_REQUEST_KEY, req_payload)
                 logger.warning(
                     "Event recovery requested. Posted replay request to %s "

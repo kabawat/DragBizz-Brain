@@ -109,8 +109,10 @@ def _pack_sections(
     for heading, text in sections:
         if packed:
             previous_heading, previous_text = packed[-1]
-            merged = f"{previous_text}\n\n## {heading}\n\n{text}" if heading else (
-                f"{previous_text}\n\n{text}"
+            merged = (
+                f"{previous_text}\n\n## {heading}\n\n{text}"
+                if heading
+                else (f"{previous_text}\n\n{text}")
             )
             if estimate_tokens(merged) <= CHUNK_MAX_TOKENS:
                 packed[-1] = (previous_heading, merged)

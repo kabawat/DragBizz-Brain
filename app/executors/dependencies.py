@@ -69,13 +69,9 @@ def plan_execution(
             )
         )
     for call in writes:
-        stages.append(
-            ExecutionStage(kind=StageKind.SEQUENTIAL_WRITE, calls=(call,))
-        )
+        stages.append(ExecutionStage(kind=StageKind.SEQUENTIAL_WRITE, calls=(call,)))
     for call in sensitive:
         stages.append(
-            ExecutionStage(
-                kind=StageKind.SEQUENTIAL_SENSITIVE, calls=(call,)
-            )
+            ExecutionStage(kind=StageKind.SEQUENTIAL_SENSITIVE, calls=(call,))
         )
     return stages

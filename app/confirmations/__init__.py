@@ -41,4 +41,3 @@ __all__ = [
     "RedisConfirmationStore",
     "normalize_expense_category",
 ]
-

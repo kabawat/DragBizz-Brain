@@ -126,9 +126,7 @@ def build_idempotency_key(
     arguments: dict[str, Any],
 ) -> str:
     """Stable Redis/in-memory key: session + tool + canonical args."""
-    digest = hashlib.sha256(
-        _canonical_json(arguments).encode("utf-8")
-    ).hexdigest()[:24]
+    digest = hashlib.sha256(_canonical_json(arguments).encode("utf-8")).hexdigest()[:24]
     return f"{_KEY_PREFIX}:{session_id}:{tool_name}:{digest}"
 
 

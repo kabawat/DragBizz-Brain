@@ -225,9 +225,7 @@ async def update_invoice_draft(
     )
 
 
-def _require_phone_or_email(
-    tool: str, arguments: dict[str, Any]
-) -> ToolResult | None:
+def _require_phone_or_email(tool: str, arguments: dict[str, Any]) -> ToolResult | None:
     phone = arguments.get("phone")
     email = arguments.get("email")
     has_phone = isinstance(phone, str) and bool(phone.strip())
@@ -285,9 +283,7 @@ def _failure(tool: str, exc: RetailerHttpError) -> ToolResult:
     )
 
 
-async def update_expense(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def update_expense(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     expense_id = arguments.get("expenseId")
     if not isinstance(expense_id, str) or not expense_id.strip():
         return ToolResult(
@@ -305,14 +301,10 @@ async def update_expense(
     status = arguments.get("status")
 
     clean_status = (
-        status.strip().upper()
-        if isinstance(status, str) and status.strip()
-        else None
+        status.strip().upper() if isinstance(status, str) and status.strip() else None
     )
     clean_cat = (
-        category.strip()
-        if isinstance(category, str) and category.strip()
-        else None
+        category.strip() if isinstance(category, str) and category.strip() else None
     )
     if clean_cat is not None:
         clean_cat, _ = normalize_expense_category(
@@ -342,9 +334,7 @@ async def update_expense(
                 else None
             ),
             description=(
-                desc.strip()
-                if isinstance(desc, str) and desc.strip()
-                else None
+                desc.strip() if isinstance(desc, str) and desc.strip() else None
             ),
             status=clean_status,
         )

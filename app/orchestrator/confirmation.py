@@ -456,11 +456,7 @@ async def _stage_add_stock_call(
                     if "productName" in item
                     else {}
                 ),
-                **(
-                    {"sourceName": item["sourceName"]}
-                    if "sourceName" in item
-                    else {}
-                ),
+                **({"sourceName": item["sourceName"]} if "sourceName" in item else {}),
             }
             for item in staged_items
         ],
@@ -1034,9 +1030,7 @@ async def _stage_create_purchase_order_call(
     if args.get("notes"):
         summary["notes"] = str(args["notes"]).strip()
     if args.get("expectedDeliveryDate"):
-        summary["expectedDeliveryDate"] = str(
-            args["expectedDeliveryDate"]
-        ).strip()
+        summary["expectedDeliveryDate"] = str(args["expectedDeliveryDate"]).strip()
 
     record = await store.create(
         user_id=user_id,
@@ -1050,5 +1044,3 @@ async def _stage_create_purchase_order_call(
     )
     _audit_pending(record, audit_trail=audit_trail, metrics=metrics)
     return record
-
-

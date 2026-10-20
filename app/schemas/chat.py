@@ -69,9 +69,7 @@ class PendingConfirmation(BaseModel):
 class ConfirmRequest(BaseModel):
     session_id: str = Field(alias="sessionId", min_length=1, max_length=128)
     store_id: str = Field(alias="storeId", min_length=1, max_length=64)
-    confirmation_id: str = Field(
-        alias="confirmationId", min_length=1, max_length=128
-    )
+    confirmation_id: str = Field(alias="confirmationId", min_length=1, max_length=128)
     draft_id: str = Field(alias="draftId", min_length=1, max_length=64)
     action: Literal["approve", "reject"]
     updates: dict[str, Any] | None = Field(default=None)

@@ -147,9 +147,7 @@ def _sensitive_placeholder(
     )
 
 
-async def _emit(
-    emit: StreamEmitFn | None, event: str, payload: dict[str, Any]
-) -> None:
+async def _emit(emit: StreamEmitFn | None, event: str, payload: dict[str, Any]) -> None:
     if emit is None:
         return
     result = emit(event, payload)
@@ -368,9 +366,7 @@ async def run_tool_loop(
                     tool_timeout_seconds=tool_timeout,
                     on_tool_complete=_on_read_complete,
                 )
-                for call, result in zip(
-                    stage.calls, stage_results, strict=True
-                ):
+                for call, result in zip(stage.calls, stage_results, strict=True):
                     if call.id not in results_by_id_raw:
                         results_by_id_raw[call.id] = project_tool_result(result)
             elif stage.kind == StageKind.SEQUENTIAL_READ:
@@ -482,9 +478,7 @@ async def run_tool_loop(
                         success=False,
                         data={
                             "code": "SENSITIVE_NOT_REQUESTED",
-                            "message": (
-                                "This action was not requested by the user"
-                            ),
+                            "message": ("This action was not requested by the user"),
                         },
                     )
                 )
@@ -503,18 +497,14 @@ async def run_tool_loop(
         results_by_id = results_by_id_raw
         # Full projection for client/history; compacted copy for model messages.
         round_results = [results_by_id[call.id] for call in tool_calls]
-        model_results = [
-            compact_result_for_model(result) for result in round_results
-        ]
+        model_results = [compact_result_for_model(result) for result in round_results]
         for full, slim in zip(round_results, model_results, strict=True):
             before = estimate_tokens(json.dumps(full.data or {}, ensure_ascii=False))
             after = estimate_tokens(json.dumps(slim.data or {}, ensure_ascii=False))
             removed_result_tokens += max(0, before - after)
 
         projected_writes = [
-            results_by_id[call.id]
-            for call in write_calls
-            if call.id in results_by_id
+            results_by_id[call.id] for call in write_calls if call.id in results_by_id
         ]
 
         all_calls.extend(tool_calls)
@@ -577,9 +567,7 @@ async def run_tool_loop(
                     content=ledger_pending_message(
                         tool_name=auto_ledger.name,
                         amount=amount if isinstance(amount, (int, float)) else 0,
-                        customer_name=customer_label_for_id(
-                            all_results, customer_id
-                        ),
+                        customer_name=customer_label_for_id(all_results, customer_id),
                         language=language,
                     ),
                 )
@@ -588,14 +576,11 @@ async def run_tool_loop(
 
         draft_done = any(
             result.success
-            and result.tool
-            in {"create_invoice_draft", "update_invoice_draft"}
+            and result.tool in {"create_invoice_draft", "update_invoice_draft"}
             for result in projected_writes
         )
         allow_more_tools = (
-            staged_sensitive is None
-            and round_index < max_rounds - 1
-            and not draft_done
+            staged_sensitive is None and round_index < max_rounds - 1 and not draft_done
         )
         if budget is not None and not budget.can_continue():
             allow_more_tools = False

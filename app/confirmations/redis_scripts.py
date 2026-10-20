@@ -74,4 +74,3 @@ local remaining = math.max(1, math.floor(tonumber(payload['expires_at']) - now))
 redis.call('SET', KEYS[1], cjson.encode(payload), 'EX', remaining)
 return 'OK:' .. cjson.encode(payload)
 """
-

@@ -278,10 +278,11 @@ def build_chat_system_prompt(
             "list_staff",
         }:
             parts.append(_STORE_READS_RULE)
-        if (
-            tool_names & {"invoice_summary", "today_sale", "invoice_detailed_analytics"}
-            and tool_names & {"stock_summary", "stock_items"}
-        ):
+        if tool_names & {
+            "invoice_summary",
+            "today_sale",
+            "invoice_detailed_analytics",
+        } and tool_names & {"stock_summary", "stock_items"}:
             parts.append(_BUSINESS_GUIDE_RULE)
     else:
         parts.append(
@@ -456,7 +457,6 @@ def build_chat_system_prompt(
                 "the user once done.\n"
             )
 
-
     if has_create_customer:
         parts.append(
             "- create_customer contact rule: a customer requires a name "
@@ -530,9 +530,7 @@ def build_chat_system_prompt(
     return "".join(parts)
 
 
-def build_documentation_block(
-    chunks: list[RetrievedChunk], *, max_tokens: int
-) -> str:
+def build_documentation_block(chunks: list[RetrievedChunk], *, max_tokens: int) -> str:
     """Format retrieved chunks with source citations under a token budget.
 
     Chunks arrive score-descending; lowest-score chunks are dropped first.

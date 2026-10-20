@@ -249,9 +249,7 @@ async def confirm_chat(
     try:
         if rate_limiter is not None:
             try:
-                await rate_limiter.check_confirm(
-                    user_id=user_id, store_id=store_id
-                )
+                await rate_limiter.check_confirm(user_id=user_id, store_id=store_id)
             except AppError as exc:
                 if exc.code == "AI_RATE_LIMITED":
                     emit_event(LIMIT_RATE, kind="confirm")

@@ -80,20 +80,12 @@ class ToolRegistry:
     def entries(self) -> tuple[ToolEntry, ...]:
         return tuple(self._entries[name] for name in sorted(self._entries))
 
-    def entries_for_domain(
-        self, domain: ToolDomain | str
-    ) -> tuple[ToolEntry, ...]:
+    def entries_for_domain(self, domain: ToolDomain | str) -> tuple[ToolEntry, ...]:
         target = domain.value if isinstance(domain, ToolDomain) else str(domain)
-        return tuple(
-            entry
-            for entry in self.entries()
-            if entry.domain.value == target
-        )
+        return tuple(entry for entry in self.entries() if entry.domain.value == target)
 
     def definitions(self) -> tuple[ToolDefinition, ...]:
-        return tuple(
-            self._definitions[name] for name in sorted(self._definitions)
-        )
+        return tuple(self._definitions[name] for name in sorted(self._definitions))
 
     def definitions_for(self, names: Iterable[str]) -> tuple[ToolDefinition, ...]:
         selected = set(names) & self._definitions.keys()

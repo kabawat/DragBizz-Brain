@@ -17,6 +17,18 @@ class ServiceSettings(BaseSettings):
         le=60,
         validation_alias="AI_REQUEST_TIMEOUT_SECONDS",
     )
+    retailer_grpc_host: str = Field(
+        default="localhost",
+        validation_alias="RETAILER_GRPC_HOST",
+    )
+    retailer_grpc_port: int = Field(
+        default=5001,
+        validation_alias="RETAILER_GRPC_PORT",
+    )
+
+    @property
+    def retailer_grpc_address(self) -> str:
+        return f"{self.retailer_grpc_host}:{self.retailer_grpc_port}"
 
     @property
     def retailer_url(self) -> str:

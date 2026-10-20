@@ -40,9 +40,7 @@ class ToolCallValidator:
                 agency_id=agency_id,
                 tenant_id=tenant_id,
             )
-            validated.append(
-                ToolCall(id=call.id, name=call.name, arguments=arguments)
-            )
+            validated.append(ToolCall(id=call.id, name=call.name, arguments=arguments))
         return validated
 
     def describe_errors(

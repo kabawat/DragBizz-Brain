@@ -83,9 +83,7 @@ class NoOpRagCache:
 
 
 class InMemoryRagCache:
-    def __init__(
-        self, *, ttl_seconds: int, clock: Clock | None = None
-    ) -> None:
+    def __init__(self, *, ttl_seconds: int, clock: Clock | None = None) -> None:
         self._ttl_seconds = ttl_seconds
         self._clock = clock or time.monotonic
         self._chunks: dict[str, tuple[float, list[RetrievedChunk]]] = {}
@@ -229,9 +227,7 @@ def _hash(parts: str) -> str:
 
 
 def _chunks_key(question: str, *, top_k: int, score_threshold: float) -> str:
-    digest = _hash(
-        f"{_normalize_question(question)}|{top_k}|{score_threshold:.4f}"
-    )
+    digest = _hash(f"{_normalize_question(question)}|{top_k}|{score_threshold:.4f}")
     return f"{_CHUNKS_PREFIX}:{digest}"
 
 

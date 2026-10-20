@@ -9,9 +9,7 @@ class ModelSelectionRequest(BaseModel):
 class ModelSelectionResponse(BaseModel):
     provider: str
     model: str
-    available_providers: list[str] = Field(
-        serialization_alias="availableProviders"
-    )
+    available_providers: list[str] = Field(serialization_alias="availableProviders")
     allowed_models: list[str] = Field(serialization_alias="allowedModels")
     updated_by: str | None = Field(default=None, serialization_alias="updatedBy")
     updated_at: str | None = Field(default=None, serialization_alias="updatedAt")

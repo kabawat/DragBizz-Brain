@@ -73,9 +73,7 @@ async def release_invoice(
     return ToolResult(tool="release_invoice", success=True, data=payload)
 
 
-async def ledger_credit(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def ledger_credit(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     return await _ledger_write(
         "ledger_credit",
         LEDGER_CREDIT_TYPE,
@@ -84,9 +82,7 @@ async def ledger_credit(
     )
 
 
-async def ledger_debit(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def ledger_debit(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     return await _ledger_write(
         "ledger_debit",
         LEDGER_DEBIT_TYPE,
@@ -95,9 +91,7 @@ async def ledger_debit(
     )
 
 
-async def add_stock(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def add_stock(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     raw_items = arguments.get("items")
     if not isinstance(raw_items, list) or not raw_items:
         return ToolResult(
@@ -411,9 +405,7 @@ async def record_customer_payment(
         "amount": total,
         "openPath": f"/dashboard/customers/{customer_id.strip()}",
     }
-    return ToolResult(
-        tool="record_customer_payment", success=True, data=payload
-    )
+    return ToolResult(tool="record_customer_payment", success=True, data=payload)
 
 
 async def update_customer_payment(
@@ -454,9 +446,7 @@ async def update_customer_payment(
         )
     data = response.body.get("data")
     payload = data if isinstance(data, dict) else {"payment": data}
-    return ToolResult(
-        tool="update_customer_payment", success=True, data=payload
-    )
+    return ToolResult(tool="update_customer_payment", success=True, data=payload)
 
 
 async def create_collect_link(
@@ -562,9 +552,7 @@ async def send_payment_reminder(
         "customerId": customer_id.strip(),
         "openPath": f"/dashboard/customers/{customer_id.strip()}",
     }
-    return ToolResult(
-        tool="send_payment_reminder", success=True, data=payload
-    )
+    return ToolResult(tool="send_payment_reminder", success=True, data=payload)
 
 
 def _optional_non_negative(value: Any) -> float | None:
@@ -577,9 +565,7 @@ def _optional_non_negative(value: Any) -> float | None:
     return float(value)
 
 
-async def create_expense(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def create_expense(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     title = arguments.get("title")
     if not isinstance(title, str) or not title.strip():
         return ToolResult(
@@ -588,11 +574,7 @@ async def create_expense(
             data={"code": "TOOL_ARGS_INVALID", "message": "title is required"},
         )
     amount = arguments.get("amount")
-    if (
-        isinstance(amount, bool)
-        or not isinstance(amount, (int, float))
-        or amount <= 0
-    ):
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount <= 0:
         return ToolResult(
             tool="create_expense",
             success=False,
@@ -726,8 +708,7 @@ async def create_purchase_order(
                 data={
                     "code": "TOOL_ARGS_INVALID",
                     "message": (
-                        f"item at index {idx} "
-                        "requires positive integer quantity"
+                        f"item at index {idx} requires positive integer quantity"
                     ),
                 },
             )
@@ -774,9 +755,7 @@ async def create_purchase_order(
     po_id = payload.get("id") or payload.get("_id") or ""
     po_number = payload.get("poNumber") or ""
     open_path = (
-        f"/dashboard/purchase-orders/{po_id}"
-        if po_id
-        else "/dashboard/purchase-orders"
+        f"/dashboard/purchase-orders/{po_id}" if po_id else "/dashboard/purchase-orders"
     )
     return ToolResult(
         tool="create_purchase_order",
@@ -808,4 +787,3 @@ SENSITIVE_TOOL_HANDLERS = {
     "create_expense": create_expense,
     "create_purchase_order": create_purchase_order,
 }
-

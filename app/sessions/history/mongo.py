@@ -119,9 +119,7 @@ class MongoHistoryStore:
             raise not_found()
         assert_owner_doc(doc, user_id=user_id, store_id=store_id)
         messages: list[HistoryMessage] = []
-        cursor = self._messages.find({"sessionId": session_id}).sort(
-            "createdAt", 1
-        )
+        cursor = self._messages.find({"sessionId": session_id}).sort("createdAt", 1)
         async for item in cursor:
             tool_results = item.get("toolResults")
             messages.append(

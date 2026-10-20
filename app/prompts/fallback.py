@@ -33,8 +33,7 @@ _DOCS_UNAVAILABLE_MESSAGES = {
 
 _BUDGET_MESSAGES = {
     "en": (
-        "This request used too many steps. Please ask a shorter question "
-        "or try again."
+        "This request used too many steps. Please ask a shorter question or try again."
     ),
     "hi": (
         "Is request mein bahut zyada steps lag gaye. "

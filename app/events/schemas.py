@@ -80,6 +80,7 @@ class InvoiceReleasedPayload(BaseModel):
     paid_amount: float | int | str | None = Field(None, alias="paidAmount")
     payment_status: str | None = Field(None, alias="paymentStatus")
     released_at: str | None = Field(None, alias="releasedAt")
+    items: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class StockIntakePayload(BaseModel):
@@ -93,3 +94,4 @@ class StockIntakePayload(BaseModel):
     item_count: int | None = Field(None, alias="itemCount")
     total_quantity: float | int | None = Field(None, alias="totalQuantity")
     received_at: str | None = Field(None, alias="receivedAt")
+    items: list[dict[str, Any]] = Field(default_factory=list)

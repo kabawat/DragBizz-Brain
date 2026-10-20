@@ -5,9 +5,7 @@ from typing import Any
 from app.core.exceptions import AppError
 
 
-def assert_owner_memory(
-    meta: dict[str, Any], *, user_id: str, store_id: str
-) -> None:
+def assert_owner_memory(meta: dict[str, Any], *, user_id: str, store_id: str) -> None:
     if meta.get("user_id") != user_id or meta.get("store_id") != store_id:
         raise AppError(
             code="SESSION_FORBIDDEN",

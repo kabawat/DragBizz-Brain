@@ -29,9 +29,7 @@ class _LatencyHistogram:
     count: int = 0
     total_ms: float = 0.0
     max_ms: float = 0.0
-    buckets: list[int] = field(
-        default_factory=lambda: [0] * len(_LATENCY_BUCKETS_MS)
-    )
+    buckets: list[int] = field(default_factory=lambda: [0] * len(_LATENCY_BUCKETS_MS))
 
     def record(self, latency_ms: float) -> None:
         self.count += 1

@@ -69,10 +69,7 @@ class CircuitBreaker:
     def record_failure(self) -> None:
         record = self._record
         record.failures += 1
-        if (
-            record.state == BreakerState.HALF_OPEN
-            or record.failures >= self._threshold
-        ):
+        if record.state == BreakerState.HALF_OPEN or record.failures >= self._threshold:
             record.state = BreakerState.OPEN
             record.opened_at = time.monotonic()
             logger.warning(

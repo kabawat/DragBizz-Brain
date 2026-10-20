@@ -95,9 +95,7 @@ class ConcurrencyGate:
         try:
             for slot in range(limit):
                 key = self._slot_key(kind, user_id, store_id, slot)
-                ok = await self._redis.set(
-                    key, token, ex=self._lease_seconds, nx=True
-                )
+                ok = await self._redis.set(key, token, ex=self._lease_seconds, nx=True)
                 if ok:
                     return Lease(
                         kind=kind,
@@ -144,9 +142,7 @@ class InMemoryConcurrencyGate:
         return await self._acquire("chat", user_id, store_id, self._max_chat)
 
     async def acquire_confirm(self, *, user_id: str, store_id: str) -> Lease:
-        return await self._acquire(
-            "confirm", user_id, store_id, self._max_confirm
-        )
+        return await self._acquire("confirm", user_id, store_id, self._max_confirm)
 
     async def release(self, lease: Lease) -> None:
         if lease.slot < 0:

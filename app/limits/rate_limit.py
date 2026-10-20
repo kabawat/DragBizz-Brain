@@ -97,13 +97,9 @@ class InMemoryRateLimiter:
         await self._check("chat", user_id, store_id, self._chat_per_minute)
 
     async def check_confirm(self, *, user_id: str, store_id: str) -> None:
-        await self._check(
-            "confirm", user_id, store_id, self._confirm_per_minute
-        )
+        await self._check("confirm", user_id, store_id, self._confirm_per_minute)
 
-    async def _check(
-        self, kind: str, user_id: str, store_id: str, limit: int
-    ) -> None:
+    async def _check(self, kind: str, user_id: str, store_id: str, limit: int) -> None:
         if limit <= 0:
             return
         window = datetime.now(UTC).strftime("%Y%m%d%H%M")

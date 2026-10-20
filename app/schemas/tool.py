@@ -38,9 +38,7 @@ class ToolDefinition(BaseModel):
     @property
     def access_type(self) -> ToolAccessType:
         return (
-            ToolAccessType.READ
-            if self.risk == ToolRisk.READ
-            else ToolAccessType.WRITE
+            ToolAccessType.READ if self.risk == ToolRisk.READ else ToolAccessType.WRITE
         )
 
     @property
@@ -54,9 +52,7 @@ class ToolCall(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     # Gemini 3 rejects the next tool round unless this is echoed back.
     # Excluded from API responses and persisted history.
-    thought_signature: str | None = Field(
-        default=None, exclude=True, max_length=16_384
-    )
+    thought_signature: str | None = Field(default=None, exclude=True, max_length=16_384)
 
 
 class ToolResult(BaseModel):

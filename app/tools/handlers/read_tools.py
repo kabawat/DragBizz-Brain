@@ -17,9 +17,7 @@ from app.schemas.tool import ToolResult
 from app.tools.context import ToolContext
 
 
-async def search_product(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def search_product(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     try:
         response = await context.retailer.get_products(
             access_token=context.access_token,
@@ -60,9 +58,7 @@ async def search_product(
                 "id": str(item.get("id") or ""),
                 "name": item.get("name"),
                 "sku": item.get("sku"),
-                "sellingPrice": item.get(
-                    "sellingPrice", pricing.get("sellingPrice")
-                ),
+                "sellingPrice": item.get("sellingPrice", pricing.get("sellingPrice")),
                 "stock": stock_qty,
                 "taxRate": item.get("taxRate", gst.get("gstRate")),
                 "unit": item.get("unit") or item.get("uom") or pricing.get("uom"),
@@ -144,9 +140,7 @@ async def search_product(
                         entry["totalStock"] = total_qty
 
                     status_meta = (
-                        inv.get("status")
-                        if isinstance(inv.get("status"), dict)
-                        else {}
+                        inv.get("status") if isinstance(inv.get("status"), dict) else {}
                     )
                     if "isLowStock" in status_meta:
                         entry["isLowStock"] = bool(status_meta.get("isLowStock"))
@@ -186,8 +180,7 @@ async def search_product(
     }
     if not items:
         data["message"] = (
-            f"No products matching '{arguments.get('query', '')}' "
-            "found in this store."
+            f"No products matching '{arguments.get('query', '')}' found in this store."
         )
     elif len(items) > 1:
         data["disambiguationRequired"] = True
@@ -199,9 +192,7 @@ async def search_product(
     )
 
 
-async def today_sale(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def today_sale(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     try:
         response = await context.retailer.get_revenue(
             access_token=context.access_token,
@@ -219,9 +210,7 @@ async def today_sale(
     )
 
 
-async def stock_summary(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def stock_summary(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     try:
         response = await context.retailer.get_stock(
             access_token=context.access_token,
@@ -379,9 +368,7 @@ async def customer_dossier(
         )
     except RetailerHttpError as exc:
         return _failure("customer_dossier", exc)
-    items = [
-        _dossier_customer(item) for item in raw_items if isinstance(item, dict)
-    ]
+    items = [_dossier_customer(item) for item in raw_items if isinstance(item, dict)]
     items, match_by = _rank_customers(items, arguments["query"])
     match_count = len(items)
     data: dict[str, Any] = {
@@ -429,9 +416,7 @@ _TOP_CUSTOMER_PAGE = 100
 _TOP_CUSTOMER_PAGES = 5
 
 
-async def top_customers(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def top_customers(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     raw_limit = arguments.get("limit")
     want = raw_limit if isinstance(raw_limit, int) and 1 <= raw_limit <= 20 else 4
     totals: dict[str, dict[str, Any]] = {}
@@ -462,9 +447,7 @@ async def top_customers(
             capped = True
     except RetailerHttpError as exc:
         return _failure("top_customers", exc)
-    ranked = sorted(
-        totals.values(), key=lambda row: float(row["total"]), reverse=True
-    )
+    ranked = sorted(totals.values(), key=lambda row: float(row["total"]), reverse=True)
     items: list[dict[str, Any]] = []
     for row in ranked[:want]:
         total = float(row["total"])
@@ -556,9 +539,7 @@ def _dossier_identity(
 ) -> dict[str, Any]:
     keys = ("id", "name", "phone", "email") if with_email else ("id", "name", "phone")
     return {
-        key: item[key]
-        for key in keys
-        if key in item and item[key] not in (None, "")
+        key: item[key] for key in keys if key in item and item[key] not in (None, "")
     }
 
 
@@ -576,9 +557,7 @@ def _dossier_customer(item: dict[str, Any]) -> dict[str, Any]:
     account = item.get("account")
     if isinstance(account, dict):
         picked = {
-            key: account[key]
-            for key in ("totalDue", "totalPaid")
-            if key in account
+            key: account[key] for key in ("totalDue", "totalPaid") if key in account
         }
         if picked:
             row["account"] = picked
@@ -1087,9 +1066,7 @@ async def invoice_summary(
     return ToolResult(tool="invoice_summary", success=True, data=data)
 
 
-async def list_stores(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def list_stores(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     try:
         response = await context.retailer.get_stores(
             access_token=context.access_token,
@@ -1160,9 +1137,7 @@ async def list_stores(
     )
 
 
-async def stock_items(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def stock_items(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     try:
         response = await context.retailer.get_stock_items(
             access_token=context.access_token,
@@ -1197,28 +1172,21 @@ async def stock_items(
             stock_summary.get("totalQuantity"),
             item.get("stock"),
         ):
-            if isinstance(candidate, (int, float)) and not isinstance(
-                candidate, bool
-            ):
+            if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
                 avail = candidate
                 break
 
         items.append(
             {
                 "id": str(
-                    item.get("id")
-                    or item.get("_id")
-                    or item.get("productId")
-                    or ""
+                    item.get("id") or item.get("_id") or item.get("productId") or ""
                 ),
                 "name": item.get("name") or item.get("productName"),
                 "sku": item.get("sku"),
                 "stock": avail,
                 "status": item.get("stockStatus") or item.get("status"),
                 "sellingPrice": item.get("sellingPrice") or item.get("price"),
-                "purchasePrice": (
-                    item.get("purchasePrice") or item.get("costPrice")
-                ),
+                "purchasePrice": (item.get("purchasePrice") or item.get("costPrice")),
             }
         )
     return ToolResult(
@@ -1232,9 +1200,7 @@ async def stock_items(
     )
 
 
-async def list_invoices(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     limit = arguments.get("limit")
     limit_val = limit if isinstance(limit, int) and 1 <= limit <= 30 else 20
     invoice_status = arguments.get("invoiceStatus")
@@ -1249,9 +1215,7 @@ async def list_invoices(
             store_id=context.store_id,
             limit=limit_val,
             invoice_status=(
-                invoice_status
-                if isinstance(invoice_status, str)
-                else "RELEASED"
+                invoice_status if isinstance(invoice_status, str) else "RELEASED"
             ),
             payment_status=(
                 payment_status if isinstance(payment_status, str) else None
@@ -1298,9 +1262,7 @@ async def list_invoices(
                 "customer": cust_info,
                 "invoiceDate": inv.get("invoiceDate") or inv.get("createdAt"),
                 "totalAmount": (
-                    inv.get("grandTotal")
-                    or inv.get("totalAmount")
-                    or inv.get("total")
+                    inv.get("grandTotal") or inv.get("totalAmount") or inv.get("total")
                 ),
                 "paymentStatus": inv.get("paymentStatus"),
                 "invoiceStatus": inv.get("invoiceStatus") or inv.get("status"),
@@ -1339,12 +1301,8 @@ async def expense_summary(
         payload = {}
 
     totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
-    by_category_raw = (
-        payload.get("byCategory") or payload.get("categories") or []
-    )
-    by_category = (
-        by_category_raw[:10] if isinstance(by_category_raw, list) else []
-    )
+    by_category_raw = payload.get("byCategory") or payload.get("categories") or []
+    by_category = by_category_raw[:10] if isinstance(by_category_raw, list) else []
 
     return ToolResult(
         tool="expense_summary",
@@ -1365,9 +1323,7 @@ async def expense_summary(
     )
 
 
-async def list_expenses(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def list_expenses(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     limit = arguments.get("limit")
     limit_val = limit if isinstance(limit, int) and 1 <= limit <= 20 else 20
     category = arguments.get("category")
@@ -1403,9 +1359,7 @@ async def list_expenses(
                 "id": str(exp.get("id") or exp.get("_id") or ""),
                 "expenseNumber": exp.get("expenseNumber"),
                 "title": (
-                    exp.get("title")
-                    or exp.get("notes")
-                    or exp.get("description")
+                    exp.get("title") or exp.get("notes") or exp.get("description")
                 ),
                 "category": exp.get("category"),
                 "amount": exp.get("amount"),
@@ -1445,9 +1399,7 @@ async def cashbook_summary(
         "closingBalance": payload.get("closingBalance"),
         "totalCashIn": payload.get("totalCashIn") or payload.get("cashIn"),
         "totalCashOut": payload.get("totalCashOut") or payload.get("cashOut"),
-        "netBalance": (
-            payload.get("netBalance") or payload.get("currentBalance")
-        ),
+        "netBalance": (payload.get("netBalance") or payload.get("currentBalance")),
         "cashSales": payload.get("cashSales"),
         "dayStatus": payload.get("dayStatus") or payload.get("status"),
     }
@@ -1506,9 +1458,7 @@ async def search_supplier(
         "found": bool(suppliers),
     }
     if not suppliers:
-        data["message"] = (
-            f"No suppliers matching '{query}' found in this store."
-        )
+        data["message"] = f"No suppliers matching '{query}' found in this store."
     elif len(suppliers) > 1:
         data["disambiguationRequired"] = True
 
@@ -1530,24 +1480,16 @@ async def supplier_summary(
     except RetailerHttpError as exc:
         return _failure("supplier_summary", exc)
 
-    payload = (
-        response.body.get("data") if isinstance(response.body, dict) else {}
-    )
+    payload = response.body.get("data") if isinstance(response.body, dict) else {}
     if not isinstance(payload, dict):
         payload = {}
 
-    totals = (
-        payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
-    )
-    counts = (
-        payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
-    )
+    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    counts = payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
     merged_counts = {**totals, **counts}
 
     bill_amounts: dict[str, Any] = (
-        payload.get("amounts")
-        if isinstance(payload.get("amounts"), dict)
-        else {}
+        payload.get("amounts") if isinstance(payload.get("amounts"), dict) else {}
     )
     bill_counts: dict[str, Any] = {}
     if not bill_amounts:
@@ -1557,9 +1499,7 @@ async def supplier_summary(
                 store_id=context.store_id,
             )
             b_data = (
-                bill_res.body.get("data")
-                if isinstance(bill_res.body, dict)
-                else {}
+                bill_res.body.get("data") if isinstance(bill_res.body, dict) else {}
             )
             if isinstance(b_data, dict):
                 raw_amt = b_data.get("amounts")
@@ -1597,7 +1537,6 @@ async def supplier_summary(
             "bills": bill_counts,
         },
     )
-
 
 
 async def list_purchase_orders(
@@ -1655,9 +1594,7 @@ async def list_purchase_orders(
                 "approvalStatus": po.get("approvalStatus"),
                 "totalAmount": po.get("totalAmount") or po.get("grandTotal"),
                 "itemCount": (
-                    len(po.get("items", []))
-                    if isinstance(po.get("items"), list)
-                    else 0
+                    len(po.get("items", [])) if isinstance(po.get("items"), list) else 0
                 ),
             }
         )
@@ -1669,9 +1606,7 @@ async def list_purchase_orders(
     )
 
 
-async def bill_summary(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def bill_summary(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     try:
         response = await context.retailer.get_bill_analytics(
             access_token=context.access_token,
@@ -1710,9 +1645,7 @@ async def bill_summary(
     )
 
 
-async def gst_summary(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def gst_summary(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     month = arguments.get("month")
     quarter = arguments.get("quarter")
     year = arguments.get("year")
@@ -1730,11 +1663,7 @@ async def gst_summary(
     except RetailerHttpError as exc:
         return _failure("gst_summary", exc)
 
-    payload = (
-        summary_res.body.get("data")
-        if isinstance(summary_res.body, dict)
-        else {}
-    )
+    payload = summary_res.body.get("data") if isinstance(summary_res.body, dict) else {}
     if not isinstance(payload, dict):
         payload = {}
 
@@ -1762,9 +1691,7 @@ async def gst_summary(
         "cgst": payload.get("cgst"),
         "sgst": payload.get("sgst"),
         "igst": payload.get("igst"),
-        "invoiceCount": (
-            payload.get("invoiceCount") or payload.get("totalInvoices")
-        ),
+        "invoiceCount": (payload.get("invoiceCount") or payload.get("totalInvoices")),
     }
     if health_score is not None:
         data["healthScore"] = health_score
@@ -1825,9 +1752,7 @@ async def list_sales_orders(
         orders.append(
             {
                 "id": str(order.get("id") or order.get("_id") or ""),
-                "orderNumber": (
-                    order.get("orderNumber") or order.get("publicId")
-                ),
+                "orderNumber": (order.get("orderNumber") or order.get("publicId")),
                 "customer": cust_info,
                 "orderDate": order.get("orderDate") or order.get("createdAt"),
                 "status": order.get("status"),
@@ -1843,9 +1768,7 @@ async def list_sales_orders(
     )
 
 
-async def list_staff(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def list_staff(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     try:
         response = await context.retailer.get_staff(
             access_token=context.access_token,
@@ -1977,9 +1900,7 @@ async def _fetch_invoices_window(
     return invoices, has_more
 
 
-async def sales_pareto(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def sales_pareto(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     window, start_date, end_date = resolve_window_dates(arguments.get("window"))
     if context.insight_cache:
         cached = await context.insight_cache.get(
@@ -2011,16 +1932,12 @@ async def sales_pareto(
         limit=limit,
     )
     if context.insight_cache:
-        await context.insight_cache.set(
-            context.store_id, "sales_pareto", window, data
-        )
+        await context.insight_cache.set(context.store_id, "sales_pareto", window, data)
 
     return ToolResult(tool="sales_pareto", success=True, data=data)
 
 
-async def payment_mix(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def payment_mix(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     window, start_date, end_date = resolve_window_dates(arguments.get("window"))
     if context.insight_cache:
         cached = await context.insight_cache.get(
@@ -2045,9 +1962,7 @@ async def payment_mix(
         is_complete=not has_more,
     )
     if context.insight_cache:
-        await context.insight_cache.set(
-            context.store_id, "payment_mix", window, data
-        )
+        await context.insight_cache.set(context.store_id, "payment_mix", window, data)
 
     return ToolResult(tool="payment_mix", success=True, data=data)
 
@@ -2061,9 +1976,7 @@ async def inventory_velocity(
             context.store_id, "inventory_velocity", window
         )
         if isinstance(cached, dict):
-            return ToolResult(
-                tool="inventory_velocity", success=True, data=cached
-            )
+            return ToolResult(tool="inventory_velocity", success=True, data=cached)
 
     try:
         stock_resp = await context.retailer.get_stock_items(
@@ -2115,9 +2028,7 @@ async def inventory_velocity(
     return ToolResult(tool="inventory_velocity", success=True, data=data)
 
 
-async def store_brief(
-    arguments: dict[str, Any], context: ToolContext
-) -> ToolResult:
+async def store_brief(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     date_str = str(arguments.get("date") or current_ist_date_str())
     if context.insight_cache:
         cached = await context.insight_cache.get(
@@ -2197,9 +2108,7 @@ async def store_brief(
         is_complete=all_succeeded,
     )
     if context.insight_cache:
-        await context.insight_cache.set(
-            context.store_id, "store_brief", date_str, data
-        )
+        await context.insight_cache.set(context.store_id, "store_brief", date_str, data)
 
     return ToolResult(tool="store_brief", success=True, data=data)
 

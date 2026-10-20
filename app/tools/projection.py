@@ -418,9 +418,7 @@ def project_product_summary(data: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     totals = data.get("totals")
     if isinstance(totals, dict):
-        picked = _pick(
-            totals, ("totalProducts", "activeProducts", "inactiveProducts")
-        )
+        picked = _pick(totals, ("totalProducts", "activeProducts", "inactiveProducts"))
         if picked:
             out["totals"] = picked
     return out
@@ -913,9 +911,7 @@ def project_list_stores(data: dict[str, Any]) -> dict[str, Any]:
 
 _DOSSIER_BILL_CAP = 10
 _DOSSIER_LINE_CAP = 5
-_DOSSIER_STATUSES = frozenset(
-    {"ok", "empty", "ambiguous", "unavailable", "no_match"}
-)
+_DOSSIER_STATUSES = frozenset({"ok", "empty", "ambiguous", "unavailable", "no_match"})
 
 
 def project_customer_dossier(data: dict[str, Any]) -> dict[str, Any]:
@@ -1237,16 +1233,11 @@ def project_supplier_summary(data: dict[str, Any]) -> dict[str, Any]:
         )
     amounts = data.get("amounts")
     if isinstance(amounts, dict):
-        out["amounts"] = _pick(
-            amounts, ("totalPayable", "totalPaid", "totalDue")
-        )
+        out["amounts"] = _pick(amounts, ("totalPayable", "totalPaid", "totalDue"))
     bills = data.get("bills")
     if isinstance(bills, dict):
-        out["bills"] = _pick(
-            bills, ("totalBills", "pendingBills", "overdueBills")
-        )
+        out["bills"] = _pick(bills, ("totalBills", "pendingBills", "overdueBills"))
     return out
-
 
 
 def project_list_purchase_orders(data: dict[str, Any]) -> dict[str, Any]:
@@ -1400,16 +1391,18 @@ def project_sales_pareto(data: dict[str, Any]) -> dict[str, Any]:
             items = []
             for item in raw_list[:_MAX_LIST]:
                 if isinstance(item, dict):
-                    items.append({
-                        "rank": item.get("rank"),
-                        "productId": str(item.get("productId") or ""),
-                        "productName": item.get("productName"),
-                        "sku": item.get("sku"),
-                        "unitsSold": item.get("unitsSold"),
-                        "revenue": item.get("revenue"),
-                        "revenueSharePct": item.get("revenueSharePct"),
-                        "cumulativeSharePct": item.get("cumulativeSharePct"),
-                    })
+                    items.append(
+                        {
+                            "rank": item.get("rank"),
+                            "productId": str(item.get("productId") or ""),
+                            "productName": item.get("productName"),
+                            "sku": item.get("sku"),
+                            "unitsSold": item.get("unitsSold"),
+                            "revenue": item.get("revenue"),
+                            "revenueSharePct": item.get("revenueSharePct"),
+                            "cumulativeSharePct": item.get("cumulativeSharePct"),
+                        }
+                    )
             out[list_key] = items
 
     cov = data.get("coverage")
@@ -1458,22 +1451,24 @@ def project_inventory_velocity(data: dict[str, Any]) -> dict[str, Any]:
             items = []
             for item in raw_list[:_MAX_LIST]:
                 if isinstance(item, dict):
-                    items.append({
-                        "productId": str(item.get("productId") or ""),
-                        "productName": item.get("productName"),
-                        "sku": item.get("sku"),
-                        "category": item.get("category"),
-                        "availableQuantity": item.get("availableQuantity"),
-                        "lowStockThreshold": item.get("lowStockThreshold"),
-                        "unitsSoldInWindow": item.get("unitsSoldInWindow"),
-                        "billsCountInWindow": item.get("billsCountInWindow"),
-                        "isLowStock": item.get("isLowStock"),
-                        "isOutOfStock": item.get("isOutOfStock"),
-                        "zeroSalesInScannedWindow": item.get(
-                            "zeroSalesInScannedWindow"
-                        ),
-                        "observationNote": item.get("observationNote"),
-                    })
+                    items.append(
+                        {
+                            "productId": str(item.get("productId") or ""),
+                            "productName": item.get("productName"),
+                            "sku": item.get("sku"),
+                            "category": item.get("category"),
+                            "availableQuantity": item.get("availableQuantity"),
+                            "lowStockThreshold": item.get("lowStockThreshold"),
+                            "unitsSoldInWindow": item.get("unitsSoldInWindow"),
+                            "billsCountInWindow": item.get("billsCountInWindow"),
+                            "isLowStock": item.get("isLowStock"),
+                            "isOutOfStock": item.get("isOutOfStock"),
+                            "zeroSalesInScannedWindow": item.get(
+                                "zeroSalesInScannedWindow"
+                            ),
+                            "observationNote": item.get("observationNote"),
+                        }
+                    )
             out[list_key] = items
 
     cov = data.get("coverage")
@@ -1554,4 +1549,3 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "inventory_velocity": project_inventory_velocity,
     "store_brief": project_store_brief,
 }
-

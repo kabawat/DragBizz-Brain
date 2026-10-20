@@ -133,6 +133,7 @@ class AiGateway:
 
         full_text = "".join(collected_text)
         from app.rag.chunker import estimate_tokens
+
         output_tokens = estimate_tokens(full_text)
         if budget is not None:
             budget.record_tokens(output_tokens=output_tokens)
@@ -430,9 +431,7 @@ class AiGateway:
     ) -> GenerationResponse:
         if budget is not None:
             budget.begin_model_call(allow_synthesis=(call_type == "synthesize"))
-        response = await self._call(
-            provider, request, retry=retry, fallback=fallback
-        )
+        response = await self._call(provider, request, retry=retry, fallback=fallback)
         if budget is not None:
             budget.record_tokens(
                 input_tokens=response.input_tokens,
@@ -469,9 +468,7 @@ class AiGateway:
         started = time.perf_counter()
         # Routine attempts show up in chat.request metrics; only surface
         # retries/fallbacks as first-class INFO events.
-        attempt_level = (
-            logging.INFO if retry or fallback else logging.DEBUG
-        )
+        attempt_level = logging.INFO if retry or fallback else logging.DEBUG
         emit_event(
             MODEL_ATTEMPT,
             level=attempt_level,
@@ -482,9 +479,7 @@ class AiGateway:
         try:
             response = await provider.generate(request)
         except Exception:
-            self._record(
-                started, error=True, retry=retry, fallback=fallback
-            )
+            self._record(started, error=True, retry=retry, fallback=fallback)
             raise
         self._record(started, error=False, retry=retry, fallback=fallback)
         return response
@@ -499,8 +494,7 @@ class AiGateway:
                 if provider is not None:
                     return provider, selection.model
                 logger.warning(
-                    "Selected provider '%s' is not registered; "
-                    "using active provider",
+                    "Selected provider '%s' is not registered; using active provider",
                     selection.provider,
                 )
 

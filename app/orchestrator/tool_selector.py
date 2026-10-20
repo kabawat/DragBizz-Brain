@@ -165,31 +165,23 @@ SAFE_BROAD_STORE_FALLBACK: frozenset[str] = frozenset(
 _FAMILY_READS: dict[str, frozenset[str]] = {
     "sale": frozenset({"today_sale", "invoice_summary", "list_invoices"}),
     "stock": frozenset({"stock_summary", "search_product"}),
-    "stock_items": frozenset(
-        {"stock_items", "stock_summary", "search_product"}
-    ),
+    "stock_items": frozenset({"stock_items", "stock_summary", "search_product"}),
     "product": frozenset({"search_product"}),
     "product_stats": frozenset({"product_summary"}),
     "payment": frozenset({"payment_history", "search_customer"}),
     "payment_detail": frozenset({"get_customer_payment", "payment_history"}),
-    "payment_reminders": frozenset(
-        {"list_payment_reminders", "search_customer"}
-    ),
+    "payment_reminders": frozenset({"list_payment_reminders", "search_customer"}),
     # Lookup/create flows need search only; payment history is payment-family.
     "customer": frozenset({"search_customer"}),
     "customer_ledger": frozenset({"get_customer_ledger", "search_customer"}),
-    "customer_accounts": frozenset(
-        {"list_customer_accounts", "search_customer"}
-    ),
+    "customer_accounts": frozenset({"list_customer_accounts", "search_customer"}),
     "customer_stats": frozenset({"customer_summary"}),
     "invoice": frozenset({"search_customer", "search_product"}),
     "invoices": frozenset({"list_invoices", "invoice_summary", "today_sale"}),
     "invoice_stats": frozenset({"invoice_summary", "today_sale"}),
     "expense": frozenset({"expense_summary", "list_expenses"}),
     "cashbook": frozenset({"cashbook_summary", "today_sale"}),
-    "supplier": frozenset(
-        {"search_supplier", "supplier_summary", "bill_summary"}
-    ),
+    "supplier": frozenset({"search_supplier", "supplier_summary", "bill_summary"}),
     "purchase_order": frozenset(
         {"list_purchase_orders", "search_supplier", "search_product"}
     ),
@@ -1614,7 +1606,6 @@ def _exposure_tools(text: str) -> set[str]:
     return names
 
 
-
 def _prior_exposure_tools(prior_user_texts: Sequence[str] | None) -> set[str]:
     if not prior_user_texts:
         return set()
@@ -1747,8 +1738,7 @@ def detect_query_domains(text: str) -> set[ToolDomain]:
     ):
         domains.add(ToolDomain.INVENTORY)
     if any(
-        _FAMILY_RES[k].search(cleaned)
-        for k in ("supplier", "purchase_order", "bill")
+        _FAMILY_RES[k].search(cleaned) for k in ("supplier", "purchase_order", "bill")
     ):
         domains.add(ToolDomain.PROCUREMENT)
     if any(
@@ -1769,10 +1759,7 @@ def detect_query_domains(text: str) -> set[ToolDomain]:
         )
     ):
         domains.add(ToolDomain.KHATA)
-    if any(
-        _FAMILY_RES[k].search(cleaned)
-        for k in ("expense", "cashbook", "gst")
-    ):
+    if any(_FAMILY_RES[k].search(cleaned) for k in ("expense", "cashbook", "gst")):
         domains.add(ToolDomain.FINANCE)
     if any(
         _FAMILY_RES[k].search(cleaned)
@@ -1812,9 +1799,7 @@ def resolve_domain_turn_intent(
 
         carried = _prior_exposure_tools(prior_user_texts)
         current_writes = _exposure_tools(text)
-        if (
-            "create_expense" in carried or "update_expense" in carried
-        ) and re.search(
+        if ("create_expense" in carried or "update_expense" in carried) and re.search(
             r"\b(overdue|pending|paid|unpaid|update|badal|badlo|change|cancel)\b",
             text,
             re.IGNORECASE,
@@ -1838,9 +1823,7 @@ def resolve_domain_turn_intent(
     # Safe broad fallback (READ only)
     carried = _prior_exposure_tools(prior_user_texts)
     current_writes = _exposure_tools(text)
-    tool_names = (
-        SAFE_BROAD_STORE_FALLBACK | carried | current_writes
-    ) & available_set
+    tool_names = (SAFE_BROAD_STORE_FALLBACK | carried | current_writes) & available_set
     return TurnIntent(routing="unknown", tool_names=frozenset(tool_names))
 
 
@@ -2004,7 +1987,5 @@ def narrow_field_fill_tools(tool_names: frozenset[str]) -> frozenset[str]:
     if writes & {"create_expense", "update_expense"}:
         companions.update({"expense_summary", "list_expenses"})
     if writes & {"create_purchase_order"}:
-        companions.update(
-            {"search_supplier", "search_product", "list_purchase_orders"}
-        )
+        companions.update({"search_supplier", "search_product", "list_purchase_orders"})
     return frozenset(writes | (companions & tool_names))

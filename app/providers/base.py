@@ -14,9 +14,7 @@ class ModelProvider(ABC):
     async def generate(self, request: GenerationRequest) -> GenerationResponse:
         raise NotImplementedError
 
-    async def generate_stream(
-        self, request: GenerationRequest
-    ) -> AsyncIterator[str]:
+    async def generate_stream(self, request: GenerationRequest) -> AsyncIterator[str]:
         response = await self.generate(request)
         if response.content:
             yield response.content

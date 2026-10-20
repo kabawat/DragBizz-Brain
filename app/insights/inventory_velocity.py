@@ -85,8 +85,8 @@ def calculate_inventory_velocity(
     scanned_bills = len(invoices)
     scanned_stock = len(stock_items)
 
-    units_by_product, bills_by_product, names_by_product = (
-        _extract_sales_by_product(invoices)
+    units_by_product, bills_by_product, names_by_product = _extract_sales_by_product(
+        invoices
     )
 
     active_sellers: list[dict[str, Any]] = []
@@ -104,8 +104,7 @@ def calculate_inventory_velocity(
         available_qty = int(item.get("availableQuantity") or 0)
         threshold = int(item.get("lowStockThreshold") or 0)
         is_low = bool(
-            item.get("isLowStock")
-            or (available_qty <= threshold and available_qty > 0)
+            item.get("isLowStock") or (available_qty <= threshold and available_qty > 0)
         )
         is_out = bool(item.get("isOutOfStock") or (available_qty <= 0))
 
@@ -145,11 +144,13 @@ def calculate_inventory_velocity(
                     f"0 sales observed in {scanned_bills} bills over {window}; "
                     "not confirmed dead stock"
                 )
-            zero_sales_items.append({
-                **stock_record,
-                "zeroSalesInScannedWindow": True,
-                "observationNote": note,
-            })
+            zero_sales_items.append(
+                {
+                    **stock_record,
+                    "zeroSalesInScannedWindow": True,
+                    "observationNote": note,
+                }
+            )
 
     sorted_sellers = sorted(
         active_sellers,

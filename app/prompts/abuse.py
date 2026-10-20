@@ -57,10 +57,8 @@ _FIRM_LINES = (
     "me bhi loss hai.",
     "Mitr, seedhi baat: mehnat pe focus, warna sirf shor rahega faayda nahi.",
     "Dost, counter sambhalo pehle — bakchodi se na sale aati hai na customer.",
-    "Arre bhai, gaali se inventory nahi bharegi. Kaam karo, dhanda khud "
-    "badhega.",
-    "Sun seth: respect se baat karo aur business pe lag jao — bakchodi "
-    "bandh karo.",
+    "Arre bhai, gaali se inventory nahi bharegi. Kaam karo, dhanda khud badhega.",
+    "Sun seth: respect se baat karo aur business pe lag jao — bakchodi bandh karo.",
 )
 
 

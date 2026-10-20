@@ -80,11 +80,7 @@ class PricingConfig:
                 pricing_version=self.pricing_version,
             )
         # Estimated path: may still produce a number for caps/ops, but labeled.
-        if (
-            rate is not None
-            and input_tokens is not None
-            and output_tokens is not None
-        ):
+        if rate is not None and input_tokens is not None and output_tokens is not None:
             cost = round(
                 input_tokens * rate.input_usd_per_million / 1_000_000
                 + output_tokens * rate.output_usd_per_million / 1_000_000,
