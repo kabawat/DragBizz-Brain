@@ -1539,6 +1539,12 @@ _LEDGER_CREDIT_FLEX_RE = re.compile(
     r"|\bjama\s+k(?:ar|r)(?:o|na|\s+do|\s+dena)?\b",
     re.IGNORECASE,
 )
+_PO_FLEX_RE = re.compile(
+    r"\b(?:po|purchase\s*order)\b.{0,60}\b(?:banao|banaye|bana\s*do|bana\s*dena|create|draft|generate|order|karo|kar\s*do)\b"
+    r"|\b(?:banao|banaye|bana\s*do|create|draft|generate)\b.{0,60}\b(?:po|purchase\s*order)\b"
+    r"|\b(?:maal|stock|saman|samaan|order)\b.{0,30}\b(?:supplier\s*se\s*mangwa|supplier\s*se\s*order)\b",
+    re.IGNORECASE,
+)
 _PURCHASE_RANK_RE = re.compile(
     r"(?:jyada|zyada).{0,40}(?:saman|samaan|purchase|khareed|liya)"
     r"|(?:kitn[ae]).{0,40}purchase|purchase.{0,40}kitn",
@@ -1927,6 +1933,8 @@ def user_requested_sensitive_action(question: str, tool_name: str) -> bool:
     if tool_name == "add_stock" and _STOCK_ADD_FLEX_RE.search(text):
         return True
     if tool_name == "create_expense" and _EXPENSE_ADD_FLEX_RE.search(text):
+        return True
+    if tool_name == "create_purchase_order" and _PO_FLEX_RE.search(text):
         return True
     pattern = _SENSITIVE_ACTION_RES.get(tool_name)
     if pattern is None:

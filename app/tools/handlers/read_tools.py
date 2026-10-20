@@ -63,6 +63,63 @@ async def search_product(
                 "status": item.get("status"),
             }
         )
+
+    for entry in items[:5]:
+        if entry.get("stock") is None and entry.get("id") and context.access_token:
+            try:
+                inv_res = await context.retailer.get_inventory(
+                    access_token=context.access_token,
+                    store_id=context.store_id,
+                    product_id=entry["id"],
+                )
+                body_dict = getattr(inv_res, "body", None)
+                inv_body = (
+                    body_dict.get("data") if isinstance(body_dict, dict) else None
+                )
+                inv_records = []
+                if isinstance(inv_body, list):
+                    inv_records = inv_body
+                elif isinstance(inv_body, dict):
+                    if inv_body.get("inventory"):
+                        inv_records = [inv_body["inventory"]]
+                    elif inv_body.get("items"):
+                        inv_records = inv_body["items"]
+                    elif inv_body.get("inventories"):
+                        inv_records = inv_body["inventories"]
+                    else:
+                        inv_records = [inv_body]
+                for inv in inv_records:
+                    if isinstance(inv, dict):
+                        avail = (
+                            inv.get("availableQuantity")
+                            if "availableQuantity" in inv
+                            else inv.get("quantity")
+                            if "quantity" in inv
+                            else inv.get("totalQuantity")
+                        )
+                        if (
+                            isinstance(avail, (int, float))
+                            and not isinstance(avail, bool)
+                        ):
+                            entry["stock"] = avail
+                        if (
+                            entry.get("sellingPrice") is None
+                            and isinstance(inv.get("product"), dict)
+                        ):
+                            prod_meta = inv["product"]
+                            p_price = (
+                                prod_meta.get("sellingPrice")
+                                or prod_meta.get("mrp")
+                            )
+                            if (
+                                isinstance(p_price, (int, float))
+                                and not isinstance(p_price, bool)
+                            ):
+                                entry["sellingPrice"] = p_price
+                        break
+            except Exception:
+                pass
+
     data: dict[str, Any] = {
         "items": items,
         "count": len(items),
