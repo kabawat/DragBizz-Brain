@@ -705,6 +705,19 @@ async def create_purchase_order(
                     "message": f"item at index {idx} requires productId",
                 },
             )
+        if product_id.strip() == supplier_id.strip():
+            return ToolResult(
+                tool="create_purchase_order",
+                success=False,
+                data={
+                    "code": "TOOL_ARGS_INVALID",
+                    "message": (
+                        f"item at index {idx} has productId equal to "
+                        f"supplierId ({product_id}). "
+                        "A valid product ObjectId from search_product is required."
+                    ),
+                },
+            )
         qty = raw.get("quantity")
         if isinstance(qty, bool) or not isinstance(qty, int) or qty <= 0:
             return ToolResult(

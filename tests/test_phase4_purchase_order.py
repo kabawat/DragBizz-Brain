@@ -443,3 +443,47 @@ def test_tool_selector_exposure() -> None:
         )
         is False
     )
+
+
+def test_tool_selector_po_create_krna_exposes_companion_tools() -> None:
+    available = frozenset(
+        {
+            "create_purchase_order",
+            "search_supplier",
+            "search_product",
+            "list_purchase_orders",
+        }
+    )
+    query = "Amul Cheese Slices ka PO create krna 10 qty amul supplier se"
+    intent = resolve_turn_intent(query, available=available)
+    assert intent.routing == "tools"
+    assert "create_purchase_order" in intent.tool_names
+    assert "search_supplier" in intent.tool_names
+    assert "search_product" in intent.tool_names
+
+
+@pytest.mark.asyncio
+async def test_po_handler_rejects_supplier_id_as_product_id(
+    mock_retailer: AsyncMock,
+) -> None:
+    context = ToolContext(
+        store_id=STORE_ID,
+        access_token="tok_123",
+        retailer=mock_retailer,
+    )
+    args = {
+        "storeId": STORE_ID,
+        "supplierId": SUPPLIER_ID,
+        "items": [
+            {
+                "productId": SUPPLIER_ID,  # Duplicate of supplier ID
+                "quantity": 10,
+                "productName": "Amul Cheese Slices",
+            }
+        ],
+    }
+    result = await po_handler(args, context)
+    assert result.success is False
+    assert result.data["code"] == "TOOL_ARGS_INVALID"
+    assert "productId equal to supplierId" in result.data["message"]
+

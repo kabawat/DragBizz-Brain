@@ -418,6 +418,25 @@ def build_chat_system_prompt(
                 "'[yahan click karke](...)'. Do not claim the expense is saved "
                 "until confirmed.\n"
             )
+        if "create_purchase_order" in tool_names:
+            parts.append(
+                "- create_purchase_order: STAGE purchase order (needs confirm). "
+                "First call search_supplier to find the real supplierId for the "
+                "named supplier. "
+                "First call search_product for each named item to get its real "
+                "productId from search_product. "
+                "CRITICAL ID RULE: A supplier ID is NOT a product ID! Never use "
+                "or copy supplierId into productId. "
+                "Each item in items[] must have the real productId returned by "
+                "search_product, the quantity, and productName. "
+                "If search_product returns no matching product or search_supplier "
+                "returns no matching supplier, inform the user clearly that the "
+                "item or supplier was not found in the store instead of staging "
+                "with an invalid ID. "
+                "After calling create_purchase_order, tell the user to click Confirm "
+                "on the card below to submit the PO. "
+                "Never say the PO is created until the user confirms.\n"
+            )
         if "update_expense" in tool_names:
             parts.append(
                 "- update_expense: DIRECTLY UPDATE an existing expense. "
