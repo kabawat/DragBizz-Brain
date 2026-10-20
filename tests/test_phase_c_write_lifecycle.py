@@ -772,3 +772,93 @@ def test_phase_a_and_b_guarantees_hold() -> None:
     assert "create_purchase_order" in intent.tool_names
     assert "search_supplier" in intent.tool_names
     assert "search_product" in intent.tool_names
+
+
+# ---------------------------------------------------------------------------
+# 17. search_product correctly extracts live stock from stockSummary
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_search_product_resolves_stock_from_stock_summary() -> None:
+    retailer = AsyncMock()
+    retailer.get_products.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": [
+                {
+                    "id": PRODUCT_ID,
+                    "name": "Amul Cheese Slices",
+                    "sku": "AMUL-CHEESE-SLICES-200G",
+                    "status": "ACTIVE",
+                    "pricing": {"sellingPrice": 140.0, "uom": "packet"},
+                    "gstInfo": {"gstRate": 12.0},
+                    # Note: products collection in Core does NOT have stock field
+                }
+            ]
+        },
+    )
+    # Core GET /stock response with stockSummary
+    retailer.get_inventory.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "code": "OK",
+            "message": "Inventory data fetched successfully",
+            "data": {
+                "inventories": [
+                    {
+                        "id": "6ad4b6206f4697221df5f880",
+                        "product": {
+                            "id": PRODUCT_ID,
+                            "name": "Amul Cheese Slices",
+                            "sellingPrice": 140.0,
+                        },
+                        "stockSummary": {
+                            "totalQuantity": 47,
+                            "availableQuantity": 24,
+                            "reservedQuantity": 0,
+                            "soldQuantity": 23,
+                        },
+                        "status": {
+                            "isLowStock": False,
+                            "isOutOfStock": False,
+                            "lowStockThreshold": 10,
+                            "isActive": True,
+                        },
+                    }
+                ],
+                "pagination": {"currentPage": 1, "hasNext": False},
+            },
+        },
+    )
+
+    ctx = ToolContext(
+        retailer=retailer,
+        access_token="tok_test_inventory",
+        store_id=STORE_ID,
+    )
+
+    result = await search_product(
+        {"query": "Amul cheese slices", "storeId": STORE_ID}, ctx
+    )
+    assert result.success is True
+    assert result.data["found"] is True
+    assert len(result.data["items"]) == 1
+    item = result.data["items"][0]
+    assert item["id"] == PRODUCT_ID
+    assert item["name"] == "Amul Cheese Slices"
+    assert item["stock"] == 24
+    assert item["availableStock"] == 24
+    assert item["totalStock"] == 47
+    assert item["isLowStock"] is False
+    assert item["sellingPrice"] == 140.0
+
+
+def test_stock_query_domain_routing() -> None:
+    query = "Amul cheese slices ka stock kitna hai?"
+    domains = detect_query_domains(query)
+    assert ToolDomain.INVENTORY in domains
+
+    all_names = frozenset(t.name for t in ALL_TOOL_DEFINITIONS)
+    intent = resolve_domain_turn_intent(query, available=all_names)
+    assert intent.routing == "tools"
+    assert "search_product" in intent.tool_names
+

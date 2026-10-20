@@ -41,13 +41,19 @@ async def search_product(
         pricing = item.get("pricing") if isinstance(item.get("pricing"), dict) else {}
         gst = item.get("gstInfo") if isinstance(item.get("gstInfo"), dict) else {}
         stock_raw = item.get("stock")
-        stock_qty: Any = stock_raw
-        if isinstance(stock_raw, dict):
+        stock_qty: Any = None
+        if isinstance(stock_raw, (int, float)) and not isinstance(stock_raw, bool):
+            stock_qty = stock_raw
+        elif isinstance(stock_raw, dict):
+            sum_dict = (
+                stock_raw.get("stockSummary")
+                if isinstance(stock_raw.get("stockSummary"), dict)
+                else {}
+            )
             for key in ("availableQuantity", "totalQuantity", "quantity"):
-                if isinstance(stock_raw.get(key), (int, float)) and not isinstance(
-                    stock_raw.get(key), bool
-                ):
-                    stock_qty = stock_raw[key]
+                val = stock_raw.get(key) if key in stock_raw else sum_dict.get(key)
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    stock_qty = val
                     break
         items.append(
             {
@@ -76,47 +82,100 @@ async def search_product(
                 inv_body = (
                     body_dict.get("data") if isinstance(body_dict, dict) else None
                 )
+                if isinstance(inv_body, dict) and isinstance(
+                    inv_body.get("data"), (dict, list)
+                ):
+                    inv_body = inv_body["data"]
                 inv_records = []
                 if isinstance(inv_body, list):
                     inv_records = inv_body
                 elif isinstance(inv_body, dict):
-                    if inv_body.get("inventory"):
-                        inv_records = [inv_body["inventory"]]
-                    elif inv_body.get("items"):
-                        inv_records = inv_body["items"]
-                    elif inv_body.get("inventories"):
+                    if isinstance(inv_body.get("inventories"), list):
                         inv_records = inv_body["inventories"]
+                    elif isinstance(inv_body.get("items"), list):
+                        inv_records = inv_body["items"]
+                    elif isinstance(inv_body.get("inventory"), dict):
+                        inv_records = [inv_body["inventory"]]
+                    elif isinstance(inv_body.get("inventory"), list):
+                        inv_records = inv_body["inventory"]
                     else:
                         inv_records = [inv_body]
                 for inv in inv_records:
-                    if isinstance(inv, dict):
-                        avail = (
-                            inv.get("availableQuantity")
-                            if "availableQuantity" in inv
-                            else inv.get("quantity")
-                            if "quantity" in inv
-                            else inv.get("totalQuantity")
+                    if not isinstance(inv, dict):
+                        continue
+                    stock_summary = (
+                        inv.get("stockSummary")
+                        if isinstance(inv.get("stockSummary"), dict)
+                        else {}
+                    )
+                    avail = None
+                    for candidate in (
+                        inv.get("availableQuantity"),
+                        stock_summary.get("availableQuantity"),
+                        inv.get("quantity"),
+                        stock_summary.get("quantity"),
+                        inv.get("totalQuantity"),
+                        stock_summary.get("totalQuantity"),
+                    ):
+                        if isinstance(candidate, (int, float)) and not isinstance(
+                            candidate, bool
+                        ):
+                            avail = candidate
+                            break
+
+                    if avail is not None:
+                        entry["stock"] = avail
+                        entry["availableStock"] = avail
+
+                    total_qty = None
+                    for candidate in (
+                        inv.get("totalQuantity"),
+                        stock_summary.get("totalQuantity"),
+                        inv.get("quantity"),
+                        stock_summary.get("quantity"),
+                    ):
+                        if isinstance(candidate, (int, float)) and not isinstance(
+                            candidate, bool
+                        ):
+                            total_qty = candidate
+                            break
+
+                    if total_qty is not None:
+                        entry["totalStock"] = total_qty
+
+                    status_meta = (
+                        inv.get("status")
+                        if isinstance(inv.get("status"), dict)
+                        else {}
+                    )
+                    if "isLowStock" in status_meta:
+                        entry["isLowStock"] = bool(status_meta.get("isLowStock"))
+                    if "lowStockThreshold" in status_meta:
+                        entry["lowStockThreshold"] = status_meta.get(
+                            "lowStockThreshold"
                         )
-                        if (
-                            isinstance(avail, (int, float))
-                            and not isinstance(avail, bool)
+
+                    prod_meta = (
+                        inv.get("product")
+                        if isinstance(inv.get("product"), dict)
+                        else {}
+                    )
+                    pricing_meta = (
+                        inv.get("pricingSummary")
+                        if isinstance(inv.get("pricingSummary"), dict)
+                        else {}
+                    )
+                    if entry.get("sellingPrice") is None:
+                        p_price = (
+                            prod_meta.get("sellingPrice")
+                            or prod_meta.get("mrp")
+                            or pricing_meta.get("averageSellingPrice")
+                        )
+                        if isinstance(p_price, (int, float)) and not isinstance(
+                            p_price, bool
                         ):
-                            entry["stock"] = avail
-                        if (
-                            entry.get("sellingPrice") is None
-                            and isinstance(inv.get("product"), dict)
-                        ):
-                            prod_meta = inv["product"]
-                            p_price = (
-                                prod_meta.get("sellingPrice")
-                                or prod_meta.get("mrp")
-                            )
-                            if (
-                                isinstance(p_price, (int, float))
-                                and not isinstance(p_price, bool)
-                            ):
-                                entry["sellingPrice"] = p_price
-                        break
+                            entry["sellingPrice"] = p_price
+                    break
             except Exception:
                 pass
 
@@ -1123,16 +1182,38 @@ async def stock_items(
     for item in raw_items[:30]:
         if not isinstance(item, dict):
             continue
+        stock_summary = (
+            item.get("stockSummary")
+            if isinstance(item.get("stockSummary"), dict)
+            else {}
+        )
+        avail = None
+        for candidate in (
+            item.get("availableQuantity"),
+            stock_summary.get("availableQuantity"),
+            item.get("quantity"),
+            stock_summary.get("quantity"),
+            item.get("totalQuantity"),
+            stock_summary.get("totalQuantity"),
+            item.get("stock"),
+        ):
+            if isinstance(candidate, (int, float)) and not isinstance(
+                candidate, bool
+            ):
+                avail = candidate
+                break
+
         items.append(
             {
-                "id": str(item.get("id") or item.get("_id") or ""),
+                "id": str(
+                    item.get("id")
+                    or item.get("_id")
+                    or item.get("productId")
+                    or ""
+                ),
                 "name": item.get("name") or item.get("productName"),
                 "sku": item.get("sku"),
-                "stock": (
-                    item.get("quantity")
-                    or item.get("availableQuantity")
-                    or item.get("stock")
-                ),
+                "stock": avail,
                 "status": item.get("stockStatus") or item.get("status"),
                 "sellingPrice": item.get("sellingPrice") or item.get("price"),
                 "purchasePrice": (
