@@ -72,3 +72,26 @@ def resolve_expense_date(raw_date: str | None, context_text: str = "") -> str:
 
     # 3. Default to today
     return today_str
+
+
+def format_iso_to_ist(val: object) -> str:
+    """Convert an ISO datetime string or datetime object to an IST formatted string."""
+    if not val:
+        return ""
+    if isinstance(val, str):
+        try:
+            iso = val.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(iso)
+            if not dt.tzinfo:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(IST).strftime("%Y-%m-%d %I:%M %p IST")
+        except Exception:
+            return val
+    if isinstance(val, datetime):
+        dt = (
+            val.astimezone(IST)
+            if val.tzinfo
+            else val.replace(tzinfo=timezone.utc).astimezone(IST)
+        )
+        return dt.strftime("%Y-%m-%d %I:%M %p IST")
+    return str(val)

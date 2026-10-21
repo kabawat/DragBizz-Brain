@@ -5,7 +5,7 @@ import re
 from datetime import date
 from typing import Any
 
-from app.core.dates import current_ist_date_str
+from app.core.dates import current_ist_date_str, format_iso_to_ist
 from app.insights import (
     calculate_inventory_velocity,
     calculate_payment_mix,
@@ -1276,7 +1276,9 @@ async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> Tool
                 "id": str(inv.get("id") or inv.get("_id") or ""),
                 "invoiceNumber": inv.get("invoiceNumber"),
                 "customer": cust_info,
-                "invoiceDate": inv.get("invoiceDate") or inv.get("createdAt"),
+                "invoiceDate": format_iso_to_ist(
+                    inv.get("invoiceDate") or inv.get("createdAt")
+                ),
                 "totalAmount": (
                     inv.get("grandTotal") or inv.get("totalAmount") or inv.get("total")
                 ),
@@ -1407,7 +1409,7 @@ async def list_expenses(arguments: dict[str, Any], context: ToolContext) -> Tool
                 "category": exp.get("category"),
                 "amount": exp.get("amount"),
                 "paymentMode": exp.get("paymentMode"),
-                "date": exp.get("date") or exp.get("createdAt"),
+                "date": format_iso_to_ist(exp.get("date") or exp.get("createdAt")),
                 "status": exp.get("status"),
             }
         )
@@ -1632,7 +1634,7 @@ async def list_purchase_orders(
                 "id": str(po.get("id") or po.get("_id") or ""),
                 "poNumber": po.get("poNumber"),
                 "supplier": supp_info,
-                "poDate": po.get("poDate") or po.get("createdAt"),
+                "poDate": format_iso_to_ist(po.get("poDate") or po.get("createdAt")),
                 "status": po.get("status"),
                 "approvalStatus": po.get("approvalStatus"),
                 "totalAmount": po.get("totalAmount") or po.get("grandTotal"),
@@ -1797,7 +1799,9 @@ async def list_sales_orders(
                 "id": str(order.get("id") or order.get("_id") or ""),
                 "orderNumber": (order.get("orderNumber") or order.get("publicId")),
                 "customer": cust_info,
-                "orderDate": order.get("orderDate") or order.get("createdAt"),
+                "orderDate": format_iso_to_ist(
+                    order.get("orderDate") or order.get("createdAt")
+                ),
                 "status": order.get("status"),
                 "paymentStatus": order.get("paymentStatus"),
                 "totalAmount": order.get("totalAmount"),
