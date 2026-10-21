@@ -369,8 +369,10 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="list_invoices",
         description=(
-            "List recent invoices/bills with status, customer, date, and grand total. "
-            "Capped at 30 invoices."
+            "List invoices/bills with invoiceNumber, customer, date/time (IST), "
+            "totalAmount, totalProfit, and paymentStatus. Use startDate and endDate "
+            "(YYYY-MM-DD) to get invoices for a specific calendar day (e.g. yesterday 'kal', "
+            "today 'aaj', or past dates)."
         ),
         risk=ToolRisk.READ,
         allows_parallel=True,
@@ -686,8 +688,9 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="invoice_detailed_analytics",
         description=(
-            "Detailed periodic invoice/sales analytics (revenue trend, profit, "
-            "sales volume) over 1, 7, 15, or 30 days."
+            "Macro trend analytics (revenue trend, growth rates, status breakdown) "
+            "over a multi-day window (7, 15, or 30 days). For specific day sales or "
+            "bills (e.g. kal, aaj, or a specific date), use list_invoices or today_sale instead."
         ),
         risk=ToolRisk.READ,
         allows_parallel=True,

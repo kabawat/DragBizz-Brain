@@ -1282,6 +1282,7 @@ async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> Tool
                 "totalAmount": (
                     inv.get("grandTotal") or inv.get("totalAmount") or inv.get("total")
                 ),
+                "totalProfit": inv.get("totalProfit") or 0,
                 "paymentStatus": inv.get("paymentStatus"),
                 "invoiceStatus": inv.get("invoiceStatus") or inv.get("status"),
                 "itemCount": (
