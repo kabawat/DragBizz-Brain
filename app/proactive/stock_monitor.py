@@ -138,7 +138,7 @@ class LowStockMonitor:
             ):
                 threshold = float(raw_thresh)
 
-            # If stock info missing in payload, query authoritative Core gRPC or Retailer API
+            # Resolve missing values from authoritative Core gRPC or Retailer data.
             if available_qty is None or threshold is None:
                 if self._grpc_client is not None:
                     try:
@@ -151,12 +151,19 @@ class LowStockMonitor:
                                     threshold = it.get("low_stock_threshold")
                                 break
                     except Exception as exc:
-                        logger.debug("Could not fetch gRPC stock for product %s: %s", product_id, exc)
+                        logger.debug(
+                            "Could not fetch gRPC stock for product %s: %s",
+                            product_id,
+                            exc,
+                        )
 
                 if (
                     (available_qty is None or threshold is None)
                     and self._retailer
-                    and (access_token or getattr(self._retailer, "_service_secret", None))
+                    and (
+                        access_token
+                        or getattr(self._retailer, "_service_secret", None)
+                    )
                 ):
                     try:
                         inv_res = await self._retailer.get_inventory(
@@ -204,9 +211,9 @@ class LowStockMonitor:
                                     available_qty = float(cand)
 
                             if threshold is None:
-                                cand_t = status_doc.get("lowStockThreshold") or inv_doc.get(
+                                cand_t = status_doc.get(
                                     "lowStockThreshold"
-                                )
+                                ) or inv_doc.get("lowStockThreshold")
                                 if isinstance(cand_t, (int, float)) and not isinstance(
                                     cand_t, bool
                                 ):
@@ -327,6 +334,8 @@ class LowStockMonitor:
         access_token: str | None = None,
     ) -> list[str]:
         """Process stock.intake event to record stock recovery for replenished items."""
+        if not self.enabled:
+            return []
         store_id = event.store_id
         if not store_id:
             return []

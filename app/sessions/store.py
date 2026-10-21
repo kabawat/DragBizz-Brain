@@ -44,6 +44,10 @@ class _SessionRecord:
 
 
 class SessionStore(Protocol):
+    async def clear_session(
+        self, *, session_id: str, user_id: str, store_id: str
+    ) -> None: ...
+
     async def load_history(
         self, *, session_id: str, user_id: str, store_id: str
     ) -> list[SessionTurn]: ...
@@ -88,6 +92,15 @@ class InMemorySessionStore:
         self._assert_owner(record, user_id=user_id, store_id=store_id)
         self._touch(record)
         return list(record.turns)
+
+    async def clear_session(
+        self, *, session_id: str, user_id: str, store_id: str
+    ) -> None:
+        record = self._get_active(session_id)
+        if record is None:
+            return
+        self._assert_owner(record, user_id=user_id, store_id=store_id)
+        self._sessions.pop(session_id, None)
 
     async def append_turn(
         self,
@@ -167,6 +180,18 @@ class RedisSessionStore:
         self._assert_owner(record, user_id=user_id, store_id=store_id)
         await self._touch(session_id)
         return list(record.turns)
+
+    async def clear_session(
+        self, *, session_id: str, user_id: str, store_id: str
+    ) -> None:
+        record = await self._load(session_id)
+        if record is None:
+            return
+        self._assert_owner(record, user_id=user_id, store_id=store_id)
+        try:
+            await self._redis.delete(self._key(session_id))
+        except Exception:
+            logger.warning("Session reset failed", exc_info=True)
 
     async def append_turn(
         self,

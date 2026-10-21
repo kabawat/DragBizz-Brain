@@ -1,0 +1,11 @@
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/certs/**
+**/.git/**
+**/.venv/**
+**/__pycache__/**
+**/.pytest_cache/**

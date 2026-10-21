@@ -740,6 +740,23 @@ def test_compile_store_brief_genuine_zeros() -> None:
     assert brief["coverage"]["failed_sources"] == []
 
 
+def test_store_brief_does_not_infer_total_skus_from_low_stock_items() -> None:
+    stock = {
+        "lowStockItems": [
+            {"productId": "p1", "availableQuantity": 2},
+            {"productId": "p2", "availableQuantity": 0},
+        ],
+        "lowStockCount": 2,
+        "outOfStockCount": 1,
+    }
+    brief = compile_store_brief(
+        None, stock, None, None, date_str="2026-10-20", is_complete=False
+    )
+    assert brief["inventoryHealth"]["totalSkus"] is None
+    assert brief["inventoryHealth"]["lowStockCount"] == 2
+    assert brief["inventoryHealth"]["outOfStockCount"] == 1
+
+
 # ---------------------------------------------------------------------------
 # 13. Quality Gate: Store Brief Handler Upstream Failure & Timeout
 # ---------------------------------------------------------------------------

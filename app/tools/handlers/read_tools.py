@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import re
+from datetime import date
 from typing import Any
 
 from app.core.dates import current_ist_date_str
@@ -267,6 +268,7 @@ async def search_customer(
             query=effective_query,
             include_addresses="address" in slices,
             include_account="khata" in slices or "ledger" in slices,
+            limit=_safe_limit(arguments.get("limit")),
         )
     except RetailerHttpError as exc:
         return _failure("search_customer", exc)
@@ -280,6 +282,7 @@ async def search_customer(
                     query=clean_name,
                     include_addresses="address" in slices,
                     include_account="khata" in slices or "ledger" in slices,
+                    limit=_safe_limit(arguments.get("limit")),
                 )
     ranked_items, match_by = _rank_customers(
         [item for item in raw_items if isinstance(item, dict)],
@@ -307,6 +310,12 @@ _CUSTOMER_SEARCH_LIMIT = 100
 _CUSTOMER_PAGE_CAP = 5
 
 
+def _safe_limit(value: Any, default: int = 20) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return default
+    return min(value, 50)
+
+
 def _customer_cursor(body: dict[str, Any]) -> str | None:
     meta = body.get("meta")
     pagination = meta.get("pagination") if isinstance(meta, dict) else None
@@ -330,6 +339,7 @@ async def _collect_customers(
     query: str,
     include_account: bool,
     include_addresses: bool = False,
+    limit: int = 50,
 ) -> list[dict[str, Any]]:
     """Page the name/email search so a later name is not hidden by emails."""
     collected: list[dict[str, Any]] = []
@@ -340,7 +350,7 @@ async def _collect_customers(
             access_token=context.access_token,
             store_id=context.store_id,
             query=query,
-            limit=_CUSTOMER_SEARCH_LIMIT,
+            limit=min(limit, 50),
             include_addresses=include_addresses,
             include_account=include_account,
             next_cursor=cursor,
@@ -349,6 +359,8 @@ async def _collect_customers(
         page = body.get("data") or []
         if isinstance(page, list):
             collected.extend(item for item in page if isinstance(item, dict))
+            if len(collected) >= limit:
+                return collected[:limit]
         nxt = _customer_cursor(body)
         if not nxt or nxt in seen:
             break
@@ -412,8 +424,8 @@ async def customer_dossier(
     return ToolResult(tool="customer_dossier", success=True, data=data)
 
 
-_TOP_CUSTOMER_PAGE = 100
-_TOP_CUSTOMER_PAGES = 5
+_TOP_CUSTOMER_PAGE = 50
+_TOP_CUSTOMER_PAGES = 1
 
 
 async def top_customers(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
@@ -429,7 +441,7 @@ async def top_customers(arguments: dict[str, Any], context: ToolContext) -> Tool
             response = await context.retailer.list_invoices(
                 access_token=context.access_token,
                 store_id=context.store_id,
-                limit=_TOP_CUSTOMER_PAGE,
+                limit=min(_TOP_CUSTOMER_PAGE, 50),
                 next_cursor=cursor,
             )
             body = response.body if isinstance(response.body, dict) else {}
@@ -863,7 +875,7 @@ async def get_customer_ledger(
             },
         )
     limit = arguments.get("limit")
-    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 100 else 50
+    limit_val = min(_safe_limit(limit, 50), 50)
     try:
         response = await context.retailer.get_customer_ledger(
             access_token=context.access_token,
@@ -893,7 +905,7 @@ async def list_customer_accounts(
     arguments: dict[str, Any], context: ToolContext
 ) -> ToolResult:
     limit = arguments.get("limit")
-    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 100 else 20
+    limit_val = min(_safe_limit(limit), 50)
     customer_id = arguments.get("customerId")
     has_due = arguments.get("hasDue")
     try:
@@ -947,7 +959,7 @@ async def list_payment_reminders(
     arguments: dict[str, Any], context: ToolContext
 ) -> ToolResult:
     limit = arguments.get("limit")
-    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 100 else 20
+    limit_val = min(_safe_limit(limit), 50)
     customer_id = arguments.get("customerId")
     try:
         response = await context.retailer.list_payment_reminders(
@@ -1088,7 +1100,7 @@ async def list_stores(arguments: dict[str, Any], context: ToolContext) -> ToolRe
     active_name: str | None = None
     active_category: str | None = None
     active_sub_categories: list[str] = []
-    for item in raw_items:
+    for item in raw_items[:50]:
         if not isinstance(item, dict):
             continue
         store_id = str(item.get("id") or item.get("_id") or "").strip()
@@ -1202,12 +1214,16 @@ async def stock_items(arguments: dict[str, Any], context: ToolContext) -> ToolRe
 
 async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     limit = arguments.get("limit")
-    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 30 else 20
+    limit_val = min(_safe_limit(limit), 30)
     invoice_status = arguments.get("invoiceStatus")
     payment_status = arguments.get("paymentStatus")
     customer_id = arguments.get("customerId")
     start_date = arguments.get("startDate")
     end_date = arguments.get("endDate")
+
+    date_error = _validate_date_range(start_date, end_date)
+    if date_error:
+        return ToolResult(tool="list_invoices", success=False, data=date_error)
 
     try:
         response = await context.retailer.list_invoices(
@@ -1285,6 +1301,29 @@ async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> Tool
     )
 
 
+def _validate_date_range(start: Any, end: Any) -> dict[str, str] | None:
+    """Validate optional ISO date filters before issuing a retailer request."""
+    parsed: dict[str, date] = {}
+    for label, value in (("start", start), ("end", end)):
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            return {"error": f"Invalid {label} date; use YYYY-MM-DD"}
+        try:
+            parsed[label] = date.fromisoformat(value)
+        except ValueError:
+            return {"error": f"Invalid {label} date; use YYYY-MM-DD"}
+
+    start_day = parsed.get("start")
+    end_day = parsed.get("end")
+    if start_day and end_day:
+        if start_day > end_day:
+            return {"error": "Start date must be less than or equal to end date"}
+        if (end_day - start_day).days > 90:
+            return {"error": "Date range exceeds maximum allowed limit of 90 days"}
+    return None
+
+
 async def expense_summary(
     arguments: dict[str, Any], context: ToolContext
 ) -> ToolResult:
@@ -1325,10 +1364,14 @@ async def expense_summary(
 
 async def list_expenses(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     limit = arguments.get("limit")
-    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 20 else 20
+    limit_val = min(_safe_limit(limit), 20)
     category = arguments.get("category")
     start_date = arguments.get("startDate")
     end_date = arguments.get("endDate")
+
+    date_error = _validate_date_range(start_date, end_date)
+    if date_error:
+        return ToolResult(tool="list_expenses", success=False, data=date_error)
 
     try:
         response = await context.retailer.get_expenses(
@@ -1415,7 +1458,7 @@ async def search_supplier(
 ) -> ToolResult:
     query = arguments.get("query", "").strip()
     limit = arguments.get("limit")
-    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 20 else 10
+    limit_val = min(_safe_limit(limit, 10), 20)
 
     try:
         response = await context.retailer.get_suppliers(
@@ -1543,7 +1586,7 @@ async def list_purchase_orders(
     arguments: dict[str, Any], context: ToolContext
 ) -> ToolResult:
     limit = arguments.get("limit")
-    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 20 else 20
+    limit_val = min(_safe_limit(limit), 20)
     status = arguments.get("status")
     supplier_id = arguments.get("supplierId")
 
@@ -1707,7 +1750,7 @@ async def list_sales_orders(
     arguments: dict[str, Any], context: ToolContext
 ) -> ToolResult:
     limit = arguments.get("limit")
-    limit_val = limit if isinstance(limit, int) and 1 <= limit <= 20 else 20
+    limit_val = min(_safe_limit(limit), 20)
     status = arguments.get("status")
     customer_id = arguments.get("customerId")
 
@@ -1877,7 +1920,7 @@ async def _fetch_invoices_window(
         resp = await context.retailer.list_invoices(
             access_token=context.access_token,
             store_id=context.store_id,
-            limit=100,
+            limit=50,
             start_date=start_date,
             end_date=end_date,
             include_items=include_items,

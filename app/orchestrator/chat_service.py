@@ -17,6 +17,7 @@ from app.guards.output_guard import (
     OutputGuard,
     _normalize_amount,
 )
+from app.guards.prompt_abuse import PromptAbuseLimiter
 from app.limits.request_budget import BudgetExceeded, RequestBudget
 from app.observability.audit_trail import AuditTrail
 from app.observability.events import CHAT_REQUEST, LIMIT_BUDGET, emit_event
@@ -124,6 +125,7 @@ class ChatService:
         rag_cache: RagCache | None = None,
         input_guard: InputGuard | None = None,
         output_guard: OutputGuard | None = None,
+        prompt_abuse_limiter: PromptAbuseLimiter | None = None,
         session_store: SessionStore | None = None,
         history_store: DurableHistoryStore | None = None,
         confirmation_store: ConfirmationStore | None = None,
@@ -141,6 +143,7 @@ class ChatService:
         self._rag_cache: RagCache = rag_cache or NoOpRagCache()
         self._input_guard = input_guard or InputGuard()
         self._output_guard = output_guard or OutputGuard()
+        self._prompt_abuse = prompt_abuse_limiter or PromptAbuseLimiter()
         self._sessions = session_store or InMemorySessionStore(
             ttl_seconds=settings.session.ttl_seconds,
             max_turns=settings.session.max_turns,
@@ -170,8 +173,9 @@ class ChatService:
         user_id = str(user["sub"])
         agency_id = str(user["agencyId"]).strip() if user.get("agencyId") else None
         tenant_id = str(user["tenant"]).strip().lower() if user.get("tenant") else None
-        await self._enforce_usage_cap(store_id)
-        refusal = self._guard_input(body)
+        refusal = await self._guard_input(
+            body, user_id=user_id, store_id=store_id
+        )
         if refusal is not None:
             return ChatResponse(
                 message=refusal,
@@ -181,6 +185,7 @@ class ChatService:
                 provider="input_guard",
                 model="",
             )
+        await self._enforce_usage_cap(store_id)
 
         user_name = str(user.get("name") or user.get("given_name") or "")
         fast_conv = try_fast_conversational_turn(
@@ -389,6 +394,7 @@ class ChatService:
             prior_turns=prior_turns,
         )
         if context.docs_unavailable:
+            await self._prompt_abuse.clear(user_id=user_id, store_id=store_id)
             message = get_docs_unavailable_message(body.language)
             latency_ms = round((time.perf_counter() - started) * 1000, 1)
             if self._metrics is not None:
@@ -459,7 +465,6 @@ class ChatService:
                     call_type="initial",
                 ):
                     collected_chunks.append(chunk)
-                    await emit("assistant.delta", {"text": chunk})
                 generation = GenerationResponse(
                     provider="stream",
                     model="",
@@ -507,6 +512,7 @@ class ChatService:
                 self._metrics.record_cancel()
             raise
         except BudgetExceeded:
+            await self._prompt_abuse.clear(user_id=user_id, store_id=store_id)
             if self._metrics is not None:
                 self._metrics.record_budget_exceeded()
             emit_event(LIMIT_BUDGET)
@@ -522,7 +528,24 @@ class ChatService:
                 provider="budget",
                 model="",
             )
-        except AppError:
+        except AppError as exc:
+            if exc.code in {"TOOL_ARGS_INVALID", "TOOL_NOT_ALLOWED"}:
+                strikes = await self._prompt_abuse.record_violation(
+                    user_id=user_id, store_id=store_id
+                )
+                if strikes >= self._prompt_abuse.threshold:
+                    await self._sessions.clear_session(
+                        session_id=body.session_id,
+                        user_id=user_id,
+                        store_id=store_id,
+                    )
+                    return self._prompt_lock_response(
+                        body=body,
+                        user_id=user_id,
+                        request_id=request_id,
+                    )
+            else:
+                await self._prompt_abuse.clear(user_id=user_id, store_id=store_id)
             logger.exception("Chat generation failed; returning fallback")
             message = get_fallback_message(body.language)
             latency_ms = round((time.perf_counter() - started) * 1000, 1)
@@ -574,6 +597,9 @@ class ChatService:
             tool_results=outcome.all_results,
             language=body.language,
             prior_numbers=prior_numbers,
+            protected_prompt=(
+                context.messages[0].content if context.messages else None
+            ),
         )
         if not message.strip():
             message = get_fallback_message(body.language)
@@ -597,6 +623,7 @@ class ChatService:
             assistant_text=message,
             tool_results=outcome.all_results,
         )
+        await self._prompt_abuse.clear(user_id=user_id, store_id=store_id)
 
         # Prefer tracker totals when present (includes retries).
         if token_usage.model_calls:
@@ -762,6 +789,7 @@ class ChatService:
             assistant_text=guarded,
             tool_results=tool_results,
         )
+        await self._prompt_abuse.clear(user_id=user_id, store_id=store_id)
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         if self._metrics is not None:
             self._metrics.record_chat(latency_ms, error=False)
@@ -789,23 +817,63 @@ class ChatService:
             pending_confirmation=pending_confirmation,
         )
 
-    def _guard_input(self, body: ChatRequest) -> str | None:
+    async def _guard_input(
+        self, body: ChatRequest, *, user_id: str, store_id: str
+    ) -> str | None:
+        if await self._prompt_abuse.is_locked(user_id=user_id, store_id=store_id):
+            return (
+                "Chat is temporarily paused after repeated invalid prompts. "
+                "Please try again in a few minutes."
+            )
         mode = self._settings.guards.input_mode
-        if mode == "off":
-            return None
         decision = self._input_guard.evaluate(body.text)
         if decision.allowed:
             return None
-        # Log category/match only, not full question.
+        # Log the classification only; do not copy attacker text into logs.
         logger.warning(
-            "Input guard flagged question: category=%s matched=%r mode=%s",
+            "Input guard flagged question: category=%s mode=%s",
             decision.category,
-            (decision.matched or "")[:80],
             mode,
         )
-        if mode != "enforce":
+        must_block = decision.category == "PROMPT_INJECTION" or mode == "enforce"
+        if not must_block or (
+            mode == "off" and decision.category != "PROMPT_INJECTION"
+        ):
             return None
+        strikes = await self._prompt_abuse.record_violation(
+            user_id=user_id, store_id=store_id
+        )
+        if strikes >= self._prompt_abuse.threshold:
+            await self._sessions.clear_session(
+                session_id=body.session_id,
+                user_id=user_id,
+                store_id=store_id,
+            )
+            return (
+                "Chat is temporarily paused after repeated invalid prompts. "
+                "Please try again in a few minutes."
+            )
+        if decision.category == "PROMPT_INJECTION":
+            return (
+                "I can only assist with store operations, sales, stock, "
+                "and invoices."
+            )
         return get_refusal_message(body.language)
+
+    def _prompt_lock_response(
+        self, *, body: ChatRequest, user_id: str, request_id: str
+    ) -> ChatResponse:
+        return ChatResponse(
+            message=(
+                "Chat is temporarily paused after repeated invalid prompts. "
+                "Please try again in a few minutes."
+            ),
+            session_id=body.session_id,
+            request_id=request_id,
+            user_id=user_id,
+            provider="input_guard",
+            model="",
+        )
 
     def _guard_output(
         self,
@@ -814,12 +882,16 @@ class ChatService:
         tool_results: list[Any],
         language: str,
         prior_numbers: set[str] | None = None,
+        protected_prompt: str | None = None,
     ) -> str:
         mode = self._settings.guards.output_mode
-        if mode == "off" or not message:
+        if not message:
             return message
         decision = self._output_guard.evaluate(
-            message, tool_results, prior_numbers=prior_numbers
+            message,
+            tool_results,
+            prior_numbers=prior_numbers,
+            protected_prompt=protected_prompt,
         )
         if decision.allowed:
             return message
@@ -830,7 +902,14 @@ class ChatService:
             (decision.matched or "")[:80],
             mode,
         )
-        if mode != "enforce":
+        hard_block = decision.category in {
+            "SECRET_LEAK",
+            "INTERNAL_DISCLOSURE",
+            "RAW_JSON",
+        }
+        if mode == "off" and not hard_block:
+            return message
+        if mode != "enforce" and not hard_block:
             return message
         if decision.category == "SECRET_LEAK":
             # Scrub leaked secret; keep the rest.

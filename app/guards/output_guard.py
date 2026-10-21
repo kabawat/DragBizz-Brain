@@ -28,6 +28,19 @@ _SECRET_PATTERNS = (
 
 _SECRET_RE = re.compile("|".join(_SECRET_PATTERNS), re.IGNORECASE)
 
+_INTERNAL_DISCLOSURE_PATTERNS = (
+    r"\bsystem\s+prompt\b",
+    r"\bdeveloper\s+(?:prompt|instructions?|message)\b",
+    r"\bhidden\s+(?:prompt|instructions?)\b",
+    r"\binitialization\s+(?:text|instructions?)\b",
+    r"\bsecurity\s+and\s+grounding\s+rules\b",
+    r"\b(?:traceback \(most recent call last\)|stack trace)\b",
+    r"^\s*File \"[^\"]+\", line \d+",
+)
+_INTERNAL_DISCLOSURE_RE = re.compile(
+    "|".join(_INTERNAL_DISCLOSURE_PATTERNS), re.IGNORECASE | re.MULTILINE
+)
+
 # ₹1,200 / Rs. 1200.50 / 1200 rupees / 1,200 rs
 # "rs"/"inr" must not be the tail of a word ("ledgers.") and the amount must
 # be on the same line — otherwise numbered lists after a word ending in "rs"
@@ -73,6 +86,7 @@ class OutputGuard:
         text: str,
         tool_results: list[ToolResult],
         prior_numbers: set[str] | None = None,
+        protected_prompt: str | None = None,
     ) -> OutputGuardDecision:
         secret = _SECRET_RE.search(text)
         if secret:
@@ -81,6 +95,23 @@ class OutputGuard:
                 category="SECRET_LEAK",
                 matched=secret.group(0),
                 sanitized_text=_SECRET_RE.sub(_REDACTED, text),
+            )
+
+        internal = _INTERNAL_DISCLOSURE_RE.search(text)
+        if internal or _contains_prompt_excerpt(text, protected_prompt):
+            return OutputGuardDecision(
+                allowed=False,
+                category="INTERNAL_DISCLOSURE",
+                matched=internal.group(0) if internal else "system prompt excerpt",
+                sanitized_text="",
+            )
+
+        if _is_raw_json_document(text):
+            return OutputGuardDecision(
+                allowed=False,
+                category="RAW_JSON",
+                matched="JSON document",
+                sanitized_text="",
             )
 
         unsupported = self._first_unsupported_amount(
@@ -115,3 +146,29 @@ class OutputGuard:
             if normalized not in known:
                 return raw
         return None
+
+
+def _is_raw_json_document(text: str) -> bool:
+    """Reject a response that is itself a raw JSON object/array."""
+    candidate = text.strip()
+    if candidate.startswith("```") and candidate.endswith("```"):
+        candidate = candidate[3:-3].strip()
+        if candidate[:4].lower() == "json":
+            candidate = candidate[4:].strip()
+    if not candidate.startswith(("{", "[")):
+        return False
+    try:
+        parsed = json.loads(candidate)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(parsed, (dict, list))
+
+
+def _contains_prompt_excerpt(text: str, protected_prompt: str | None) -> bool:
+    if not protected_prompt:
+        return False
+    normalized_text = " ".join(text.split()).casefold()
+    prompt_lines = (
+        " ".join(line.split()).casefold() for line in protected_prompt.splitlines()
+    )
+    return any(len(line) >= 80 and line in normalized_text for line in prompt_lines)

@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.confirmations import InMemoryConfirmationStore, RedisConfirmationStore
 from app.events import DeadLetterStore, RedisStreamConsumer
 from app.executors.tool_executor import ToolExecutor
+from app.guards import PromptAbuseLimiter
 from app.idempotency import InMemoryIdempotencyStore, RedisIdempotencyStore
 from app.insights import build_insight_cache
 from app.integrations.retailer_client import RetailerClient
@@ -283,6 +284,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         retriever=retriever,
         rag_cache=rag_cache,
         session_store=session_store,
+        prompt_abuse_limiter=PromptAbuseLimiter(redis_client),
         history_store=history_store,
         confirmation_store=confirmation_store,
         usage_store=usage_store,
@@ -304,8 +306,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     core_grpc_client = CoreGrpcClient(
-        target_address=settings.services.retailer_grpc_address,
+        target_address=(
+            f"{settings.services.retailer_grpc_host}:"
+            f"{settings.services.retailer_intelligence_grpc_port}"
+        ),
         timeout=settings.services.request_timeout_seconds,
+        root_ca_path=settings.services.retailer_intelligence_grpc_ca_path,
+        client_cert_path=settings.services.retailer_intelligence_grpc_cert_path,
+        client_key_path=settings.services.retailer_intelligence_grpc_key_path,
     )
     app.state.core_grpc_client = core_grpc_client
 

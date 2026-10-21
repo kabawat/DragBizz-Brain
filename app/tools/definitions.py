@@ -103,6 +103,12 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                     "maxLength": 200,
                     "description": "Customer name, phone, or email search text",
                 },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "description": "Maximum customers to search (default 20, max 50)",
+                },
             },
             "required": ["storeId", "query"],
         },
@@ -133,8 +139,7 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="top_customers",
         description=(
-            "Customers who spent the most, summed from recent released "
-            "bills. Not all-time if the store has more than 500 bills."
+            "Customers who spent the most in up to 50 recent released bills."
         ),
         risk=ToolRisk.READ,
         allows_parallel=True,
@@ -390,17 +395,19 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 },
                 "startDate": {
                     "type": "string",
+                    "format": "date",
                     "description": "Start date filter (YYYY-MM-DD)",
                 },
                 "endDate": {
                     "type": "string",
+                    "format": "date",
                     "description": "End date filter (YYYY-MM-DD)",
                 },
                 "limit": {
                     "type": "integer",
                     "minimum": 1,
-                    "maximum": 30,
-                    "description": "Max invoices to return (default 20, max 30)",
+                    "maximum": 50,
+                    "description": "Max invoices to return (default 20, capped at 50)",
                 },
             },
             "required": ["storeId"],
@@ -795,6 +802,8 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 "storeId": _STORE_ID_PROP,
                 "date": {
                     "type": "string",
+                    "format": "date",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
                     "description": (
                         "Optional date in YYYY-MM-DD format (defaults to today)"
                     ),
@@ -861,6 +870,7 @@ _RAW_WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 "phone": _PHONE_PROP,
                 "email": {
                     "type": "string",
+                    "format": "email",
                     "minLength": 3,
                     "maxLength": 200,
                     "description": "Customer email (required if phone omitted)",
@@ -895,6 +905,7 @@ _RAW_WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 "phone": _PHONE_PROP,
                 "email": {
                     "type": "string",
+                    "format": "email",
                     "minLength": 3,
                     "maxLength": 200,
                     "description": "Customer email (required if phone omitted)",
@@ -1040,6 +1051,8 @@ _RAW_WRITE_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                 },
                 "date": {
                     "type": "string",
+                    "format": "date",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
                     "description": "Optional updated ISO date (YYYY-MM-DD)",
                 },
                 "paymentMode": {

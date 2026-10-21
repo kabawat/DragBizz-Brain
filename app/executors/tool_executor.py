@@ -122,7 +122,7 @@ class ToolExecutor:
             question=question,
             insight_cache=self._insight_cache,
         )
-        timeout = tool_timeout_seconds if tool_timeout_seconds is not None else 10.0
+        timeout = min(tool_timeout_seconds or 5.0, 5.0)
 
         async def _one(call: ToolCall) -> ToolResult:
             try:

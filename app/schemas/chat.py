@@ -77,6 +77,13 @@ class ConfirmRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class PublicToolCall(BaseModel):
+    """Safe tool metadata returned to clients without model arguments."""
+
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=64)
+
+
 class ChatResponse(BaseModel):
     message: str
     session_id: str = Field(serialization_alias="sessionId")
@@ -84,7 +91,7 @@ class ChatResponse(BaseModel):
     user_id: str = Field(serialization_alias="userId")
     provider: str
     model: str
-    tool_calls: list[ToolCall] = Field(
+    tool_calls: list[PublicToolCall] = Field(
         default_factory=list, serialization_alias="toolCalls"
     )
     tool_results: list[ToolResult] = Field(

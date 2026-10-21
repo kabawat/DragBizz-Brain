@@ -242,8 +242,6 @@ async def run_tool_loop(
             )
 
         if not tool_calls:
-            if round_index == 0 and emit is not None and generation.content:
-                await _emit(emit, "assistant.delta", {"text": generation.content})
             break
 
         # Guard: never re-execute a (tool, args) pair already run this
@@ -266,7 +264,6 @@ async def run_tool_loop(
                     round=round_index,
                 ):
                     collected.append(chunk)
-                    await _emit(emit, "assistant.delta", {"text": chunk})
                 generation = GenerationResponse(
                     provider=generations[0].provider if generations else "stream",
                     model=generations[0].model if generations else "",
@@ -616,7 +613,6 @@ async def run_tool_loop(
                     round=round_index + 1,
                 ):
                     collected.append(chunk)
-                    await _emit(emit, "assistant.delta", {"text": chunk})
                 generation = GenerationResponse(
                     provider=generations[0].provider if generations else "stream",
                     model=generations[0].model if generations else "",

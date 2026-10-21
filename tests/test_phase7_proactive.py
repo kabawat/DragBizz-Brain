@@ -494,7 +494,7 @@ async def test_business_day_boundaries_and_reporting_windows() -> None:
     assert brief_record is not None
     data = brief_record.data
     assert data["date"] == "2026-10-20"
-    assert data["coverage"]["window"] == "today"
+    assert data["coverage"]["window"] == "completed_business_day"
     assert data["coverage"]["date"] == "2026-10-20"
 
 
@@ -536,6 +536,29 @@ async def test_incomplete_insight_data_clearly_represented() -> None:
     assert "• Receivables: Data unavailable." in summary
     assert "• Expenses: Data unavailable." in summary
     assert "• Sales: ₹5000.00 revenue" in summary
+
+
+@pytest.mark.asyncio
+async def test_daily_brief_core_failure_is_retryable_and_not_marked_done() -> None:
+    class FailingCore:
+        def get_store_daily_summary(self, **_kwargs):
+            raise RuntimeError("temporary Core failure")
+
+        def get_store_stock_summary(self, **_kwargs):
+            raise RuntimeError("temporary Core failure")
+
+    store = InMemoryNotificationStore()
+    scheduler = DailyBriefingScheduler(
+        notification_store=store,
+        grpc_client=FailingCore(),
+        enabled=True,
+    )
+    with pytest.raises(RuntimeError, match="retry required"):
+        await scheduler.compile_brief_for_store(
+            STORE_A, date_str="2026-10-20"
+        )
+    assert not await scheduler.is_already_completed(STORE_A, "2026-10-20")
+    assert await store.get_notifications(STORE_A) == []
 
 
 # ---------------------------------------------------------------------------

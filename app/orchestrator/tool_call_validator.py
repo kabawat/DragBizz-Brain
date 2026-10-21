@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import math
+import re
 from collections.abc import Collection
 from typing import Any
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError, ValidationError
 
 from app.core.exceptions import AppError
 from app.schemas.tool import ToolCall, ToolDefinition
 from app.tools.registry import ToolRegistry
+
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_MAX_ARGUMENT_DEPTH = 12
+_MAX_ARGUMENT_STRING_LENGTH = 5_000
+_MAX_ARGUMENT_CONTAINER_ITEMS = 100
+_MAX_ARGUMENT_INTEGER = 10**15
 
 
 class ToolCallValidator:
@@ -33,6 +41,10 @@ class ToolCallValidator:
                 call.name, allowed_names=allowed_names
             )
             arguments = dict(call.arguments)
+            limit = arguments.get("limit")
+            if isinstance(limit, int) and not isinstance(limit, bool) and limit > 50:
+                arguments["limit"] = 50
+            self._validate_argument_values(arguments)
             self._validate_schema(definition, arguments)
             self._validate_store_id(
                 arguments,
@@ -91,7 +103,10 @@ class ToolCallValidator:
         self, definition: ToolDefinition, arguments: dict[str, Any]
     ) -> None:
         try:
-            validator = Draft202012Validator(definition.parameters)
+            validator = Draft202012Validator(
+                definition.parameters,
+                format_checker=FormatChecker(),
+            )
             validator.validate(arguments)
         except SchemaError as exc:
             raise AppError(
@@ -110,6 +125,65 @@ class ToolCallValidator:
                 status_code=400,
             ) from exc
 
+    def _validate_argument_values(self, value: Any, *, depth: int = 0) -> None:
+        """Bound and type-check decoded arguments before any tool can execute."""
+        if depth > _MAX_ARGUMENT_DEPTH:
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="Tool arguments exceed the maximum nesting depth",
+                status_code=400,
+            )
+        if isinstance(value, str):
+            if len(value) > _MAX_ARGUMENT_STRING_LENGTH:
+                raise AppError(
+                    code="TOOL_ARGS_INVALID",
+                    message="Tool argument text exceeds the maximum length",
+                    status_code=400,
+                )
+            if _CONTROL_CHAR_RE.search(value):
+                raise AppError(
+                    code="TOOL_ARGS_INVALID",
+                    message="Tool argument text contains invalid control characters",
+                    status_code=400,
+                )
+            return
+        if isinstance(value, float) and not math.isfinite(value):
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="Tool numeric arguments must be finite",
+                status_code=400,
+            )
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and abs(value) > _MAX_ARGUMENT_INTEGER
+        ):
+            raise AppError(
+                code="TOOL_ARGS_INVALID",
+                message="Tool integer argument exceeds the supported range",
+                status_code=400,
+            )
+        if isinstance(value, dict):
+            if len(value) > _MAX_ARGUMENT_CONTAINER_ITEMS or not all(
+                isinstance(key, str) for key in value
+            ):
+                raise AppError(
+                    code="TOOL_ARGS_INVALID",
+                    message="Tool argument object has invalid keys or is too large",
+                    status_code=400,
+                )
+            for item in value.values():
+                self._validate_argument_values(item, depth=depth + 1)
+            return
+        if isinstance(value, list):
+            if len(value) > _MAX_ARGUMENT_CONTAINER_ITEMS:
+                raise AppError(
+                    code="TOOL_ARGS_INVALID",
+                    message="Tool argument list is too large",
+                    status_code=400,
+                )
+            for item in value:
+                self._validate_argument_values(item, depth=depth + 1)
     def _validate_store_id(
         self,
         arguments: dict[str, Any],

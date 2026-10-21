@@ -20,6 +20,7 @@ def compile_store_brief(
     *,
     date_str: str,
     is_complete: bool = True,
+    reporting_window: str = "today",
 ) -> dict[str, Any]:
     """Compile composite store brief from verified source payloads.
 
@@ -38,23 +39,37 @@ def compile_store_brief(
         rev_payload = today_revenue or {}
         today_raw = rev_payload.get("today")
         today_data = today_raw if isinstance(today_raw, dict) else rev_payload
-        revenue_dec = to_decimal(
-            today_data.get("totalRevenue") or today_data.get("revenue") or 0
+        raw_revenue = today_data.get(
+            "totalRevenue", today_data.get("revenue")
         )
-        profit_dec = to_decimal(
-            today_data.get("totalProfit") or today_data.get("profit") or 0
+        revenue_dec = None if raw_revenue is None else to_decimal(raw_revenue)
+        raw_profit = today_data.get("totalProfit", today_data.get("profit"))
+        profit_dec = to_decimal(raw_profit) if raw_profit is not None else None
+        raw_orders = today_data.get(
+            "totalOrders", today_data.get("orderCount", today_data.get("sales"))
         )
-        raw_orders = today_data.get("totalOrders") or today_data.get("orderCount") or 0
         try:
-            orders_count: int | None = int(raw_orders)
+            orders_count: int | None = (
+                int(raw_orders) if raw_orders is not None else None
+            )
         except (ValueError, TypeError):
-            orders_count = 0
+            orders_count = None
+        sales_available = revenue_dec is not None
         sales_section: dict[str, Any] = {
-            "status": "AVAILABLE",
-            "revenue": str(quantize_money(revenue_dec)),
-            "profit": str(quantize_money(profit_dec)),
+            "status": "AVAILABLE" if sales_available else "UNAVAILABLE",
+            "revenue": (
+                str(quantize_money(revenue_dec))
+                if revenue_dec is not None
+                else None
+            ),
+            "profit": (
+                str(quantize_money(profit_dec)) if profit_dec is not None else None
+            ),
             "ordersCount": orders_count,
         }
+        if not sales_available:
+            revenue_dec = None
+        sources_available["sales"] = sales_available
     else:
         revenue_dec = None
         sales_section = {
@@ -69,30 +84,41 @@ def compile_store_brief(
         stk_payload = stock_totals or {}
         stk_raw = stk_payload.get("totals")
         stk_data = stk_raw if isinstance(stk_raw, dict) else stk_payload
+        raw_total_skus = stk_data.get("totalSkus", stk_data.get("totalProducts"))
         try:
-            total_skus: int | None = int(
-                stk_data.get("totalSkus") or stk_data.get("totalProducts") or 0
+            total_skus: int | None = (
+                int(raw_total_skus) if raw_total_skus is not None else None
             )
         except (ValueError, TypeError):
-            total_skus = 0
+            total_skus = None
         try:
             total_qty: int | None = int(
-                stk_data.get("totalQuantity") or stk_data.get("availableQuantity") or 0
+                stk_data.get("totalQuantity") or stk_data.get("availableQuantity")
             )
         except (ValueError, TypeError):
-            total_qty = 0
+            total_qty = None
         try:
-            low_stock_count: int | None = int(
-                stk_data.get("lowStockItems") or stk_data.get("lowStockCount") or 0
+            raw_low_stock = stk_data.get("lowStockCount")
+            if raw_low_stock is None:
+                raw_low_stock = stk_data.get("lowStockItems")
+            if isinstance(raw_low_stock, list):
+                raw_low_stock = len(raw_low_stock)
+            low_stock_count: int | None = (
+                int(raw_low_stock) if raw_low_stock is not None else None
             )
         except (ValueError, TypeError):
-            low_stock_count = 0
+            low_stock_count = None
         try:
-            out_of_stock_count: int | None = int(
-                stk_data.get("outOfStockItems") or stk_data.get("outOfStockCount") or 0
+            raw_out_of_stock = stk_data.get("outOfStockCount")
+            if raw_out_of_stock is None:
+                raw_out_of_stock = stk_data.get("outOfStockItems")
+            if isinstance(raw_out_of_stock, list):
+                raw_out_of_stock = len(raw_out_of_stock)
+            out_of_stock_count: int | None = (
+                int(raw_out_of_stock) if raw_out_of_stock is not None else None
             )
         except (ValueError, TypeError):
-            out_of_stock_count = 0
+            out_of_stock_count = None
         inventory_section: dict[str, Any] = {
             "status": "AVAILABLE",
             "totalSkus": total_skus,
@@ -112,26 +138,28 @@ def compile_store_brief(
     # 3. Customer receivables / dues
     if sources_available["customerDues"]:
         cust_payload = customer_totals or {}
-        dues_dec = to_decimal(
-            cust_payload.get("totalDues")
-            or cust_payload.get("totalReceivables")
-            or cust_payload.get("outstandingDues")
-            or 0
+        raw_dues = cust_payload.get(
+            "totalDues",
+            cust_payload.get("totalReceivables", cust_payload.get("outstandingDues")),
         )
+        dues_dec = to_decimal(raw_dues) if raw_dues is not None else None
         raw_debtors = (
-            cust_payload.get("overdueCount")
-            or cust_payload.get("customersWithDues")
-            or 0
+            cust_payload.get("overdueCount", cust_payload.get("customersWithDues"))
         )
         try:
-            customers_with_dues: int | None = int(raw_debtors)
+            customers_with_dues: int | None = (
+                int(raw_debtors) if raw_debtors is not None else None
+            )
         except (ValueError, TypeError):
-            customers_with_dues = 0
+            customers_with_dues = None
         customer_section: dict[str, Any] = {
-            "status": "AVAILABLE",
-            "totalDues": str(quantize_money(dues_dec)),
+            "status": "AVAILABLE" if dues_dec is not None else "UNAVAILABLE",
+            "totalDues": (
+                str(quantize_money(dues_dec)) if dues_dec is not None else None
+            ),
             "customersWithDues": customers_with_dues,
         }
+        sources_available["customerDues"] = dues_dec is not None
     else:
         customer_section = {
             "status": "UNAVAILABLE",
@@ -162,10 +190,12 @@ def compile_store_brief(
                 if amounts.get("total") is not None
                 else amounts.get("totalAmount")
                 if amounts.get("totalAmount") is not None
-                else 0
+                else None
             )
         )
-        expense_dec = to_decimal(raw_exp_amount)
+        expense_dec = (
+            to_decimal(raw_exp_amount) if raw_exp_amount is not None else None
+        )
         raw_exp_count = (
             counts.get("todayExpenses")
             if counts.get("todayExpenses") is not None
@@ -176,18 +206,25 @@ def compile_store_brief(
                 if counts.get("totalCount") is not None
                 else counts.get("count")
                 if counts.get("count") is not None
-                else 0
+                else None
             )
         )
         try:
-            expense_count: int | None = int(raw_exp_count)
+            expense_count: int | None = (
+                int(raw_exp_count) if raw_exp_count is not None else None
+            )
         except (ValueError, TypeError):
-            expense_count = 0
+            expense_count = None
         expense_section: dict[str, Any] = {
-            "status": "AVAILABLE",
-            "totalExpense": str(quantize_money(expense_dec)),
+            "status": "AVAILABLE" if raw_exp_amount is not None else "UNAVAILABLE",
+            "totalExpense": (
+                str(quantize_money(expense_dec))
+                if raw_exp_amount is not None
+                else None
+            ),
             "expenseCount": expense_count,
         }
+        sources_available["expenses"] = raw_exp_amount is not None
     else:
         expense_dec = None
         expense_section = {
@@ -217,7 +254,7 @@ def compile_store_brief(
         "netCashflowStatus": net_status,
         "coverage": {
             "date": date_str,
-            "window": "today",
+            "window": reporting_window,
             "is_complete": effective_complete,
             "sources": sources_available,
             "failed_sources": failed_sources,

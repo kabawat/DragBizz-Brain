@@ -29,24 +29,61 @@ def _get_notification_store(request: Request) -> NotificationStore:
 
 
 def _validate_user_store_access(user: dict[str, Any], store_id: str) -> None:
-    role = str(user.get("role") or "").upper()
-    if role in ("SUPERADMIN", "PLATFORM_ADMIN"):
-        return
-
-    # Check store claims if present
-    user_stores = user.get("stores")
-    if isinstance(user_stores, list) and user_stores:
-        str_stores = [str(s) for s in user_stores]
-        if store_id in str_stores:
-            return
+    # Only signed authentication claims establish store access. A requested
+    # storeId query parameter can select among those claims, but cannot grant it.
+    claimed: list[str] = []
+    stores = user.get("stores")
+    if stores is not None and not isinstance(stores, list):
         raise AppError(
-            code="FORBIDDEN_STORE_ACCESS",
-            message="User does not have access to this store",
+            code="STORE_CONTEXT_REQUIRED",
+            message="An authorized store context is required",
             status_code=403,
         )
+    for entry in stores or []:
+        value = (
+            entry.get("storeId", entry.get("store_id", entry.get("id")))
+            if isinstance(entry, dict)
+            else entry
+        )
+        if not isinstance(value, str):
+            raise AppError(
+                code="STORE_CONTEXT_INVALID",
+                message="Authorized store context is invalid",
+                status_code=403,
+            )
+        try:
+            claimed.append(assert_valid_store_id(value))
+        except AppError as exc:
+            raise AppError(
+                code="STORE_CONTEXT_INVALID",
+                message="Authorized store context is invalid",
+                status_code=403,
+            ) from exc
 
-    user_store_id = user.get("storeId")
-    if user_store_id and str(user_store_id) != store_id:
+    single_store = user.get("storeId")
+    if single_store is not None:
+        if not isinstance(single_store, str):
+            raise AppError(
+                code="STORE_CONTEXT_INVALID",
+                message="Authorized store context is invalid",
+                status_code=403,
+            )
+        try:
+            claimed.append(assert_valid_store_id(single_store))
+        except AppError as exc:
+            raise AppError(
+                code="STORE_CONTEXT_INVALID",
+                message="Authorized store context is invalid",
+                status_code=403,
+            ) from exc
+
+    if not claimed:
+        raise AppError(
+            code="STORE_CONTEXT_REQUIRED",
+            message="An authorized store context is required",
+            status_code=403,
+        )
+    if store_id not in set(claimed):
         raise AppError(
             code="FORBIDDEN_STORE_ACCESS",
             message="User does not have access to this store",
@@ -111,5 +148,24 @@ async def mark_notification_read(
         "success": True,
         "id": notification_id,
         "storeId": valid_store_id,
+        "read": True,
+    }
+
+
+@router.patch("/read-all")
+async def mark_all_notifications_read(
+    request: Request,
+    user: Annotated[dict[str, Any], Depends(get_current_user)],
+    store_id: Annotated[str, Query(alias="storeId")],
+) -> dict[str, Any]:
+    """Mark all notifications read for the authenticated store context."""
+    valid_store_id = assert_valid_store_id(store_id)
+    _validate_user_store_access(user, valid_store_id)
+    store = _get_notification_store(request)
+    updated = await store.mark_all_read(valid_store_id)
+    return {
+        "success": True,
+        "storeId": valid_store_id,
+        "updated": updated,
         "read": True,
     }

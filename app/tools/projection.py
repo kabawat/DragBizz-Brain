@@ -6,6 +6,7 @@ allowlisted fields. Never recomputes totals or rewrites store identity.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -38,6 +39,12 @@ _PRODUCT_KEYS = (
     "unit",
     "status",
 )
+_SAFE_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+_SENSITIVE_ERROR_TEXT = re.compile(
+    r"(?:traceback|stack trace|\bFile \"[^\"]+\", line \d+|"
+    r"mongodb(?:\+srv)?://|postgres(?:ql)?://|Bearer\s+\S+)",
+    re.IGNORECASE,
+)
 
 
 def project_tool_result(result: ToolResult) -> ToolResult:
@@ -69,13 +76,22 @@ def project_tool_results(results: list[ToolResult]) -> list[ToolResult]:
     return [project_tool_result(result) for result in results]
 
 
-def _error_passthrough(data: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    if isinstance(data.get("code"), str):
-        out["code"] = data["code"]
-    if isinstance(data.get("message"), str):
-        out["message"] = data["message"]
-    return out or {"code": "TOOL_FAILED", "message": "Tool failed"}
+def _error_passthrough(_data: dict[str, Any]) -> dict[str, Any]:
+    """Preserve safe error summaries while stripping internal diagnostics."""
+    code = _data.get("code")
+    if not isinstance(code, str) or not _SAFE_ERROR_CODE.fullmatch(code):
+        code = "TOOL_FAILED"
+    message = _data.get("message")
+    if (
+        not isinstance(message, str)
+        or len(message) > 300
+        or _SENSITIVE_ERROR_TEXT.search(message)
+    ):
+        message = "The requested store information or action could not be completed."
+    return {
+        "code": code,
+        "message": message,
+    }
 
 
 def _pick(data: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:

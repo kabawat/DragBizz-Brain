@@ -25,6 +25,22 @@ class ServiceSettings(BaseSettings):
         default=5001,
         validation_alias="RETAILER_GRPC_PORT",
     )
+    retailer_intelligence_grpc_port: int = Field(
+        default=50054,
+        validation_alias="RETAILER_INTELLIGENCE_GRPC_PORT",
+    )
+    retailer_intelligence_grpc_ca_path: str | None = Field(
+        default=None,
+        validation_alias="RETAILER_INTELLIGENCE_GRPC_CA_PATH",
+    )
+    retailer_intelligence_grpc_cert_path: str | None = Field(
+        default=None,
+        validation_alias="RETAILER_INTELLIGENCE_GRPC_CERT_PATH",
+    )
+    retailer_intelligence_grpc_key_path: str | None = Field(
+        default=None,
+        validation_alias="RETAILER_INTELLIGENCE_GRPC_KEY_PATH",
+    )
 
     @property
     def retailer_grpc_address(self) -> str:

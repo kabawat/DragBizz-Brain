@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
-from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 import grpc
+from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
 logger = logging.getLogger(__name__)
 
@@ -182,27 +183,70 @@ GetStoreDailySummaryResponse = message_factory.GetMessageClass(
 )
 
 
+class CoreGrpcCallError(RuntimeError):
+    """Safe, structured failure from an Intelligence RPC call."""
+
+    def __init__(self, method: str, status_code: grpc.StatusCode) -> None:
+        self.method = method.rsplit("/", 1)[-1]
+        self.status_code = status_code
+        self.category = {
+            grpc.StatusCode.UNAUTHENTICATED: "AUTHENTICATION_FAILED",
+            grpc.StatusCode.PERMISSION_DENIED: "AUTHORIZATION_FAILED",
+            grpc.StatusCode.DEADLINE_EXCEEDED: "TIMEOUT",
+            grpc.StatusCode.UNAVAILABLE: "CORE_UNAVAILABLE",
+        }.get(status_code, "CORE_RPC_FAILED")
+        super().__init__(f"Core Intelligence RPC failed: {self.category}")
+
+
 class CoreGrpcClient:
-    """Client for DragBizz-Core's retailer.intelligence.IntelligenceService over gRPC."""
+    """Client for Core's retailer.intelligence.IntelligenceService over gRPC."""
 
     def __init__(
         self,
-        target_address: str = "localhost:5001",
-        channel: grpc.Channel | None = None,
+        target_address: str = "localhost:50054",
         timeout: float = 5.0,
         max_retries: int = 2,
+        root_ca_path: str | None = None,
+        client_cert_path: str | None = None,
+        client_key_path: str | None = None,
     ) -> None:
         self.target_address = target_address
         self.timeout = timeout
         self.max_retries = max_retries
-        self._custom_channel = channel
-        self._channel: grpc.Channel | None = channel
-        self.caller_metadata = (("x-caller-service", "dragbizz-brain"),)
+        self.root_ca_path = root_ca_path
+        self.client_cert_path = client_cert_path
+        self.client_key_path = client_key_path
+        self._channel: grpc.Channel | None = None
 
     def _get_channel(self) -> grpc.Channel:
         if self._channel is None:
-            self._channel = grpc.insecure_channel(
+            if not all(
+                (self.root_ca_path, self.client_cert_path, self.client_key_path)
+            ):
+                raise RuntimeError(
+                    "Secure Core Intelligence gRPC credentials are not configured"
+                )
+            try:
+                root_ca = Path(self.root_ca_path).read_bytes()
+                client_cert = Path(self.client_cert_path).read_bytes()
+                client_key = Path(self.client_key_path).read_bytes()
+            except (OSError, TypeError):
+                raise RuntimeError(
+                    "Secure Core Intelligence gRPC credentials are unavailable"
+                ) from None
+            if not all((root_ca, client_cert, client_key)):
+                raise RuntimeError(
+                    "Secure Core Intelligence gRPC credentials are unavailable"
+                )
+
+            credentials = grpc.ssl_channel_credentials(
+                root_certificates=root_ca,
+                private_key=client_key,
+                certificate_chain=client_cert,
+            )
+            self._channel = grpc.secure_channel(
                 self.target_address,
+                credentials,
                 options=[
                     ("grpc.keepalive_time_ms", 30000),
                     ("grpc.keepalive_timeout_ms", 5000),
@@ -211,11 +255,13 @@ class CoreGrpcClient:
         return self._channel
 
     def close(self) -> None:
-        if self._channel is not None and self._custom_channel is None:
+        if self._channel is not None:
             self._channel.close()
             self._channel = None
 
-    def _invoke_with_retry(self, method_name: str, serializer: Any, deserializer: Any, request: Any) -> Any:
+    def _invoke_with_retry(
+        self, method_name: str, serializer: Any, deserializer: Any, request: Any
+    ) -> Any:
         channel = self._get_channel()
         invoker = channel.unary_unary(
             method_name,
@@ -231,28 +277,38 @@ class CoreGrpcClient:
                 response = invoker(
                     request,
                     timeout=self.timeout,
-                    metadata=self.caller_metadata,
                 )
                 return response
             except grpc.RpcError as rpc_err:
                 code = rpc_err.code()
                 last_error = rpc_err
-                if code in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                if code in (
+                    grpc.StatusCode.UNAVAILABLE,
+                    grpc.StatusCode.DEADLINE_EXCEEDED,
+                ):
                     attempts += 1
                     if attempts <= self.max_retries:
                         time.sleep(0.1 * (2 ** (attempts - 1)))
                         continue
                 logger.warning(
                     "core_grpc_call_failed",
-                    extra={"method": method_name, "code": str(code), "details": rpc_err.details()},
+                    extra={
+                        "method": method_name,
+                        "code": str(code),
+                    },
                 )
-                raise
-            except Exception as exc:
-                logger.error("core_grpc_unexpected_error", extra={"method": method_name, "error": str(exc)})
-                raise
+                raise CoreGrpcCallError(method_name, code) from None
+            except Exception:
+                logger.error(
+                    "core_grpc_unexpected_error",
+                    extra={"method": method_name},
+                )
+                raise CoreGrpcCallError(
+                    method_name, grpc.StatusCode.UNKNOWN
+                ) from None
 
         if last_error:
-            raise last_error
+            raise CoreGrpcCallError(method_name, last_error.code()) from None
 
     def get_active_stores(self, limit: int = 50, page: int = 1) -> list[dict[str, Any]]:
         """Retrieve eligible active stores for proactive scheduling."""
@@ -264,13 +320,15 @@ class CoreGrpcClient:
                 GetActiveStoresResponse.FromString,
                 req,
             )
+            if not resp.success:
+                raise RuntimeError("Core rejected active-store request")
             return [
                 {"store_id": s.storeId, "name": s.name, "timezone": s.timezone}
                 for s in resp.stores
             ]
-        except Exception as exc:
-            logger.warning("get_active_stores_failed", extra={"error": str(exc)})
-            return []
+        except Exception:
+            logger.warning("get_active_stores_failed")
+            raise
 
     def get_store_stock_summary(self, store_id: str) -> list[dict[str, Any]]:
         """Retrieve authoritative low-stock items for a store."""
@@ -282,6 +340,8 @@ class CoreGrpcClient:
                 GetStoreStockSummaryResponse.FromString,
                 req,
             )
+            if not resp.success:
+                raise RuntimeError("Core rejected stock summary request")
             return [
                 {
                     "product_id": item.productId,
@@ -292,9 +352,12 @@ class CoreGrpcClient:
                 }
                 for item in resp.lowStockItems
             ]
-        except Exception as exc:
-            logger.warning("get_store_stock_summary_failed", extra={"store_id": store_id, "error": str(exc)})
-            return []
+        except Exception:
+            logger.warning(
+                "get_store_stock_summary_failed",
+                extra={"store_id": store_id},
+            )
+            raise
 
     def get_store_daily_summary(
         self,
@@ -315,6 +378,8 @@ class CoreGrpcClient:
                 GetStoreDailySummaryResponse.FromString,
                 req,
             )
+            if not resp.success:
+                raise RuntimeError("Core rejected daily summary request")
             return {
                 "success": bool(resp.success),
                 "store_id": resp.storeId,
@@ -325,14 +390,9 @@ class CoreGrpcClient:
                 "profit": float(resp.profit),
                 "sales_count": int(resp.salesCount),
             }
-        except Exception as exc:
-            logger.warning("get_store_daily_summary_failed", extra={"store_id": store_id, "error": str(exc)})
-            return {
-                "success": False,
-                "store_id": store_id,
-                "period": period_type,
-                "revenue": 0.0,
-                "profit": 0.0,
-                "sales_count": 0,
-                "error": str(exc),
-            }
+        except Exception:
+            logger.warning(
+                "get_store_daily_summary_failed",
+                extra={"store_id": store_id},
+            )
+            raise

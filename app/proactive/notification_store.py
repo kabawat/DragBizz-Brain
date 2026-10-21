@@ -37,6 +37,10 @@ class NotificationStore(abc.ABC):
     async def mark_read(self, store_id: str, notification_id: str) -> bool:
         """Mark a notification as read within the given store context."""
 
+    @abc.abstractmethod
+    async def mark_all_read(self, store_id: str) -> int:
+        """Mark all unread notifications for one store as read."""
+
 
 class InMemoryNotificationStore(NotificationStore):
     """In-memory store for tests and when MongoDB is offline."""
@@ -73,6 +77,15 @@ class InMemoryNotificationStore(NotificationStore):
                 item.read = True
                 return True
         return False
+
+    async def mark_all_read(self, store_id: str) -> int:
+        items = self._notifications.get(store_id, [])
+        changed = 0
+        for item in items:
+            if not item.read:
+                item.read = True
+                changed += 1
+        return changed
 
 
 class MongoNotificationStore(NotificationStore):
@@ -140,7 +153,9 @@ class MongoNotificationStore(NotificationStore):
     async def count_unread(self, store_id: str) -> int:
         if self._collection is None:
             return 0
-        return await self._collection.count_documents({"storeId": store_id, "read": False})
+        return await self._collection.count_documents(
+            {"storeId": store_id, "read": False}
+        )
 
     async def mark_read(self, store_id: str, notification_id: str) -> bool:
         if self._collection is None:
@@ -150,3 +165,12 @@ class MongoNotificationStore(NotificationStore):
             {"$set": {"read": True}},
         )
         return res.modified_count > 0
+
+    async def mark_all_read(self, store_id: str) -> int:
+        if self._collection is None:
+            return 0
+        res = await self._collection.update_many(
+            {"storeId": store_id, "read": False},
+            {"$set": {"read": True}},
+        )
+        return int(res.modified_count)

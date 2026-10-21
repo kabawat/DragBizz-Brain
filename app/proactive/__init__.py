@@ -30,6 +30,7 @@ __all__ = [
     "AlertSeverity",
     "AlertState",
     "AlertType",
+    "CoreStoreProvider",
     "DailyBriefingScheduler",
     "InMemoryAlertDedupStore",
     "InMemoryNotificationStore",

@@ -25,7 +25,7 @@ from app.executors.tool_executor import ToolExecutor
 from app.observability.audit_trail import AuditTrail
 from app.observability.confirmation_audit import audit_confirmation
 from app.observability.metrics import MetricsRegistry
-from app.schemas.chat import ChatResponse, ConfirmRequest
+from app.schemas.chat import ChatResponse, ConfirmRequest, PublicToolCall
 from app.schemas.tool import ToolCall, ToolResult
 from app.sessions import (
     DurableHistoryStore,
@@ -233,7 +233,9 @@ async def handle_confirm(
                 user_id=user_id,
                 provider="confirmation",
                 model="",
-                tool_calls=[tool_call],
+                tool_calls=[
+                    PublicToolCall(id=tool_call.id, name=tool_call.name)
+                ],
             )
     except Exception:
         await confirmations.complete(record.confirmation_id, status="UNKNOWN")
@@ -267,7 +269,7 @@ async def handle_confirm(
             user_id=user_id,
             provider="confirmation",
             model="",
-            tool_calls=[tool_call],
+            tool_calls=[PublicToolCall(id=tool_call.id, name=tool_call.name)],
         )
 
     projected = project_tool_results(tool_results)
@@ -323,7 +325,7 @@ async def handle_confirm(
         user_id=user_id,
         provider="confirmation",
         model="",
-        tool_calls=[tool_call],
+        tool_calls=[PublicToolCall(id=tool_call.id, name=tool_call.name)],
         tool_results=projected,
     )
 
