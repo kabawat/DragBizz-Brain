@@ -62,6 +62,9 @@ services:
       - ./knowledge:/app/knowledge:ro
       - ./.env:/app/.env:ro
       - ./data:/app/data
+      - /etc/dragbizz/pki/brain/ca.crt:/run/dragbizz/pki/brain/ca.crt:ro
+      - /etc/dragbizz/pki/brain/client.crt:/run/dragbizz/pki/brain/client.crt:ro
+      - /etc/dragbizz/pki/brain/client.key:/run/dragbizz/pki/brain/client.key:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
       - "dragbizz.local:host-gateway"
@@ -78,7 +81,15 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+    networks:
+      - default
+      - brain-core-private
 
 volumes:
   qdrant_storage:
   ai_redis_data:
+
+networks:
+  brain-core-private:
+    name: dragbizz-brain-core-private
+    external: true
