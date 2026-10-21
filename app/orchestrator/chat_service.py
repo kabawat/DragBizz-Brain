@@ -512,7 +512,8 @@ class ChatService:
             if self._metrics is not None:
                 self._metrics.record_cancel()
             raise
-        except BudgetExceeded:
+        except BudgetExceeded as exc:
+            logger.warning("BudgetExceeded for request_id=%s: %s", request_id, exc)
             await self._prompt_abuse.clear(user_id=user_id, store_id=store_id)
             if self._metrics is not None:
                 self._metrics.record_budget_exceeded()
