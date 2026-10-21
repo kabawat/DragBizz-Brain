@@ -70,6 +70,7 @@ from app.schemas.chat import (
     GenerationRequest,
     GenerationResponse,
     PendingConfirmation,
+    PublicToolCall,
 )
 from app.sessions import (
     DurableHistoryStore,
@@ -682,7 +683,10 @@ class ChatService:
             user_id=user_id,
             provider=outcome.generation.provider,
             model=outcome.generation.model,
-            tool_calls=outcome.all_calls,
+            tool_calls=[
+                PublicToolCall(id=call.id, name=call.name)
+                for call in outcome.all_calls
+            ],
             tool_results=outcome.all_results,
             pending_confirmation=pending,
         )
@@ -812,7 +816,10 @@ class ChatService:
             user_id=user_id,
             provider=provider,
             model="",
-            tool_calls=tool_calls,
+            tool_calls=[
+                PublicToolCall(id=call.id, name=call.name)
+                for call in tool_calls
+            ],
             tool_results=tool_results,
             pending_confirmation=pending_confirmation,
         )

@@ -1,7 +1,7 @@
 import re
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.tool import ToolCall, ToolDefinition, ToolResult
 
@@ -83,6 +83,8 @@ class PublicToolCall(BaseModel):
     id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=64)
 
+    model_config = {"from_attributes": True}
+
 
 class ChatResponse(BaseModel):
     message: str
@@ -102,6 +104,27 @@ class ChatResponse(BaseModel):
     )
 
     model_config = {"populate_by_name": True}
+
+    @field_validator("tool_calls", mode="before")
+    @classmethod
+    def _coerce_tool_calls(cls, value: Any) -> list[Any]:
+        if not isinstance(value, list):
+            return value
+        coerced: list[Any] = []
+        for item in value:
+            if isinstance(item, PublicToolCall):
+                coerced.append(item)
+            elif isinstance(item, dict):
+                coerced.append(
+                    {"id": str(item.get("id", "")), "name": str(item.get("name", ""))}
+                )
+            elif hasattr(item, "id") and hasattr(item, "name"):
+                coerced.append(
+                    {"id": str(item.id), "name": str(item.name)}
+                )
+            else:
+                coerced.append(item)
+        return coerced
 
 
 def assert_valid_store_id(store_id: str) -> str:

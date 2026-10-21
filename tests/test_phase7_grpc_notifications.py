@@ -402,3 +402,35 @@ async def test_notification_mark_all_read_is_store_scoped(notification_test_app)
     assert forbidden.status_code == 403
     assert await store.count_unread(STORE_A) == 0
     assert await store.count_unread(STORE_B) == 1
+
+
+def test_chat_response_coerces_internal_tool_calls_to_public():
+    from app.schemas.chat import ChatResponse, PublicToolCall
+    from app.schemas.tool import ToolCall
+
+    internal_calls = [
+        ToolCall(
+            id="call_999",
+            name="stock_items",
+            arguments={"query": "amul"},
+            thought_signature="sig_abc",
+        )
+    ]
+    response = ChatResponse(
+        message="Stock is 18",
+        session_id="sess_123",
+        request_id="req_123",
+        user_id="usr_123",
+        provider="google_ai",
+        model="gemini-3.1-flash-lite",
+        tool_calls=internal_calls,
+    )
+
+    assert len(response.tool_calls) == 1
+    assert isinstance(response.tool_calls[0], PublicToolCall)
+    assert response.tool_calls[0].id == "call_999"
+    assert response.tool_calls[0].name == "stock_items"
+    assert not hasattr(response.tool_calls[0], "arguments")
+    serialized = response.model_dump(by_alias=True)
+    assert serialized["toolCalls"] == [{"id": "call_999", "name": "stock_items"}]
+
