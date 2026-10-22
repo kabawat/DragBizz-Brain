@@ -93,7 +93,7 @@ class GoogleAISettings(BaseSettings):
         validation_alias="AI_GOOGLE_BASE_URL",
     )
     model: str = Field(
-        default="gemini-3.1-flash-lite",
+        default="gemini-2.5-flash",
         validation_alias="AI_GOOGLE_MODEL",
     )
     input_usd_per_million_tokens: float = Field(
@@ -126,11 +126,11 @@ class CheaperInferenceSettings(BaseSettings):
         validation_alias="CHEAPER_INFERENCE_API_KEY",
     )
     base_url: str = Field(
-        default="https://api.cheaperinference.com/v1",
+        default="https://openrouter.ai/api/v1",
         validation_alias="CHEAPER_INFERENCE_BASE_URL",
     )
     model: str = Field(
-        default="deepseek-v4.1-flash",
+        default="openai/gpt-4o-mini",
         validation_alias="CHEAPER_INFERENCE_MODEL",
     )
     temperature: float = Field(
