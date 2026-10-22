@@ -925,7 +925,7 @@ def test_fast_conversational_turn() -> None:
     # 3. Identity
     res_who = try_fast_conversational_turn("aap kaun ho")
     assert res_who is not None
-    assert "DragBizz Store Dost" in res_who.message
+    assert "DragAI" in res_who.message
 
     # 4. Closures
     res_close = try_fast_conversational_turn("theek hai")

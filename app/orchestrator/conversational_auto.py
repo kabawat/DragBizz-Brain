@@ -156,7 +156,7 @@ def try_fast_conversational_turn(
     if _IDENTITY_RE.match(text):
         if is_english:
             msg = (
-                "I am your **DragBizz Store Assistant**! 🛒\n"
+                "I am **DragAI**! 🛒\n"
                 "I help you manage daily retail operations:\n"
                 "• **Sales & Stock**: Check today's sales, product stock levels\n"
                 "• **Expenses & Invoices**: Record expenses (chai, rent), "
@@ -166,7 +166,7 @@ def try_fast_conversational_turn(
             )
         else:
             msg = (
-                "Main aapka **DragBizz Store Dost** hoon! 🛒\n"
+                "Main **DragAI** hoon! 🛒\n"
                 "Main aapke daily store operations me madad karta hoon:\n"
                 "• **Sales & Stock**: Aaj ki sale dekhna, stock summary\n"
                 "• **Kharcha & Invoices**: Daily kharcha add karna (chai, rent), "
