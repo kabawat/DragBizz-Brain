@@ -13,8 +13,12 @@ from app.observability.middleware_telemetry import (
     init_middleware_telemetry,
     shutdown_middleware_telemetry,
     trace_chat,
+    trace_context_build,
     trace_llm_call,
+    trace_parallel_tool_group,
+    trace_response_stream,
     trace_tool_execution,
+    trace_tool_selection,
 )
 from app.schemas.tool import ToolCall, ToolResult
 
@@ -131,3 +135,22 @@ def test_shutdown_middleware_telemetry():
     shutdown_middleware_telemetry(mock_providers)
     mock_providers.tracer.force_flush.assert_called_once()
     mock_providers.tracer.shutdown.assert_called_once()
+
+
+def test_trace_context_build_and_selection():
+    with trace_context_build() as span:
+        assert span is not None
+
+    with trace_tool_selection() as span:
+        assert span is not None
+
+
+def test_trace_parallel_and_stream():
+    with trace_parallel_tool_group(stage=1, tool_count=2) as span:
+        assert span is not None
+
+    with trace_response_stream() as metrics:
+        metrics["chunk_count"] = 5
+        metrics["ttft_ms"] = 120.5
+        assert metrics["chunk_count"] == 5
+

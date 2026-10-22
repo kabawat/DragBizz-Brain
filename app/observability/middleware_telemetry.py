@@ -163,7 +163,7 @@ def trace_context_build() -> Iterator[Span]:
     with tracer.start_as_current_span("brain.context_build") as span:
         span.set_attribute(
             SpanAttributes.OPENINFERENCE_SPAN_KIND,
-            OpenInferenceSpanKindValues.TASK.value,
+            OpenInferenceSpanKindValues.CHAIN.value,
         )
         try:
             yield span
@@ -181,7 +181,7 @@ def trace_tool_selection() -> Iterator[Span]:
     with tracer.start_as_current_span("brain.tool_selection") as span:
         span.set_attribute(
             SpanAttributes.OPENINFERENCE_SPAN_KIND,
-            OpenInferenceSpanKindValues.TASK.value,
+            OpenInferenceSpanKindValues.CHAIN.value,
         )
         try:
             yield span
@@ -265,7 +265,7 @@ def trace_parallel_tool_group(stage: int, tool_count: int) -> Iterator[Span]:
     with tracer.start_as_current_span(f"brain.parallel_tool_group.{stage}") as span:
         span.set_attribute(
             SpanAttributes.OPENINFERENCE_SPAN_KIND,
-            OpenInferenceSpanKindValues.TASK.value,
+            OpenInferenceSpanKindValues.CHAIN.value,
         )
         span.set_attribute("stage.index", stage)
         span.set_attribute("stage.tool_count", tool_count)
@@ -295,7 +295,7 @@ def trace_response_stream() -> Iterator[dict[str, Any]]:
     with tracer.start_as_current_span("brain.response_stream") as span:
         span.set_attribute(
             SpanAttributes.OPENINFERENCE_SPAN_KIND,
-            OpenInferenceSpanKindValues.TASK.value,
+            OpenInferenceSpanKindValues.CHAIN.value,
         )
         start_t = time.perf_counter()
         try:
