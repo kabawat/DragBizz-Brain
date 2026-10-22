@@ -55,19 +55,30 @@ def plan_execution(
 
     stages: list[ExecutionStage] = []
     if reads:
-        can_parallel = len(reads) > 1 and all(
-            registry.get_definition(call.name).allows_parallel for call in reads
-        )
-        stages.append(
-            ExecutionStage(
-                kind=(
-                    StageKind.PARALLEL_READ
-                    if can_parallel
-                    else StageKind.SEQUENTIAL_READ
-                ),
-                calls=tuple(reads),
+        parallel_reads = [
+            c for c in reads if registry.get_definition(c.name).allows_parallel
+        ]
+        sequential_reads = [
+            c for c in reads if not registry.get_definition(c.name).allows_parallel
+        ]
+        if parallel_reads:
+            stages.append(
+                ExecutionStage(
+                    kind=(
+                        StageKind.PARALLEL_READ
+                        if len(parallel_reads) > 1
+                        else StageKind.SEQUENTIAL_READ
+                    ),
+                    calls=tuple(parallel_reads),
+                )
             )
-        )
+        for call in sequential_reads:
+            stages.append(
+                ExecutionStage(
+                    kind=StageKind.SEQUENTIAL_READ,
+                    calls=(call,),
+                )
+            )
     for call in writes:
         stages.append(ExecutionStage(kind=StageKind.SEQUENTIAL_WRITE, calls=(call,)))
     for call in sensitive:

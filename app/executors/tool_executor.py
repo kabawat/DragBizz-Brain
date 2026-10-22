@@ -176,8 +176,14 @@ class ToolExecutor:
             return res
 
         if parallel and len(tool_calls) > 1:
+            sem = asyncio.Semaphore(5)
+
+            async def _bounded_one(c: ToolCall) -> ToolResult:
+                async with sem:
+                    return await _one(c)
+
             gathered = await asyncio.gather(
-                *[_one(call) for call in tool_calls],
+                *[_bounded_one(call) for call in tool_calls],
                 return_exceptions=True,
             )
         else:

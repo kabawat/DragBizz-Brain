@@ -59,7 +59,7 @@ _CORE_UNKNOWN_TOOLS = frozenset(
     }
 )
 
-DOMAIN_BUNDLES: dict[ToolDomain, frozenset[str]] = {
+DOMAIN_READ_BUNDLES: dict[ToolDomain, frozenset[str]] = {
     ToolDomain.INVENTORY: frozenset(
         {
             "search_product",
@@ -67,13 +67,11 @@ DOMAIN_BUNDLES: dict[ToolDomain, frozenset[str]] = {
             "product_summary",
             "stock_items",
             "inventory_velocity",
-            "add_stock",
             "search_supplier",
         }
     ),
     ToolDomain.PROCUREMENT: frozenset(
         {
-            "create_purchase_order",
             "list_purchase_orders",
             "search_supplier",
             "supplier_summary",
@@ -87,9 +85,6 @@ DOMAIN_BUNDLES: dict[ToolDomain, frozenset[str]] = {
             "today_sale",
             "invoice_summary",
             "list_invoices",
-            "create_invoice_draft",
-            "update_invoice_draft",
-            "release_invoice",
             "search_product",
             "search_customer",
             "customer_summary",
@@ -108,23 +103,11 @@ DOMAIN_BUNDLES: dict[ToolDomain, frozenset[str]] = {
             "get_customer_payment",
             "payment_history",
             "list_payment_reminders",
-            "ledger_credit",
-            "ledger_debit",
-            "record_customer_payment",
-            "update_customer_payment",
-            "create_customer",
-            "update_customer",
-            "set_opening_balance",
-            "merge_customers",
-            "create_collect_link",
-            "send_payment_reminder",
             "today_sale",
         }
     ),
     ToolDomain.FINANCE: frozenset(
         {
-            "create_expense",
-            "update_expense",
             "expense_summary",
             "list_expenses",
             "cashbook_summary",
@@ -145,6 +128,44 @@ DOMAIN_BUNDLES: dict[ToolDomain, frozenset[str]] = {
             "list_stores",
         }
     ),
+}
+
+DOMAIN_WRITE_BUNDLES: dict[ToolDomain, frozenset[str]] = {
+    ToolDomain.INVENTORY: frozenset({"add_stock"}),
+    ToolDomain.PROCUREMENT: frozenset({"create_purchase_order"}),
+    ToolDomain.SALES: frozenset(
+        {
+            "create_invoice_draft",
+            "update_invoice_draft",
+            "release_invoice",
+        }
+    ),
+    ToolDomain.KHATA: frozenset(
+        {
+            "ledger_credit",
+            "ledger_debit",
+            "record_customer_payment",
+            "update_customer_payment",
+            "create_customer",
+            "update_customer",
+            "set_opening_balance",
+            "merge_customers",
+            "create_collect_link",
+            "send_payment_reminder",
+        }
+    ),
+    ToolDomain.FINANCE: frozenset(
+        {
+            "create_expense",
+            "update_expense",
+        }
+    ),
+    ToolDomain.GENERAL: frozenset(),
+}
+
+DOMAIN_BUNDLES: dict[ToolDomain, frozenset[str]] = {
+    d: DOMAIN_READ_BUNDLES[d] | DOMAIN_WRITE_BUNDLES[d]
+    for d in DOMAIN_READ_BUNDLES
 }
 
 SAFE_BROAD_STORE_FALLBACK: frozenset[str] = frozenset(
@@ -1303,6 +1324,9 @@ _HOW_TO_CUES = (
     "how do we",
     "steps",
     "guide",
+    "policy",
+    "terms",
+    "rules",
 )
 
 _NEITHER_RE = re.compile(
@@ -1603,6 +1627,8 @@ def _exposure_tools(text: str) -> set[str]:
         names.add("create_expense")
     if _EXPENSE_UPDATE_FLEX_RE.search(text):
         names.add("update_expense")
+    if _PO_FLEX_RE.search(text):
+        names.update({"create_purchase_order", "search_supplier", "search_product"})
     return names
 
 
@@ -1795,7 +1821,7 @@ def resolve_domain_turn_intent(
     if domains:
         bundle_tools: set[str] = set()
         for domain in domains:
-            bundle_tools |= DOMAIN_BUNDLES.get(domain, frozenset())
+            bundle_tools |= DOMAIN_READ_BUNDLES.get(domain, frozenset())
 
         carried = _prior_exposure_tools(prior_user_texts)
         current_writes = _exposure_tools(text)
@@ -1809,7 +1835,7 @@ def resolve_domain_turn_intent(
         tool_names = (
             bundle_tools
             | current_writes
-            | (carried & {"create_expense", "update_expense"})
+            | (carried & {"create_expense", "update_expense", "create_invoice_draft", "update_invoice_draft"})
         ) & available_set
 
         routing: RoutingLabel = "both" if has_howto else "tools"

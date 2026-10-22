@@ -466,6 +466,9 @@ class ChatService:
                     call_type="initial",
                 ):
                     collected_chunks.append(chunk)
+                    res = emit("assistant.delta", {"text": chunk})
+                    if res is not None:
+                        await res
                 generation = GenerationResponse(
                     provider="stream",
                     model="",

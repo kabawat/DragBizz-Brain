@@ -32,7 +32,10 @@ from app.orchestrator.ledger_auto import (
 from app.orchestrator.prompt_tokens import estimate_tool_schema_tokens
 from app.orchestrator.token_usage import RequestTokenUsage
 from app.orchestrator.tool_call_validator import ToolCallValidator
-from app.orchestrator.tool_selector import user_requested_sensitive_action
+from app.orchestrator.tool_selector import (
+    _exposure_tools,
+    user_requested_sensitive_action,
+)
 from app.rag.chunker import estimate_tokens
 from app.schemas.chat import ChatMessage, GenerationResponse
 from app.schemas.tool import ToolCall, ToolDefinition, ToolResult, ToolRisk
@@ -264,6 +267,7 @@ async def run_tool_loop(
                     round=round_index,
                 ):
                     collected.append(chunk)
+                    await _emit(emit, "assistant.delta", {"text": chunk})
                 generation = GenerationResponse(
                     provider=generations[0].provider if generations else "stream",
                     model=generations[0].model if generations else "",
@@ -576,9 +580,16 @@ async def run_tool_loop(
             and result.tool in {"create_invoice_draft", "update_invoice_draft"}
             for result in projected_writes
         )
-        allow_more_tools = (
-            staged_sensitive is None and round_index < max_rounds - 1 and not draft_done
+        has_pending_writes = any(
+            registry.get_definition(t.name).risk in {ToolRisk.WRITE, ToolRisk.SENSITIVE}
+            for t in tools
         )
+        if emit is not None and not has_pending_writes:
+            allow_more_tools = False
+        else:
+            allow_more_tools = (
+                staged_sensitive is None and round_index < max_rounds - 1 and not draft_done
+            )
         if budget is not None and not budget.can_continue():
             allow_more_tools = False
 
@@ -613,6 +624,7 @@ async def run_tool_loop(
                     round=round_index + 1,
                 ):
                     collected.append(chunk)
+                    await _emit(emit, "assistant.delta", {"text": chunk})
                 generation = GenerationResponse(
                     provider=generations[0].provider if generations else "stream",
                     model=generations[0].model if generations else "",
