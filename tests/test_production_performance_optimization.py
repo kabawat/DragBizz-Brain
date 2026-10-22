@@ -446,3 +446,441 @@ async def test_scenario_14_non_streaming_fallback_path_operates_correctly() -> N
     )
     assert outcome.generation.content == "Standard non-streaming reply"
     assert len(outcome.all_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_scenario_15_streaming_allows_legitimate_multi_stage_reads() -> None:
+    events: list[str] = []
+
+    async def emit_listener(ev: str, data: dict[str, Any]) -> None:
+        if ev == "tool.completed":
+            events.append(f"done:{data['tool']}")
+        elif ev == "assistant.delta":
+            events.append(f"text:{data['text']}")
+
+    class MultiStageGateway:
+        def __init__(self) -> None:
+            self.continue_calls = 0
+
+        async def continue_or_synthesize(
+            self,
+            conversation: list[ChatMessage],
+            tools: list[ToolDefinition],
+            **kwargs: Any,
+        ) -> GenerationResponse:
+            self.continue_calls += 1
+            if self.continue_calls == 1:
+                return GenerationResponse(
+                    provider="test",
+                    model="test",
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="c2",
+                            name="search_supplier",
+                            arguments={"storeId": STORE_A, "query": "MDH"},
+                        )
+                    ],
+                )
+            return GenerationResponse(
+                provider="test",
+                model="test",
+                content="Supplier is MDH Spices.",
+                tool_calls=[],
+            )
+
+        async def continue_or_synthesize_stream(self, *args: Any, **kwargs: Any):
+            yield "Supplier is "
+            yield "MDH Spices."
+
+    reg = ToolRegistry()
+    def_prod = ToolDefinition(
+        name="search_product",
+        description="search product",
+        domain=ToolDomain.INVENTORY,
+        risk=ToolRisk.READ,
+        parameters={},
+    )
+    def_sup = ToolDefinition(
+        name="search_supplier",
+        description="search supplier",
+        domain=ToolDomain.PROCUREMENT,
+        risk=ToolRisk.READ,
+        parameters={},
+    )
+    reg.register(
+        def_prod,
+        AsyncMock(
+            return_value=ToolResult(
+                tool="search_product",
+                success=True,
+                data={"items": [{"id": "p1", "name": "MDH Masala"}]},
+            )
+        ),
+    )
+    reg.register(
+        def_sup,
+        AsyncMock(
+            return_value=ToolResult(
+                tool="search_supplier",
+                success=True,
+                data={"suppliers": [{"id": "s1", "name": "MDH"}]},
+            )
+        ),
+    )
+
+    gen = GenerationResponse(
+        provider="test",
+        model="test",
+        content="",
+        tool_calls=[
+            ToolCall(
+                id="c1",
+                name="search_product",
+                arguments={"storeId": STORE_A, "query": "MDH"},
+            )
+        ],
+    )
+    outcome = await run_tool_loop(
+        gateway=MultiStageGateway(),
+        validator=ToolCallValidator(reg),
+        registry=reg,
+        executor=ToolExecutor(retailer=AsyncMock(), registry=reg),
+        confirmations=InMemoryConfirmationStore(),
+        settings=_make_settings(max_rounds=3),
+        generation=gen,
+        messages=[ChatMessage(role="user", content="MDH supplier kaun hai")],
+        tools=[def_prod, def_sup],
+        language="hi-IN",
+        store_id=STORE_A,
+        access_token="tok",
+        session_id=SESSION_1,
+        user_id=USER_1,
+        emit=emit_listener,
+    )
+    assert [c.name for c in outcome.all_calls] == ["search_product", "search_supplier"]
+    assert "done:search_product" in events
+    assert "done:search_supplier" in events
+    assert len(outcome.all_results) == 2
+
+
+@pytest.mark.asyncio
+async def test_scenario_16_streaming_and_non_streaming_behavioral_parity() -> None:
+    def create_gateway():
+        class MockGateway:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def continue_or_synthesize(
+                self,
+                conversation: list[ChatMessage],
+                tools: list[ToolDefinition],
+                **kwargs: Any,
+            ) -> GenerationResponse:
+                self.calls += 1
+                if self.calls == 1:
+                    return GenerationResponse(
+                        provider="test",
+                        model="test",
+                        content="",
+                        tool_calls=[
+                            ToolCall(
+                                id="c2",
+                                name="stock_summary",
+                                arguments={"storeId": STORE_A},
+                            )
+                        ],
+                    )
+                return GenerationResponse(
+                    provider="test",
+                    model="test",
+                    content="Stock count is 50.",
+                    tool_calls=[],
+                )
+
+            async def continue_or_synthesize_stream(self, *args: Any, **kwargs: Any):
+                yield "Stock count is 50."
+
+        return MockGateway()
+
+    reg = ToolRegistry()
+    def_prod = ToolDefinition(
+        name="search_product",
+        description="search product",
+        domain=ToolDomain.INVENTORY,
+        risk=ToolRisk.READ,
+        parameters={},
+    )
+    def_stock = ToolDefinition(
+        name="stock_summary",
+        description="stock summary",
+        domain=ToolDomain.INVENTORY,
+        risk=ToolRisk.READ,
+        parameters={},
+    )
+    reg.register(
+        def_prod,
+        AsyncMock(
+            return_value=ToolResult(
+                tool="search_product",
+                success=True,
+                data={"items": [{"id": "p1"}]},
+            )
+        ),
+    )
+    reg.register(
+        def_stock,
+        AsyncMock(
+            return_value=ToolResult(
+                tool="stock_summary",
+                success=True,
+                data={"total": 50},
+            )
+        ),
+    )
+
+    gen1 = GenerationResponse(
+        provider="test",
+        model="test",
+        content="",
+        tool_calls=[
+            ToolCall(
+                id="c1",
+                name="search_product",
+                arguments={"storeId": STORE_A, "query": "item"},
+            )
+        ],
+    )
+    outcome_non_streaming = await run_tool_loop(
+        gateway=create_gateway(),
+        validator=ToolCallValidator(reg),
+        registry=reg,
+        executor=ToolExecutor(retailer=AsyncMock(), registry=reg),
+        confirmations=InMemoryConfirmationStore(),
+        settings=_make_settings(max_rounds=3),
+        generation=gen1,
+        messages=[ChatMessage(role="user", content="check stock")],
+        tools=[def_prod, def_stock],
+        language="hi-IN",
+        store_id=STORE_A,
+        access_token="tok",
+        session_id=SESSION_1,
+        user_id=USER_1,
+        emit=None,
+    )
+
+    gen2 = GenerationResponse(
+        provider="test",
+        model="test",
+        content="",
+        tool_calls=[
+            ToolCall(
+                id="c1",
+                name="search_product",
+                arguments={"storeId": STORE_A, "query": "item"},
+            )
+        ],
+    )
+    stream_events: list[str] = []
+
+    async def emit_cb(ev: str, d: dict[str, Any]) -> None:
+        if ev == "tool.completed":
+            stream_events.append(f"tool:{d['tool']}")
+        elif ev == "assistant.delta":
+            stream_events.append(f"delta:{d['text']}")
+
+    outcome_streaming = await run_tool_loop(
+        gateway=create_gateway(),
+        validator=ToolCallValidator(reg),
+        registry=reg,
+        executor=ToolExecutor(retailer=AsyncMock(), registry=reg),
+        confirmations=InMemoryConfirmationStore(),
+        settings=_make_settings(max_rounds=3),
+        generation=gen2,
+        messages=[ChatMessage(role="user", content="check stock")],
+        tools=[def_prod, def_stock],
+        language="hi-IN",
+        store_id=STORE_A,
+        access_token="tok",
+        session_id=SESSION_1,
+        user_id=USER_1,
+        emit=emit_cb,
+    )
+
+    assert [c.name for c in outcome_non_streaming.all_calls] == [
+        c.name for c in outcome_streaming.all_calls
+    ]
+    assert len(outcome_non_streaming.all_results) == len(outcome_streaming.all_results)
+    assert outcome_non_streaming.generation.content == outcome_streaming.generation.content
+
+
+@pytest.mark.asyncio
+async def test_scenario_17_early_synthesis_preserved_when_no_more_tools_needed() -> None:
+    calls_made = 0
+
+    class SynthGateway:
+        async def continue_or_synthesize(self, *args: Any, **kwargs: Any) -> GenerationResponse:
+            nonlocal calls_made
+            calls_made += 1
+            return GenerationResponse(
+                provider="test",
+                model="test",
+                content="Sales total is 500.",
+                tool_calls=[],
+            )
+
+        async def continue_or_synthesize_stream(self, *args: Any, **kwargs: Any):
+            nonlocal calls_made
+            calls_made += 1
+            yield "Sales total is 500."
+
+    reg = ToolRegistry()
+    def_sale = ToolDefinition(
+        name="today_sale",
+        description="sales info",
+        domain=ToolDomain.SALES,
+        risk=ToolRisk.READ,
+        parameters={},
+    )
+    reg.register(
+        def_sale,
+        AsyncMock(
+            return_value=ToolResult(
+                tool="today_sale",
+                success=True,
+                data={"total": 500},
+            )
+        ),
+    )
+
+    gen = GenerationResponse(
+        provider="test",
+        model="test",
+        content="",
+        tool_calls=[ToolCall(id="c1", name="today_sale", arguments={"storeId": STORE_A})],
+    )
+    outcome = await run_tool_loop(
+        gateway=SynthGateway(),
+        validator=ToolCallValidator(reg),
+        registry=reg,
+        executor=ToolExecutor(retailer=AsyncMock(), registry=reg),
+        confirmations=InMemoryConfirmationStore(),
+        settings=_make_settings(max_rounds=3),
+        generation=gen,
+        messages=[ChatMessage(role="user", content="sales")],
+        tools=[def_sale],
+        language="hi-IN",
+        store_id=STORE_A,
+        access_token="tok",
+        session_id=SESSION_1,
+        user_id=USER_1,
+        emit=AsyncMock(),
+    )
+    assert len(outcome.all_calls) == 1
+    assert calls_made == 1
+    assert outcome.generation.content == "Sales total is 500."
+
+
+def test_scenario_18_mixed_parallel_and_sequential_dependency_preservation() -> None:
+    reg = ToolRegistry()
+    d_par1 = ToolDefinition(
+        name="search_product",
+        description="p",
+        domain=ToolDomain.INVENTORY,
+        risk=ToolRisk.READ,
+        parameters={},
+        allows_parallel=True,
+    )
+    d_par2 = ToolDefinition(
+        name="stock_summary",
+        description="s",
+        domain=ToolDomain.INVENTORY,
+        risk=ToolRisk.READ,
+        parameters={},
+        allows_parallel=True,
+    )
+    d_seq = ToolDefinition(
+        name="payment_history",
+        description="pay",
+        domain=ToolDomain.FINANCE,
+        risk=ToolRisk.READ,
+        parameters={},
+        allows_parallel=False,
+    )
+    d_write = ToolDefinition(
+        name="create_expense",
+        description="exp",
+        domain=ToolDomain.FINANCE,
+        risk=ToolRisk.WRITE,
+        parameters={},
+    )
+    for d in (d_par1, d_par2, d_seq, d_write):
+        reg.register(d, AsyncMock())
+
+    calls = [
+        ToolCall(id="c1", name="create_expense", arguments={"storeId": STORE_A, "amount": 50}),
+        ToolCall(id="c2", name="search_product", arguments={"storeId": STORE_A, "query": "x"}),
+        ToolCall(id="c3", name="payment_history", arguments={"storeId": STORE_A}),
+        ToolCall(id="c4", name="stock_summary", arguments={"storeId": STORE_A}),
+    ]
+    stages = plan_execution(calls, registry=reg)
+    assert len(stages) == 3
+    assert stages[0].kind == StageKind.PARALLEL_READ
+    assert set(c.name for c in stages[0].calls) == {"search_product", "stock_summary"}
+    assert stages[1].kind == StageKind.SEQUENTIAL_READ
+    assert stages[1].calls[0].name == "payment_history"
+    assert stages[2].kind == StageKind.SEQUENTIAL_WRITE
+    assert stages[2].calls[0].name == "create_expense"
+
+
+@pytest.mark.asyncio
+async def test_scenario_19_purchase_order_product_mismatch_correction() -> None:
+    from app.orchestrator.confirmation import _stage_create_purchase_order_call
+
+    mock_retailer = AsyncMock()
+
+    async def mock_get_products(access_token, store_id, query, limit=5):
+        if query == "wrong_id_for_turmeric":
+            return SimpleNamespace(
+                body={"data": [{"id": "wrong_id_for_turmeric", "name": "Everest Turmeric / Haldi Powder"}]}
+            )
+        elif "MDH Chana Masala" in query:
+            return SimpleNamespace(
+                body={"data": [{"id": "correct_id_mdh_chana", "name": "MDH Chana Masala Spice Mix", "pricing": {"purchasePrice": 45.0}}]}
+            )
+        return SimpleNamespace(body={"data": []})
+
+    mock_retailer.get_products = mock_get_products
+    mock_store = InMemoryConfirmationStore()
+
+    call = ToolCall(
+        id="c_po",
+        name="create_purchase_order",
+        arguments={
+            "storeId": STORE_A,
+            "supplierId": "sup_mdh_123",
+            "supplierName": "MDH",
+            "items": [
+                {
+                    "productId": "wrong_id_for_turmeric",
+                    "productName": "MDH Chana Masala Spice Mix",
+                    "quantity": 50,
+                }
+            ],
+        },
+    )
+    record = await _stage_create_purchase_order_call(
+        mock_store,
+        user_id=USER_1,
+        store_id=STORE_A,
+        session_id=SESSION_1,
+        call=call,
+        retailer=mock_retailer,
+        access_token="tok",
+    )
+    items = record.summary["items"]
+    assert items[0]["productId"] == "correct_id_mdh_chana"
+    assert items[0]["productName"] == "MDH Chana Masala Spice Mix"
+    assert items[0]["purchasePrice"] == 45.0
+    assert record.summary["totalAmount"] == 2250.0
+

@@ -245,6 +245,8 @@ async def run_tool_loop(
             )
 
         if not tool_calls:
+            if emit is not None and generation.content:
+                await _emit(emit, "assistant.delta", {"text": generation.content})
             break
 
         # Guard: never re-execute a (tool, args) pair already run this
@@ -580,11 +582,17 @@ async def run_tool_loop(
             and result.tool in {"create_invoice_draft", "update_invoice_draft"}
             for result in projected_writes
         )
+        executed_tool_names = {call.name for call in all_calls}
+        unexecuted_tools = [t for t in tools if t.name not in executed_tool_names]
         has_pending_writes = any(
             registry.get_definition(t.name).risk in {ToolRisk.WRITE, ToolRisk.SENSITIVE}
             for t in tools
         )
-        if emit is not None and not has_pending_writes:
+        has_remaining_reads = any(
+            registry.get_definition(t.name).risk == ToolRisk.READ
+            for t in unexecuted_tools
+        )
+        if emit is not None and not has_pending_writes and not has_remaining_reads:
             allow_more_tools = False
         else:
             allow_more_tools = (
@@ -600,11 +608,14 @@ async def run_tool_loop(
                 results=all_results,
                 staged_sensitive=staged_sensitive is not None,
             )
-            removed_schema_tokens += max(
-                0,
-                estimate_tool_schema_tokens(tools)
-                - estimate_tool_schema_tokens(continue_tools),
-            )
+            if not continue_tools:
+                allow_more_tools = False
+            else:
+                removed_schema_tokens += max(
+                    0,
+                    estimate_tool_schema_tokens(tools)
+                    - estimate_tool_schema_tokens(continue_tools),
+                )
         else:
             continue_tools = []
 

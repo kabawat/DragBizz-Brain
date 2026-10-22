@@ -130,7 +130,7 @@ class CheaperInferenceSettings(BaseSettings):
         validation_alias="CHEAPER_INFERENCE_BASE_URL",
     )
     model: str = Field(
-        default="openai/gpt-4o-mini",
+        default="xingchen-agi/xing4.0-29b-a4b:free",
         validation_alias="CHEAPER_INFERENCE_MODEL",
     )
     temperature: float = Field(

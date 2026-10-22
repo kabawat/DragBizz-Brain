@@ -964,46 +964,76 @@ async def _stage_create_purchase_order_call(
                 pass
 
         for item in sanitized_items:
-            if "purchasePrice" not in item or not item.get("productName"):
-                try:
-                    prod_res = await retailer.get_products(
-                        access_token=access_token,
-                        store_id=store_id,
-                        query=item["productId"],
-                        limit=5,
-                    )
-                    p_data = prod_res.body.get("data") or []
-                    for p in p_data:
-                        if (
-                            isinstance(p, dict)
-                            and str(p.get("id") or p.get("_id")) == item["productId"]
-                        ):
-                            if not item.get("productName") and p.get("name"):
-                                item["productName"] = p["name"]
-                            if "purchasePrice" not in item:
-                                pricing = (
-                                    p.get("pricing")
-                                    if isinstance(p.get("pricing"), dict)
-                                    else {}
-                                )
-                                p_price = (
-                                    pricing.get("purchasePrice")
-                                    or pricing.get("sellingPrice")
-                                    or p.get("sellingPrice")
-                                )
+            expected_pname = (item.get("productName") or "").strip()
+            try:
+                prod_res = await retailer.get_products(
+                    access_token=access_token,
+                    store_id=store_id,
+                    query=item["productId"],
+                    limit=5,
+                )
+                p_data = prod_res.body.get("data") or []
+                matched = None
+                for p in p_data:
+                    if (
+                        isinstance(p, dict)
+                        and str(p.get("id") or p.get("_id")) == item["productId"]
+                    ):
+                        matched = p
+                        break
+
+                if expected_pname:
+                    p_name = str(matched.get("name") if matched else "").strip()
+                    if (
+                        p_name
+                        and expected_pname.lower() not in p_name.lower()
+                        and p_name.lower() not in expected_pname.lower()
+                    ):
+                        search_res = await retailer.get_products(
+                            access_token=access_token,
+                            store_id=store_id,
+                            query=expected_pname,
+                            limit=5,
+                        )
+                        s_data = search_res.body.get("data") or []
+                        for sp in s_data:
+                            if isinstance(sp, dict) and sp.get("name"):
+                                sp_name = str(sp["name"]).lower()
                                 if (
-                                    isinstance(p_price, (int, float))
-                                    and not isinstance(p_price, bool)
-                                    and p_price > 0
+                                    expected_pname.lower() in sp_name
+                                    or sp_name in expected_pname.lower()
                                 ):
-                                    item["purchasePrice"] = float(p_price)
-                                    item["totalPrice"] = round(
-                                        float(p_price) * item["quantity"], 2
-                                    )
-                                    total_amount += item["totalPrice"]
-                            break
-                except Exception:
-                    pass
+                                    matched = sp
+                                    item["productId"] = str(sp.get("id") or sp.get("_id"))
+                                    item["productName"] = sp["name"]
+                                    break
+
+                if matched is not None:
+                    if not item.get("productName") and matched.get("name"):
+                        item["productName"] = matched["name"]
+                    if "purchasePrice" not in item:
+                        pricing = (
+                            matched.get("pricing")
+                            if isinstance(matched.get("pricing"), dict)
+                            else {}
+                        )
+                        p_price = (
+                            pricing.get("purchasePrice")
+                            or pricing.get("sellingPrice")
+                            or matched.get("sellingPrice")
+                        )
+                        if (
+                            isinstance(p_price, (int, float))
+                            and not isinstance(p_price, bool)
+                            and p_price > 0
+                        ):
+                            item["purchasePrice"] = float(p_price)
+                            item["totalPrice"] = round(
+                                float(p_price) * item["quantity"], 2
+                            )
+                            total_amount += item["totalPrice"]
+            except Exception:
+                pass
 
     draft_id = f"po_{uuid.uuid4().hex[:8]}"
 
