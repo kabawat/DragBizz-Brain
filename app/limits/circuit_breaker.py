@@ -81,7 +81,7 @@ class CircuitBreaker:
                 self._metrics.record_breaker_open(state=BreakerState.OPEN.value)
             emit_event(
                 BREAKER_TRANSITION,
-                name=self._name,
+                breaker_name=self._name,
                 state=BreakerState.OPEN.value,
                 failures=record.failures,
             )

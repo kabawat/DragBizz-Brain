@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 _FALLBACK_PROVIDER = {
     OPENAI_PROVIDER_NAME: CHEAPER_PROVIDER_NAME,
-    GOOGLE_PROVIDER_NAME: CHEAPER_PROVIDER_NAME,
+    GOOGLE_PROVIDER_NAME: OPENAI_PROVIDER_NAME,
     CHEAPER_PROVIDER_NAME: OPENAI_PROVIDER_NAME,
 }
 
@@ -361,7 +361,29 @@ class AiGateway:
         round: int = 0,
     ) -> GenerationResponse:
         """breaker → attempt → retryable retry → fallback → final failure."""
-        self._breaker.allow()
+        try:
+            self._breaker.allow()
+        except AppError:
+            fallback = self._fallback_for(provider)
+            if fallback is not None:
+                logger.warning(
+                    "Provider %s circuit breaker is open; switching to fallback %s",
+                    provider.name,
+                    fallback.name,
+                )
+                fallback_request = request.model_copy(update={"model": None})
+                return await self._budgeted_call(
+                    fallback,
+                    fallback_request,
+                    budget=budget,
+                    token_usage=token_usage,
+                    call_type=call_type,
+                    round=round,
+                    retry=False,
+                    fallback=True,
+                )
+            raise
+
         try:
             return await self._budgeted_call(
                 provider,
@@ -406,7 +428,6 @@ class AiGateway:
                     fallback.name,
                 )
                 fallback_request = request.model_copy(update={"model": None})
-                self._breaker.allow()
                 return await self._budgeted_call(
                     fallback,
                     fallback_request,

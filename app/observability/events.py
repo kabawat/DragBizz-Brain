@@ -41,6 +41,34 @@ EVENT_NAMES = frozenset(
 )
 
 
+_RESERVED_LOG_ATTRS = frozenset(
+    {
+        "args",
+        "asctime",
+        "created",
+        "exc_info",
+        "exc_text",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "module",
+        "msecs",
+        "message",
+        "msg",
+        "name",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "thread",
+        "threadName",
+    }
+)
+
+
 def emit_event(
     event: str,
     *,
@@ -58,9 +86,14 @@ def emit_event(
         "event": event,
     }
     if isinstance(payload, dict):
-        extra.update(payload)
+        for k, v in payload.items():
+            if k in _RESERVED_LOG_ATTRS:
+                extra[f"event_{k}"] = v
+            else:
+                extra[k] = v
     if metrics is not None:
         extra["metrics"] = redact_mapping(metrics)
     if audit is not None:
         extra["audit"] = redact_mapping(audit)
     logger.log(level, event, extra=extra)
+
