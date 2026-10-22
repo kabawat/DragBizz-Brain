@@ -20,7 +20,13 @@ from app.limits import (
     InMemoryRateLimiter,
     RateLimiter,
 )
-from app.observability import AuditTrail, MetricsRegistry, pricing_from_settings
+from app.observability import (
+    AuditTrail,
+    MetricsRegistry,
+    init_middleware_telemetry,
+    pricing_from_settings,
+    shutdown_middleware_telemetry,
+)
 from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.chat_service import ChatService
 from app.orchestrator.model_config import (
@@ -54,6 +60,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    telemetry_providers = init_middleware_telemetry(settings)
+    app.state.telemetry_providers = telemetry_providers
+
     http_client = httpx.AsyncClient(
         timeout=httpx.Timeout(settings.services.request_timeout_seconds),
         limits=httpx.Limits(
@@ -401,4 +410,5 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await vector_store.close()
         await http_client.aclose()
         core_grpc_client.close()
+        shutdown_middleware_telemetry(telemetry_providers)
         logger.info("AI service stopped")

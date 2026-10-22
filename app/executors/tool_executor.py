@@ -18,6 +18,7 @@ from app.idempotency import (
 from app.integrations.retailer_client import RetailerClient
 from app.observability import AuditTrail, MetricsRegistry
 from app.observability.events import TOOL_EXECUTION, emit_event
+from app.observability.middleware_telemetry import trace_tool_execution
 from app.schemas.tool import ToolCall, ToolResult, ToolRisk
 from app.tools.context import ToolContext
 from app.tools.registry import ToolRegistry
@@ -455,20 +456,22 @@ class ToolExecutor:
                     status_code=500,
                 ) from exc
 
-        if inspect.iscoroutinefunction(handler):
-            result = await handler(call.arguments, context)
-        else:
-            result = await asyncio.to_thread(handler, call.arguments, context)
-        # Read tools: at most one retry on ambiguous Retailer errors.
-        if (
-            not result.success
-            and isinstance(result.data, dict)
-            and result.data.get("code") in {"RETAILER_TIMEOUT", "RETAILER_UNAVAILABLE"}
-        ):
+        with trace_tool_execution(call.name, call.arguments):
             if inspect.iscoroutinefunction(handler):
                 result = await handler(call.arguments, context)
             else:
                 result = await asyncio.to_thread(handler, call.arguments, context)
+            # Read tools: at most one retry on ambiguous Retailer errors.
+            if (
+                not result.success
+                and isinstance(result.data, dict)
+                and result.data.get("code")
+                in {"RETAILER_TIMEOUT", "RETAILER_UNAVAILABLE"}
+            ):
+                if inspect.iscoroutinefunction(handler):
+                    result = await handler(call.arguments, context)
+                else:
+                    result = await asyncio.to_thread(handler, call.arguments, context)
         latency_ms = (time.perf_counter() - started) * 1000
         self._audit(
             session_id=session_id,
@@ -512,7 +515,8 @@ class ToolExecutor:
             )
             return cached
 
-        result = await handler(dict(call.arguments), context)
+        with trace_tool_execution(call.name, call.arguments):
+            result = await handler(dict(call.arguments), context)
         await self._idempotency.put(key, result)
         self._audit(
             session_id=session_id,

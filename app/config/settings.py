@@ -19,6 +19,7 @@ from app.config.runtime import (
     ProactiveSettings,
     SessionSettings,
 )
+from app.config.middleware_obs import MiddlewareObservabilitySettings
 from app.config.server import ServerSettings
 from app.config.services import JwtSettings, ServiceSettings
 
@@ -45,6 +46,9 @@ class Settings(BaseSettings):
     limits: LimitSettings = Field(default_factory=LimitSettings)
     events: EventSettings = Field(default_factory=EventSettings)
     proactive: ProactiveSettings = Field(default_factory=ProactiveSettings)
+    middleware: MiddlewareObservabilitySettings = Field(
+        default_factory=MiddlewareObservabilitySettings
+    )
 
     @model_validator(mode="after")
     def resolve_jwks_url_and_guards(self) -> "Settings":

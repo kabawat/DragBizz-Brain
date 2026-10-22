@@ -10,6 +10,7 @@ from app.limits.circuit_breaker import CircuitBreaker
 from app.limits.request_budget import RequestBudget
 from app.observability.events import MODEL_ATTEMPT, emit_event
 from app.observability.metrics import MetricsRegistry
+from app.observability.middleware_telemetry import trace_llm_call
 from app.orchestrator.model_config import ModelSelectionStore
 from app.orchestrator.model_router import ModelRouter
 from app.orchestrator.token_usage import RequestTokenUsage
@@ -476,13 +477,38 @@ class AiGateway:
             retry=retry,
             fallback=fallback,
         )
-        try:
-            response = await provider.generate(request)
-        except Exception:
-            self._record(started, error=True, retry=retry, fallback=fallback)
-            raise
-        self._record(started, error=False, retry=retry, fallback=fallback)
-        return response
+        with trace_llm_call(
+            model=request.model or getattr(provider, "_default_model", ""),
+            provider=provider.name,
+            temperature=request.temperature,
+        ) as span:
+            span.set_attribute("llm.retry", retry)
+            span.set_attribute("llm.fallback", fallback)
+            try:
+                response = await provider.generate(request)
+                if response.input_tokens is not None:
+                    span.set_attribute("llm.token_count.prompt", response.input_tokens)
+                if response.output_tokens is not None:
+                    span.set_attribute(
+                        "llm.token_count.completion", response.output_tokens
+                    )
+                total = getattr(response, "total_tokens", None)
+                if (
+                    total is None
+                    and response.input_tokens is not None
+                    and response.output_tokens is not None
+                ):
+                    total = response.input_tokens + response.output_tokens
+                if total is not None:
+                    span.set_attribute("llm.token_count.total", total)
+                finish_reason = getattr(response, "finish_reason", None)
+                if finish_reason:
+                    span.set_attribute("llm.finish_reason", str(finish_reason))
+            except Exception:
+                self._record(started, error=True, retry=retry, fallback=fallback)
+                raise
+            self._record(started, error=False, retry=retry, fallback=fallback)
+            return response
 
     async def _resolve(self) -> tuple[Any, str | None]:
         """Admin pin wins. Otherwise use AI_ACTIVE_PROVIDER (OpenAI by

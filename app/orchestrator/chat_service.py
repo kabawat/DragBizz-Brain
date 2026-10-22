@@ -20,8 +20,13 @@ from app.guards.output_guard import (
 from app.guards.prompt_abuse import PromptAbuseLimiter
 from app.limits.request_budget import BudgetExceeded, RequestBudget
 from app.observability.audit_trail import AuditTrail
+from app.observability.evaluations import evaluate_turn_correctness
 from app.observability.events import CHAT_REQUEST, LIMIT_BUDGET, emit_event
 from app.observability.metrics import MetricsRegistry
+from app.observability.middleware_telemetry import (
+    trace_context_build,
+    trace_intent,
+)
 from app.observability.pricing import PricingConfig, pricing_from_settings
 from app.orchestrator.ai_gateway import AiGateway
 from app.orchestrator.cancel import CancelScope
@@ -174,9 +179,7 @@ class ChatService:
         user_id = str(user["sub"])
         agency_id = str(user["agencyId"]).strip() if user.get("agencyId") else None
         tenant_id = str(user["tenant"]).strip().lower() if user.get("tenant") else None
-        refusal = await self._guard_input(
-            body, user_id=user_id, store_id=store_id
-        )
+        refusal = await self._guard_input(body, user_id=user_id, store_id=store_id)
         if refusal is not None:
             return ChatResponse(
                 message=refusal,
@@ -216,12 +219,13 @@ class ChatService:
             store_id=store_id,
         )
         prior_numbers = _extract_prior_numbers(prior_turns, current_user_text=body.text)
-        intent = resolve_turn_intent(
-            body.text,
-            available=available,
-            prior_user_texts=[turn.user_text for turn in prior_turns],
-            use_domain_routing=self._settings.chat.domain_routing_enabled,
-        )
+        with trace_intent(len(body.text)):
+            intent = resolve_turn_intent(
+                body.text,
+                available=available,
+                prior_user_texts=[turn.user_text for turn in prior_turns],
+                use_domain_routing=self._settings.chat.domain_routing_enabled,
+            )
         tool_names = intent.tool_names
         field_fill = looks_like_field_fill(body.text)
         if field_fill:
@@ -379,21 +383,22 @@ class ChatService:
                 pending_confirmation=None,
             )
 
-        context = await build_chat_context(
-            sessions=self._sessions,
-            retriever=self._retriever,
-            settings=self._settings,
-            question=body.text,
-            language=body.language,
-            session_id=body.session_id,
-            user_id=user_id,
-            store_id=store_id,
-            tools=tools,
-            routing=intent.routing,
-            rag_cache=self._rag_cache,
-            metrics=self._metrics,
-            prior_turns=prior_turns,
-        )
+        with trace_context_build():
+            context = await build_chat_context(
+                sessions=self._sessions,
+                retriever=self._retriever,
+                settings=self._settings,
+                question=body.text,
+                language=body.language,
+                session_id=body.session_id,
+                user_id=user_id,
+                store_id=store_id,
+                tools=tools,
+                routing=intent.routing,
+                rag_cache=self._rag_cache,
+                metrics=self._metrics,
+                prior_turns=prior_turns,
+            )
         if context.docs_unavailable:
             await self._prompt_abuse.clear(user_id=user_id, store_id=store_id)
             message = get_docs_unavailable_message(body.language)
@@ -680,6 +685,12 @@ class ChatService:
             removed_result_tokens=outcome.removed_result_tokens,
         )
 
+        evaluate_turn_correctness(
+            tool_calls=outcome.all_calls,
+            tool_results=outcome.all_results,
+            message=message,
+        )
+
         return ChatResponse(
             message=message,
             session_id=body.session_id,
@@ -688,8 +699,7 @@ class ChatService:
             provider=outcome.generation.provider,
             model=outcome.generation.model,
             tool_calls=[
-                PublicToolCall(id=call.id, name=call.name)
-                for call in outcome.all_calls
+                PublicToolCall(id=call.id, name=call.name) for call in outcome.all_calls
             ],
             tool_results=outcome.all_results,
             pending_confirmation=pending,
@@ -778,6 +788,11 @@ class ChatService:
             language=body.language,
             prior_numbers=prior_numbers,
         )
+        evaluate_turn_correctness(
+            tool_calls=tool_calls,
+            tool_results=tool_results,
+            message=guarded,
+        )
         await self._sessions.append_turn(
             session_id=body.session_id,
             user_id=user_id,
@@ -821,8 +836,7 @@ class ChatService:
             provider=provider,
             model="",
             tool_calls=[
-                PublicToolCall(id=call.id, name=call.name)
-                for call in tool_calls
+                PublicToolCall(id=call.id, name=call.name) for call in tool_calls
             ],
             tool_results=tool_results,
             pending_confirmation=pending_confirmation,
@@ -866,8 +880,7 @@ class ChatService:
             )
         if decision.category == "PROMPT_INJECTION":
             return (
-                "I can only assist with store operations, sales, stock, "
-                "and invoices."
+                "I can only assist with store operations, sales, stock, and invoices."
             )
         return get_refusal_message(body.language)
 

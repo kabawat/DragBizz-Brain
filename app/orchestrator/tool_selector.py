@@ -193,7 +193,7 @@ _FAMILY_READS: dict[str, frozenset[str]] = {
     "payment_detail": frozenset({"get_customer_payment", "payment_history"}),
     "payment_reminders": frozenset({"list_payment_reminders", "search_customer"}),
     # Lookup/create flows need search only; payment history is payment-family.
-    "customer": frozenset({"search_customer", "list_customer_accounts"}),
+    "customer": frozenset({"search_customer"}),
     "customer_ledger": frozenset({"get_customer_ledger", "list_customer_accounts", "search_customer"}),
     "customer_accounts": frozenset({"list_customer_accounts", "search_customer"}),
     "customer_stats": frozenset({"customer_summary"}),
