@@ -94,6 +94,7 @@ def build_synthesis_instruction(*, language: str) -> str:
         + "If a successful write tool result includes openPath, confirm "
         "briefly then include it as a Markdown link "
         "(e.g. [Open customer](/dashboard/customers/…)) — use that path "
-        "exactly. "
+        "exactly. Never construct absolute URLs with placeholder domains like "
+        "'your-store'; always use the relative /dashboard path. "
         f"Respond in language tag: {language}."
     )

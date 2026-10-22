@@ -43,15 +43,24 @@ _SECURITY_RULES = (
 
 def _answer_format(*, with_docs: bool) -> str:
     link_rule = (
-        "- In-app links: NEVER convert normal spoken phrases or conversational "
-        "suggestions into markdown links (e.g. NEVER write '[aaj ki total sales]"
-        "(/dashboard/today-sale)', never write '[yahan click karke](...)', "
+        "- In-app links: ALWAYS use relative paths starting with '/dashboard/' "
+        "(e.g. '/dashboard/customers/<id>', '/dashboard/invoices/<id>'). "
+        "NEVER construct absolute URLs with placeholder domains like 'your-store', "
+        "'your-store.dragbizz.io', 'your-store.com', or any external domain. "
+        "NEVER convert normal spoken phrases or conversational suggestions into "
+        "markdown links (e.g. NEVER write '[aaj ki total sales](/dashboard/today-sale)', "
+        "never write '[yahan click karke](...)', never write '[here](...)', "
         "never write '[pichle dino ki summary](...)'). "
         "NEVER invent routes (e.g. '/dashboard/today-sale' does NOT exist; "
         "the main store dashboard is '/dashboard'). "
         "Only cite an in-app page link (e.g. [Invoices](/dashboard/invoices)) "
         "when specifically answering a how-to question where the user asked "
         "where to find something in the dashboard.\n"
+        "- When create_customer indicates existing=True (customer already exists), "
+        "warmly let the user know that the customer is already registered, and link "
+        "to their profile using the relative openPath from the tool result: "
+        "`[Open customer](/dashboard/customers/<id>)` — NEVER generate "
+        "`[here](https://your-store...)` or external links.\n"
         "- Do not mention Tally unless the user asked about Tally / "
         "accounting export.\n"
     )
@@ -324,12 +333,13 @@ def build_chat_system_prompt(
             "missing values.\n"
         )
         parts.append(
-            "- After a successful write with openPath, ALWAYS end with "
-            "the Markdown link on its own line EXACTLY in this format: "
+            "- After a successful write with openPath (or when a customer already exists with existing=True), "
+            "ALWAYS end with the Markdown link on its own line EXACTLY in this format: "
             "[Open customer](/dashboard/customers/<id>) or "
             "[Open invoice](/dashboard/invoices/<id>). Never embed it as "
-            "[here] or [link] inside a sentence; the exact link text is "
-            "required to render the customer/invoice card.\n"
+            "[here] or [link] inside a sentence, and NEVER construct absolute URLs "
+            "like https://your-store.dragbizz.io/... — all links must be relative paths "
+            "starting with /dashboard/.\n"
         )
         parts.append(_WRITE_REPLY)
         parts.append(
