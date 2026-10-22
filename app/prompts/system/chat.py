@@ -118,6 +118,16 @@ _CUSTOMER_LIVE = (
     "use get_customer_ledger / get_customer_payment for one customer.\n"
 )
 
+_CUSTOMER_ACCOUNTS_RULE = (
+    "- Customer dues & credit ledger list: When the user asks for customer dues, credit ledger, "
+    "udhaar list, pending dues, or account balances without specifying a single customer name, call "
+    "list_customer_accounts (use hasDue=True if they asked for dues, credit ledger, or pending balances). "
+    "Quote customer names, phone numbers, and exact balances/due amounts directly from the tool result. "
+    "Do NOT refuse or ask the user for a customer name or phone number when they ask for dues or ledger list; "
+    "call list_customer_accounts immediately.\n"
+    "- If the user names a specific customer or provides a phone number, use search_customer and get_customer_ledger.\n"
+)
+
 _DOSSIER_LIVE = (
     "- Who-is: call customer_dossier, not search_customer. Answer only "
     "from its fields. memo is a user-typed note — quote it only if useful, "
@@ -268,6 +278,8 @@ def build_chat_system_prompt(
         )
         if "search_customer" in tool_names:
             parts.append(_CUSTOMER_LIVE)
+        if tool_names & {"list_customer_accounts", "get_customer_ledger"}:
+            parts.append(_CUSTOMER_ACCOUNTS_RULE)
         if "customer_dossier" in tool_names:
             parts.append(_DOSSIER_LIVE)
         if tool_names & {
