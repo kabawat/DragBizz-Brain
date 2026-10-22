@@ -212,6 +212,14 @@ class ChatService:
                 pending_confirmation=None,
             )
 
+        if emit is not None:
+            res = emit(
+                "agent.progress",
+                {"stage": "understanding", "label": "Understanding your request…"},
+            )
+            if res is not None:
+                await res
+
         available = {definition.name for definition in self._registry.definitions()}
         prior_turns = await self._sessions.load_history(
             session_id=body.session_id,

@@ -1599,8 +1599,8 @@ _STOCK_ADD_FLEX_RE = re.compile(
     re.IGNORECASE,
 )
 _EXPENSE_ADD_FLEX_RE = re.compile(
-    r"\b(?:add|daal|dalo|likho|record|banao)\s+(?:karo\s+)?(?:\S+\s+){0,4}(?:kharch[aeo]|expense)\b"
-    r"|\b(?:kharch[aeo]|expense)\s*(?:me(?:in)?)?\s+(?:\S+\s+){0,6}(?:add|daal|dalo|likho|record|karo)\b"
+    r"\b(?:add|daal|dalo|likh(?:o|a)?|record|banao)\s+(?:karo\s+|do\s+)?(?:\S+\s+){0,4}(?:kharch[aeo]|expe?n[sc]e|exepnse)\b"
+    r"|\b(?:kharch[aeo]|expe?n[sc]e|exepnse)\s*(?:me(?:in)?)?\s+(?:\S+\s+){0,6}(?:add|daal|dalo|likh(?:o|a)?|record|karo)\b"
     r"|(?:ઉમેરો|નોંધો|લખો|કરો|એડ)\s*(?:કરો\s+)?(?:\S+\s+){0,4}(?:ખર્ચ[ઓા]?)(?:\b|\s|$|[^\w])"
     r"|(?:ખર્ચ[ઓા]?)\s*(?:માં)?\s+(?:\S+\s+){0,6}(?:ઉમેરો|નોંધો|લખો|કરો|એડ)(?:\b|\s|$|[^\w])"
     r"|\b(?:rent|kiraya)\s+(?:\S+\s+){0,3}(?:diya|bhara|bhra|pay)\b"
@@ -1730,12 +1730,15 @@ def extract_who_is_query(question: str) -> str | None:
 
 
 _PURE_CHITCHAT_RE = re.compile(
-    r"^(hi+|hello+|hey+|hola|namaste|kem\s+cho|kaise\s+ho|kya\s+haal\s+hai?|"
-    r"good\s+(morning|afternoon|evening|night)|"
-    r"thank\s*(you|s)?|dhanyawad|shukriya|thx|"
-    r"who\s+(are\s+you|made\s+you)|what\s+can\s+you\s+do|aap\s+kaun\s+ho|tum\s+kaun\s+ho|"
+    r"^(?:(?:hi+|hello+|hey+|hola|namaste)\s*)?"
+    r"(?:kaise\s+ho|kya\s+haal\s+hai?|kem\s+cho|how\s+are\s+you|"
+    r"hi+|hello+|hey+|hola|namaste|"
+    r"good\s+(?:morning|afternoon|evening|night)|"
+    r"thank\s*(?:you|s)?|dhanyawad|shukriya|thx|"
+    r"who\s+(?:are\s+you|made\s+you)|what\s+can\s+you\s+do|aap\s+kaun\s+ho|tum\s+kaun\s+ho|"
     r"bye+|alvida|tata|see\s+you|"
-    r"ok|okay|theek\s+hai|achha|sahi\s+hai|cool|nice|great|sure)[.!?\s]*$",
+    r"ok|okay|theek\s+hai|achha|sahi\s+hai|cool|nice|great|sure)"
+    r"(?:\s+(?:bhai|bro(?:ther)?|sir|ji|friend|dost|all))?[.!?\s]*$",
     re.IGNORECASE,
 )
 
@@ -1788,6 +1791,14 @@ _DOMAIN_PATTERNS: dict[ToolDomain, re.Pattern[str]] = {
 }
 
 
+_CONVERSATIONAL_ACK_RE = re.compile(
+    r"^(?:thik\s*h(?:ai|e)|theek\s*h(?:ai|e)|ok|okay|achha|accha|sahi\s*h(?:ai|e))\b.*?"
+    r"\b(?:ruk|ruko|rehne\s*do|rahne\s*do|baad\s*me|cancel|chodo|chhod\s*do|samajh\s*gaya|got\s*it)\b"
+    r"|^(?:ruk|ruko|rehne\s*do|rahne\s*do|chodo|chhod\s*do|baad\s*me\s*karenge|kuch\s*nahi)\b",
+    re.IGNORECASE,
+)
+
+
 def is_pure_chitchat(text: str) -> bool:
     """True if query is conversational chit-chat with zero store operational intent."""
     cleaned = text.strip()
@@ -1795,7 +1806,11 @@ def is_pure_chitchat(text: str) -> bool:
         return False
     if _STORE_OPERATIONAL_CUES_RE.search(cleaned):
         return False
-    return bool(_PURE_CHITCHAT_RE.match(cleaned) or _NEITHER_RE.match(cleaned))
+    return bool(
+        _PURE_CHITCHAT_RE.match(cleaned)
+        or _NEITHER_RE.match(cleaned)
+        or _CONVERSATIONAL_ACK_RE.search(cleaned)
+    )
 
 
 def detect_query_domains(text: str) -> set[ToolDomain]:
@@ -1962,9 +1977,9 @@ def resolve_turn_intent(
                         comp for comp in meta.companion_reads if comp in available_set
                     )
 
-    has_tools = bool(matched_reads)
-    has_howto = bool(_HOW_TO_RE.search(text))
-    is_neither = bool(_NEITHER_RE.match(text))
+    is_neither = is_pure_chitchat(text)
+    has_tools = bool(matched_reads) and not is_neither
+    has_howto = bool(_HOW_TO_RE.search(text)) and not is_neither
 
     if has_tools and has_howto:
         routing: RoutingLabel = "both"
@@ -2029,9 +2044,31 @@ def user_requested_sensitive_action(question: str, tool_name: str) -> bool:
     if tool_name == "create_purchase_order" and _PO_FLEX_RE.search(text):
         return True
     pattern = _SENSITIVE_ACTION_RES.get(tool_name)
-    if pattern is None:
-        return False
-    return bool(pattern.search(text))
+    if pattern is not None and pattern.search(text):
+        return True
+
+    # Hybrid typo-tolerant sensitive action check
+    meta = TOOL_METADATA_CATALOG.get(tool_name)
+    if meta is not None:
+        candidates = GLOBAL_TOOL_RETRIEVER.retrieve_candidates(
+            text, available_tools=TOOL_METADATA_CATALOG.keys(), limit=10
+        )
+        for c in candidates:
+            if c.tool_name == tool_name:
+                if tool_name == "ledger_credit" and not _LEDGER_CREDIT_FLEX_RE.search(text):
+                    continue
+                if tool_name == "ledger_debit" and _LEDGER_CREDIT_FLEX_RE.search(text):
+                    continue
+                if c.alias_match:
+                    return True
+                if (
+                    c.matched_action == meta.action_type
+                    and c.matched_entity == meta.entity_type
+                    and c.score >= 18.0
+                ):
+                    return True
+
+    return False
 
 
 def should_retrieve_docs(

@@ -36,6 +36,10 @@ from app.orchestrator.tool_selector import (
     _exposure_tools,
     user_requested_sensitive_action,
 )
+from app.orchestrator.progress import (
+    get_parallel_tools_label,
+    get_tool_progress_label,
+)
 from app.rag.chunker import estimate_tokens
 from app.schemas.chat import ChatMessage, GenerationResponse
 from app.schemas.tool import ToolCall, ToolDefinition, ToolResult, ToolRisk
@@ -325,11 +329,25 @@ async def run_tool_loop(
                 budget.check_deadline()
 
             if stage.kind == StageKind.PARALLEL_READ:
+                if len(stage.calls) > 1:
+                    await _emit(
+                        emit,
+                        "agent.progress",
+                        {
+                            "stage": "executing_tools",
+                            "label": get_parallel_tools_label([c.name for c in stage.calls]),
+                            "tools": [c.name for c in stage.calls],
+                        },
+                    )
                 for call in stage.calls:
                     await _emit(
                         emit,
                         "tool.started",
-                        {"tool": call.name, "toolCallId": call.id},
+                        {
+                            "tool": call.name,
+                            "toolCallId": call.id,
+                            "label": get_tool_progress_label(call.name),
+                        },
                     )
 
                 async def _on_read_complete(
@@ -383,7 +401,11 @@ async def run_tool_loop(
                     await _emit(
                         emit,
                         "tool.started",
-                        {"tool": call.name, "toolCallId": call.id},
+                        {
+                            "tool": call.name,
+                            "toolCallId": call.id,
+                            "label": get_tool_progress_label(call.name),
+                        },
                     )
                     one = await executor.execute_reads(
                         [call],
@@ -413,7 +435,11 @@ async def run_tool_loop(
                 await _emit(
                     emit,
                     "tool.started",
-                    {"tool": call.name, "toolCallId": call.id},
+                    {
+                        "tool": call.name,
+                        "toolCallId": call.id,
+                        "label": get_tool_progress_label(call.name),
+                    },
                 )
                 one = await executor.execute_writes(
                     [call],
@@ -468,7 +494,11 @@ async def run_tool_loop(
             await _emit(
                 emit,
                 "tool.started",
-                {"tool": call.name, "toolCallId": call.id},
+                {
+                    "tool": call.name,
+                    "toolCallId": call.id,
+                    "label": get_tool_progress_label(call.name),
+                },
             )
             if call.id not in blocked_sensitive_ids:
                 projected = project_tool_result(
@@ -625,6 +655,15 @@ async def run_tool_loop(
         if not allow_more_tools and emit is not None:
             collected: list[str] = []
             try:
+                if all_results:
+                    await _emit(
+                        emit,
+                        "agent.progress",
+                        {
+                            "stage": "synthesizing",
+                            "label": "Preparing response & summary…",
+                        },
+                    )
                 async for chunk in gateway.continue_or_synthesize_stream(
                     conversation,
                     language=language,

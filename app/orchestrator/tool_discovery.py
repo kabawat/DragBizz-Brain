@@ -502,7 +502,7 @@ TOOL_METADATA_CATALOG: dict[str, ToolRetrievalMetadata] = {
         aliases=(
             "create expense", "add expense", "record expense", "kharcha add", "add kharcha",
             "kharcha record", "kharcha dalo", "kharcha likho", "kharcha banao", "rent diya",
-            "kiraya diya", "bill bhara", "light bill", "bijli bill", "chai nashta", "kharcha hua",
+            "kiraya diya", "bill bhara", "light bill", "bijli bill", "chai nashta",
         ),
         companion_reads=("expense_summary", "list_expenses"),
     ),
@@ -700,7 +700,11 @@ ENTITY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "gst": ("gst", "tax", "taxes", "cgst", "sgst", "igst"),
 }
 
-_STOPWORDS = frozenset({"his", "her", "the", "and", "for", "with", "test", "name", "email", "phone", "check"})
+_STOPWORDS = frozenset({
+    "his", "her", "the", "and", "for", "with", "test", "name", "email", "phone", "check",
+    "jata", "jate", "jati", "hota", "hote", "hoti", "raha", "rahe", "rahi", "gaya", "gaye", "gayi",
+    "bola", "bole", "boli", "kaha", "kahe", "kahi", "ruk", "suno", "samjho",
+})
 
 
 def damerau_levenshtein(s1: str, s2: str) -> int:
