@@ -63,6 +63,16 @@ def init_middleware_telemetry(settings: Settings) -> Any:
         return None
 
     try:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+        if not hasattr(OTLPSpanExporter, "_headers"):
+            OTLPSpanExporter._headers = property(
+                lambda self: getattr(getattr(self, "_client", None), "headers", {})
+            )
+    except Exception:
+        pass
+
+    try:
         from middleware import llmobs
 
         # Register Middleware LLMObs with batch exporter
