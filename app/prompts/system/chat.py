@@ -428,6 +428,8 @@ def build_chat_system_prompt(
         if "create_purchase_order" in tool_names:
             parts.append(
                 "- create_purchase_order: STAGE purchase order (needs confirm). "
+                "Use this tool to order inventory from suppliers to restock products, "
+                "especially when products are low stock or out of stock. "
                 "First call search_supplier to find the real supplierId for the "
                 "named supplier. "
                 "First call search_product for each named item to get its real "
