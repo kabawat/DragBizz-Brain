@@ -5,6 +5,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from app.orchestrator.tool_discovery import (
+    GLOBAL_TOOL_RETRIEVER,
+    TOOL_METADATA_CATALOG,
+    ActionType,
+)
 from app.schemas.tool import ToolDomain
 
 _PRIOR_EXPOSURE_TURNS = 4
@@ -1579,7 +1584,9 @@ _PO_FLEX_RE = re.compile(
 )
 _PURCHASE_RANK_RE = re.compile(
     r"(?:jyada|zyada).{0,40}(?:saman|samaan|purchase|khareed|liya)"
-    r"|(?:kitn[ae]).{0,40}purchase|purchase.{0,40}kitn",
+    r"|(?:kitn[ae]).{0,40}purchase|purchase.{0,40}kitn"
+    r"|\b(?:top|best|high|highest)\s+(?:spending|buyer|buyers|spender|spenders)\b"
+    r"|\b(?:spending|spend)\s+(?:customers?|grahak)\b",
     re.IGNORECASE,
 )
 # Amount/name may sit between "stock me" and "add" ("stock me 10 add kar do").
@@ -1626,7 +1633,18 @@ class TurnIntent:
     tool_names: frozenset[str]
 
 
+_NEGATION_ACTION_RE = re.compile(
+    r"\b(?:do\s*not|don\'?t|never|mat|nahi|nahin|cancel|stop|nhi)\s+"
+    r"(?:create|add|banao|update|edit|delete|remove|record|release|send|link|merge|set)\b"
+    r"|\b(?:create|add|banao|update|edit|delete|remove|record|release|send|link|merge|set)\b\s+"
+    r"(?:mat|nahi|nahin|nhi)\b",
+    re.IGNORECASE,
+)
+
+
 def _exposure_tools(text: str) -> set[str]:
+    if _NEGATION_ACTION_RE.search(text):
+        return set()
     names: set[str] = set()
     for pattern, tools in _EXPOSURE_RES:
         if pattern.search(text):
@@ -1645,6 +1663,23 @@ def _exposure_tools(text: str) -> set[str]:
         names.add("update_expense")
     if _PO_FLEX_RE.search(text):
         names.update({"create_purchase_order", "search_supplier", "search_product"})
+
+    # System-wide hybrid typo-tolerant write tool discovery
+    candidates = GLOBAL_TOOL_RETRIEVER.retrieve_candidates(
+        text,
+        available_tools=TOOL_METADATA_CATALOG.keys(),
+        limit=10,
+    )
+    for c in candidates:
+        if c.score >= 12.0:
+            meta = TOOL_METADATA_CATALOG.get(c.tool_name)
+            if meta is not None and meta.action_type in {
+                ActionType.CREATE,
+                ActionType.UPDATE,
+                ActionType.DELETE,
+            }:
+                names.add(c.tool_name)
+
     return names
 
 
@@ -1809,6 +1844,18 @@ def detect_query_domains(text: str) -> set[ToolDomain]:
     ):
         domains.add(ToolDomain.GENERAL)
 
+    # Hybrid typo-tolerant retrieval domain signals
+    candidates = GLOBAL_TOOL_RETRIEVER.retrieve_candidates(
+        cleaned,
+        available_tools=TOOL_METADATA_CATALOG.keys(),
+        limit=6,
+    )
+    for c in candidates:
+        if c.score >= 12.0 or c.alias_match:
+            meta = TOOL_METADATA_CATALOG.get(c.tool_name)
+            if meta is not None:
+                domains.add(meta.domain)
+
     return domains
 
 
@@ -1894,6 +1941,26 @@ def resolve_turn_intent(
     for family, pattern in _FAMILY_RES.items():
         if pattern.search(text):
             matched_reads |= _FAMILY_READS[family]
+
+    # Hybrid typo-tolerant retrieval for reads
+    if not matched_reads and not _WHO_IS_RE.search(text):
+        candidates = GLOBAL_TOOL_RETRIEVER.retrieve_candidates(
+            text,
+            available_tools=available_set,
+            limit=6,
+        )
+        for c in candidates:
+            if c.score >= 12.0 or c.alias_match:
+                meta = TOOL_METADATA_CATALOG.get(c.tool_name)
+                if meta is not None and meta.action_type in {
+                    ActionType.READ,
+                    ActionType.SEARCH,
+                    ActionType.ANALYTICS,
+                }:
+                    matched_reads.add(c.tool_name)
+                    matched_reads.update(
+                        comp for comp in meta.companion_reads if comp in available_set
+                    )
 
     has_tools = bool(matched_reads)
     has_howto = bool(_HOW_TO_RE.search(text))
