@@ -1369,6 +1369,14 @@ _HOW_TO_RE = re.compile(
     "|".join(re.escape(cue) for cue in _HOW_TO_CUES),
     re.IGNORECASE,
 )
+_APP_DOC_QUERY_RE = re.compile(
+    r"\b(dragbizz|dragai|drag\s*ai|dragorbit)\b|"
+    r"\b(zoho|odoo)\b|"
+    r"\b(tally\s+vs|vs\s+tally|tally\s+se\s+achha|tally\s+etc|tally\s+se\s+alag)\b|"
+    r"\b(kya hai|what is|why use|kyo use|kyu use|kyun use|why should i use)\b|"
+    r"\b(features|plans|pricing|subscription|comparison)\b",
+    re.IGNORECASE,
+)
 _EXPOSURE_RES = tuple(
     (
         re.compile(
@@ -1711,7 +1719,7 @@ _WHO_IS_FILLER_RE = re.compile(
 def extract_who_is_query(question: str) -> str | None:
     """Name or phone from a who-is question. None when no subject remains."""
     text = question.strip()
-    if not text or not _WHO_IS_RE.search(text):
+    if not text or not _WHO_IS_RE.search(text) or _APP_DOC_QUERY_RE.search(text):
         return None
     phone = _WHO_IS_PHONE_RE.search(text)
     if phone:
@@ -1892,7 +1900,7 @@ def resolve_domain_turn_intent(
     if is_pure_chitchat(text):
         return TurnIntent(routing="neither", tool_names=frozenset())
 
-    has_howto = bool(_HOW_TO_RE.search(text))
+    has_howto = bool(_HOW_TO_RE.search(text) or _APP_DOC_QUERY_RE.search(text))
     domains = detect_query_domains(text)
 
     # 2. Domains matched -> expose full domain bundles + write cues
@@ -1979,7 +1987,10 @@ def resolve_turn_intent(
 
     is_neither = is_pure_chitchat(text)
     has_tools = bool(matched_reads) and not is_neither
-    has_howto = bool(_HOW_TO_RE.search(text)) and not is_neither
+    has_howto = (
+        bool(_HOW_TO_RE.search(text) or _APP_DOC_QUERY_RE.search(text))
+        and not is_neither
+    )
 
     if has_tools and has_howto:
         routing: RoutingLabel = "both"
@@ -2020,6 +2031,7 @@ def resolve_turn_intent(
     customer_only = matched_reads <= _FAMILY_READS["customer"]
     if (
         _WHO_IS_RE.search(text)
+        and not _APP_DOC_QUERY_RE.search(text)
         and not write_exposure
         and not has_howto
         and (not has_tools or customer_only)

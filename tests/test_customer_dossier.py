@@ -763,3 +763,19 @@ def test_dossier_prompt_only_when_tool_offered() -> None:
     assert "call customer_dossier" in dossier_prompt
     assert "call customer_dossier" not in search_prompt
     assert "regular timings" not in search_prompt
+
+
+def test_app_and_comparison_queries_bypass_dossier_and_route_to_docs() -> None:
+    comparison_q = (
+        "DragBizz ke bare me batao and main dragbizz kyo use kru ? "
+        "koiye ek strong reason batao main zoho, oodo, tally etc bhi to use kar sakta hu "
+        "Dragbbiz me kyo paisa weat karo ?"
+    )
+    assert extract_who_is_query(comparison_q) is None
+    intent = resolve_turn_intent(comparison_q, available=[])
+    assert intent.routing == "docs"
+
+    about_q = "DragBizz ke bare me batao"
+    assert extract_who_is_query(about_q) is None
+    assert resolve_turn_intent(about_q, available=[]).routing == "docs"
+

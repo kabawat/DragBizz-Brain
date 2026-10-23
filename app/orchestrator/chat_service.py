@@ -521,7 +521,7 @@ class ChatService:
                 audit_trail=self._audit_trail,
                 metrics=self._metrics,
                 cancel=cancel,
-                emit=emit,
+                emit=None if not tools else emit,
                 token_usage=token_usage,
             )
         except asyncio.CancelledError:
