@@ -33,13 +33,13 @@ class ChatSettings(BaseSettings):
     model_config = _group_config()
 
     max_tokens: int = Field(
-        default=512,
+        default=2048,
         ge=1,
         le=8192,
         validation_alias="AI_CHAT_MAX_TOKENS",
     )
     synthesis_max_tokens: int = Field(
-        default=256,
+        default=1024,
         ge=1,
         le=4096,
         validation_alias="AI_CHAT_SYNTHESIS_MAX_TOKENS",

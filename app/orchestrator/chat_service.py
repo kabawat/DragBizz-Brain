@@ -464,6 +464,8 @@ class ChatService:
                 max_tokens = min(max_tokens, self._settings.chat.synthesis_max_tokens)
             elif tools:
                 max_tokens = min(max_tokens, 512)
+            else:
+                max_tokens = max(max_tokens, 2048)
             if not tools and emit is not None:
                 collected_chunks: list[str] = []
                 async for chunk in self._gateway.generate_stream(
