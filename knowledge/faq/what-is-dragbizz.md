@@ -26,6 +26,7 @@ status: shipped
 
 ## Why shops use DragBizz
 
+- **Your 0% Equity AI Co-Partner (DragAI)** — Unlike passive software (Tally, Zoho, Odoo) where you do all manual data entry yourself, DragBizz gives you DragAI: your 24/7 super-intelligent store manager & business co-partner who demands **zero equity and no salary**. Just talk or text in Hindi, English, or Gujarati — DragAI drafts bills, analyzes daily sales, alerts on low or dead stock, tracks customer udhari, and guides you on store growth proactively.
 - **One place for the counter** — bill, collect payment, update khata and stock without jumping apps.
 - **Built for Indian retail** — GST, khata/udhari, UPI, thermal print, Hindi/Gujarati UI.
 - **Works with your CA** — export for CA and **Tally Prime** XML (Integrations → Tally).
@@ -36,28 +37,29 @@ status: shipped
 
 | | **DragBizz** | **Tally** |
 |---|---|---|
-| Main job | Day-to-day store ops (billing, stock, khata, POS) | Accounting books & financials |
+| Main job | Day-to-day store ops (billing, stock, khata, POS) + 24/7 AI Co-Partner (DragAI) | Accounting books & financials |
 | Who uses it | Shop owner / staff at the counter | CA / accountant |
+| AI Intelligence | Built-in DragAI acts on voice/text commands, manages stock & khata | None (manual keyboard entry only) |
 | How they connect | Export vouchers as **Tally XML** from GST Analytics → Import in Tally Prime | Imports DragBizz XML |
 
 Use DragBizz to run the shop; use Tally (or your CA) for full books. Setup: `/dashboard/integrations/tally`.
 
-## DragBizz vs other ERPs (e.g. Zoho)
+## DragBizz vs other ERPs (e.g. Zoho, Odoo)
 
-DragBizz is aimed at **Indian small/medium shops** that need khata + GST + fast billing (+ optional Tally handoff). Prefer DragBizz when you want:
+| Feature | **DragBizz** | **Zoho / Odoo** |
+|---|---|---|
+| **AI Co-Partner** | Built-in DragAI (0% equity intelligent partner that operates store via chat/voice) | No store AI partner (passive complex forms) |
+| **Retail Counter Speed** | Counter-first 3-second billing & instant udhari khata | Heavy corporate multi-step workflows |
+| **Indian Shop Needs** | Hindi/Gujarati support, thermal print, UPI QR, CA Tally export | Global corporate focus, needs expensive consultants |
+| **Cost** | Start free, simple & affordable pricing | High subscription fees & complex add-ons |
 
-- Counter-first billing / POS and udhari khata
-- Simple GST analytics + CA / Tally export
-- Free khata tier to start, then upgrade modules
-
-For deep multi-country ERP / accounting suites, other products may fit better — for store ops in DragBizz’s modules, stick to DragBizz docs and your plan at `/dashboard/management/subscription`.
+DragBizz is built specifically for **Indian small/medium shops** that need an active AI partner + khata + GST + fast counter billing (+ seamless Tally handoff).
 
 ## Examples
 
-- "What is DragBizz?" → one-liner + feature table + key links.
-- "Why use DragBizz?" → bullet reasons above; point to plans if they ask pricing.
-- "DragBizz vs Tally?" → comparison table + Tally export path.
-- "DragBizz vs Zoho?" → position on Indian shop + khata/GST/Tally; do not invent competitor pricing or feature matrices.
+- "What is DragBizz?" → one-liner + feature table + key links + DragAI co-partner highlight.
+- "Why use DragBizz?" → highlight DragAI (0% equity super-intelligent co-partner), counter-first billing, udhari khata, CA export, affordable pricing.
+- "DragBizz vs Tally / Zoho / Odoo?" → emphasize DragAI active AI partner vs passive manual software + comparison table.
 
 ## FAQ
 
