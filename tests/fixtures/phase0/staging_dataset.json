@@ -1,0 +1,80 @@
+{
+  "fixture_version": 1,
+  "synthetic_only": true,
+  "timezone": "Asia/Kolkata",
+  "tenants": [
+    {
+      "tenant_id": "111111111111111111111111",
+      "store_id": "aaaaaaaaaaaaaaaaaaaaaaaa",
+      "store_name": "Phase0 Fixture Store Alpha",
+      "users": [
+        {"user_id": "alpha-owner", "role": "owner", "permissions": ["customers:read", "customers:write", "inventory:read", "inventory:write", "invoices:read", "invoices:write", "expenses:read", "expenses:write", "cashbook:read", "ledger:read", "ledger:write", "suppliers:read", "bills:read", "purchase_orders:read", "purchase_orders:write", "payments:read", "payments:write", "gst:read", "staff:read", "stores:read"]},
+        {"user_id": "alpha-reader", "role": "read_only", "permissions": ["customers:read", "inventory:read", "invoices:read", "expenses:read", "cashbook:read", "ledger:read", "suppliers:read", "bills:read", "purchase_orders:read", "payments:read", "gst:read", "staff:read", "stores:read"]}
+      ],
+      "customers": [
+        {"id": "100000000000000000000001", "name": "Rohit Sharma", "email": "rohit.one@example.invalid", "phone": "9000000001", "balance_due": 125.0, "note": "synthetic duplicate-name case"},
+        {"id": "100000000000000000000002", "name": "Rohit Sharma", "email": "rohit.two@example.invalid", "phone": "9000000002", "balance_due": 75.0, "note": "synthetic duplicate-name case"},
+        {"id": "100000000000000000000003", "name": "Kishanlal Sample", "email": "kishanlal@example.invalid", "phone": "9000000003", "balance_due": 0.0, "note": "buys paneer; synthetic memo only"}
+      ],
+      "products": [
+        {"id": "200000000000000000000001", "name": "Aashirvaad Atta 5kg", "aliases": ["atta", "aata", "आटा"], "sku": "SYN-ATTA-5KG", "price": 239.0, "available_quantity": 4},
+        {"id": "200000000000000000000002", "name": "Fortune Mustard Oil 1L", "aliases": ["tel", "oil", "sarso tel", "तेल"], "sku": "SYN-OIL-1L", "price": 145.0, "available_quantity": 0},
+        {"id": "200000000000000000000003", "name": "Synthetic Negative Stock Item", "aliases": ["negative stock"], "sku": "SYN-NEG-01", "price": 10.0, "available_quantity": -2}
+      ],
+      "invoices": [
+        {"id": "300000000000000000000001", "number": "INV-PHASE0-2026-000000000001", "customer_id": "100000000000000000000001", "date": "2026-10-24", "status": "paid", "amount": 145.0, "items": [{"product_id": "200000000000000000000002", "name": "Fortune Mustard Oil 1L", "quantity": 1, "unit_price": 145.0}]},
+        {"id": "300000000000000000000002", "number": "INV-PHASE0-2026-000000000002", "customer_id": "100000000000000000000002", "date": "2026-10-23", "status": "partial", "amount": 239.0, "items": [{"product_id": "200000000000000000000001", "name": "Aashirvaad Atta 5kg", "quantity": 1, "unit_price": 239.0}]},
+        {"id": "300000000000000000000003", "number": "INV-PHASE0-2026-000000000003", "customer_id": "100000000000000000000003", "date": "2026-10-22", "status": "unpaid", "amount": 290.0, "items": [{"product_id": "200000000000000000000002", "name": "Fortune Mustard Oil 1L", "quantity": 2, "unit_price": 145.0}]},
+        {"id": "300000000000000000000004", "number": "INV-PHASE0-2026-000000000004", "customer_id": "100000000000000000000001", "date": "2026-10-21", "status": "paid", "amount": 478.0, "items": [{"product_id": "200000000000000000000001", "name": "Aashirvaad Atta 5kg", "quantity": 2, "unit_price": 239.0}]},
+        {"id": "300000000000000000000005", "number": "INV-PHASE0-2026-000000000005", "customer_id": "100000000000000000000002", "date": "2026-10-20", "status": "paid", "amount": 145.0, "items": [{"product_id": "200000000000000000000002", "name": "Fortune Mustard Oil 1L", "quantity": 1, "unit_price": 145.0}]}
+      ],
+      "expenses": [
+        {"id": "400000000000000000000001", "status": "unpaid", "amount": 2000.0, "category": "rent", "date": "2026-10-24"},
+        {"id": "400000000000000000000002", "status": "unpaid", "amount": 390.0, "category": "utilities", "date": "2026-10-23"},
+        {"id": "400000000000000000000003", "status": "unpaid", "amount": 160.0, "category": "supplies", "date": "2026-10-22"},
+        {"id": "400000000000000000000004", "status": "unpaid", "amount": 100.0, "category": "travel", "date": "2026-10-21"},
+        {"id": "400000000000000000000005", "status": "unpaid", "amount": 900.0, "category": "repairs", "date": "2026-10-20"}
+      ],
+      "cashbook": {"business_date": "2026-10-24", "opening": 5000.0, "cash_in": 700.0, "cash_out": 200.0, "closing": 5500.0},
+      "suppliers": [{"id": "500000000000000000000001", "name": "Sample Supplier A", "bill_ids": ["600000000000000000000001"]}, {"id": "500000000000000000000002", "name": "Sample Supplier B", "bill_ids": []}],
+      "supplier_bills": [{"id": "600000000000000000000001", "supplier_id": "500000000000000000000001", "amount": 1200.0, "status": "unpaid", "date": "2026-10-23"}],
+      "purchase_orders": [{"id": "700000000000000000000001", "supplier_id": "500000000000000000000002", "amount": 800.0, "status": "pending", "date": "2026-10-24"}],
+      "payments": [{"id": "800000000000000000000001", "customer_id": "100000000000000000000001", "amount": 50.0, "status": "completed", "date": "2026-10-24"}],
+      "gst": {"business_date": "2026-10-24", "taxable_amount": 1000.0, "tax_amount": 50.0},
+      "staff": [{"id": "900000000000000000000001", "name": "Synthetic Staff One", "status": "active"}]
+    },
+    {
+      "tenant_id": "222222222222222222222222",
+      "store_id": "bbbbbbbbbbbbbbbbbbbbbbbb",
+      "store_name": "Phase0 Fixture Store Beta",
+      "users": [{"user_id": "beta-owner", "role": "owner", "permissions": ["customers:read", "inventory:read", "invoices:read", "expenses:read", "cashbook:read", "suppliers:read", "bills:read", "purchase_orders:read", "payments:read", "gst:read", "staff:read", "stores:read"]}],
+      "customers": [{"id": "100000000000000000000001", "name": "Rohit Sharma", "email": "beta.rohit@example.invalid", "phone": "9000000011", "balance_due": 999.0, "note": "must remain tenant-isolated"}],
+      "products": [{"id": "200000000000000000000001", "name": "Beta-only Product", "aliases": ["beta item"], "sku": "BETA-ONLY-01", "price": 999.0, "available_quantity": 9}],
+      "invoices": [],
+      "expenses": [],
+      "cashbook": {"business_date": "2026-10-24", "opening": 0.0, "cash_in": 0.0, "cash_out": 0.0, "closing": 0.0},
+      "suppliers": [],
+      "supplier_bills": [],
+      "purchase_orders": [],
+      "payments": [],
+      "gst": {"business_date": "2026-10-24", "taxable_amount": 0.0, "tax_amount": 0.0},
+      "staff": []
+    }
+  ],
+  "expected": {
+    "alpha_unpaid_expense_count": 5,
+    "alpha_unpaid_expense_total": 3550.0,
+    "alpha_out_of_stock_product_ids": ["200000000000000000000002", "200000000000000000000003"],
+    "alpha_invoice_count": 5,
+    "alpha_invoice_first_page_count": 3,
+    "alpha_supplier_bill_count": 1,
+    "alpha_purchase_order_count": 1,
+    "alpha_cashbook_closing": 5500.0
+  },
+  "failure_scenarios": [
+    {"id": "empty-invoice-list", "store_id": "bbbbbbbbbbbbbbbbbbbbbbbb", "tool": "list_invoices", "result_state": "success_empty"},
+    {"id": "cashbook-dependency-timeout", "store_id": "aaaaaaaaaaaaaaaaaaaaaaaa", "tool": "cashbook_summary", "result_state": "dependency_error", "user_message_must_not_claim": "no records"},
+    {"id": "read-only-cannot-write", "store_id": "aaaaaaaaaaaaaaaaaaaaaaaa", "user_id": "alpha-reader", "tool": "create_expense", "result_state": "unauthorized"}
+  ],
+  "pagination": {"tool": "list_invoices", "store_id": "aaaaaaaaaaaaaaaaaaaaaaaa", "page_size": 3, "total_count": 5, "has_more": true}
+}

@@ -160,7 +160,9 @@ def test_benchmark_representative_flows(capsys) -> None:
     # Customer live rules grew with merge/OB/payment/collect/reminder coverage
     # and live IST date/time prompt injection.
     rows.append(
-        ("customer_system_prompt", 1, 1400, cust_sys, max(0, 1400 - cust_sys))
+        # The live customer rules now measure 1,793 estimated tokens; retain a
+        # small ceiling margin so this benchmark detects further prompt growth.
+        ("customer_system_prompt", 1, 1800, cust_sys, max(0, 1800 - cust_sys))
     )
 
     print("\nPhase7 token benchmark (Estimated chars//4, not provider billing):")

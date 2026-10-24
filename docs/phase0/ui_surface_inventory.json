@@ -1,0 +1,24 @@
+{
+  "source": "DRAG_AI_END_TO_END_AUDIT_REPORT.md — signed-in local UI observation",
+  "interpretation": "Observed as visible slash-command surface only. Candidate tool mappings are hypotheses to verify against frontend command registration and runtime traces; presence does not prove successful execution or authorization.",
+  "commands": [
+    {"command": "/sales", "candidate_tools": ["today_sale", "invoice_summary"], "status": "visible_unverified"},
+    {"command": "/revenue", "candidate_tools": ["today_sale", "invoice_summary"], "status": "visible_unverified"},
+    {"command": "/dues", "candidate_tools": ["list_customer_accounts"], "status": "visible_unverified"},
+    {"command": "/find-customer", "candidate_tools": ["search_customer"], "status": "visible_unverified"},
+    {"command": "/create-customer", "candidate_tools": ["create_customer"], "status": "visible_unverified"},
+    {"command": "/update-customer", "candidate_tools": ["update_customer"], "status": "visible_unverified"},
+    {"command": "/payments", "candidate_tools": ["payment_history", "get_customer_payment"], "status": "visible_unverified"},
+    {"command": "/khata", "candidate_tools": ["get_customer_ledger", "ledger_credit", "ledger_debit"], "status": "visible_unverified"},
+    {"command": "/stock", "candidate_tools": ["stock_summary", "stock_items"], "status": "visible_unverified"},
+    {"command": "/find-product", "candidate_tools": ["search_product"], "status": "visible_unverified"},
+    {"command": "/low-stock", "candidate_tools": ["stock_items"], "status": "visible_unverified"},
+    {"command": "/invoice", "candidate_tools": ["list_invoices", "create_invoice_draft"], "status": "visible_unverified"},
+    {"command": "/release-invoice", "candidate_tools": ["release_invoice"], "status": "visible_unverified"},
+    {"command": "/payables", "candidate_tools": ["bill_summary", "supplier_summary"], "status": "visible_unverified"},
+    {"command": "/credit", "candidate_tools": ["ledger_credit"], "status": "visible_unverified"},
+    {"command": "/debit", "candidate_tools": ["ledger_debit"], "status": "visible_unverified"},
+    {"command": "/gst", "candidate_tools": ["gst_summary"], "status": "visible_unverified"},
+    {"command": "/help", "candidate_tools": [], "status": "visible_unverified"}
+  ]
+}

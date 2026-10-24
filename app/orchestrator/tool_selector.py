@@ -199,7 +199,9 @@ _FAMILY_READS: dict[str, frozenset[str]] = {
     "payment_reminders": frozenset({"list_payment_reminders", "search_customer"}),
     # Lookup/create flows need search only; payment history is payment-family.
     "customer": frozenset({"search_customer"}),
-    "customer_ledger": frozenset({"get_customer_ledger", "list_customer_accounts", "search_customer"}),
+    "customer_ledger": frozenset(
+        {"get_customer_ledger", "list_customer_accounts", "search_customer"}
+    ),
     "customer_accounts": frozenset({"list_customer_accounts", "search_customer"}),
     "customer_stats": frozenset({"customer_summary"}),
     "invoice": frozenset({"search_customer", "search_product"}),
@@ -1377,6 +1379,34 @@ _APP_DOC_QUERY_RE = re.compile(
     r"\b(features|plans|pricing|subscription|comparison)\b",
     re.IGNORECASE,
 )
+_GENERIC_CONCEPT_QUERY_RE = re.compile(r"\b(kya hai|what is)\b", re.IGNORECASE)
+_APP_BRAND_OR_DOC_TOPIC_RE = re.compile(
+    r"\b(dragbizz|dragai|drag\s*ai|dragorbit|zoho|odoo|tally|"
+    r"features|plans|pricing|subscription|comparison)\b",
+    re.IGNORECASE,
+)
+_STORE_PROFILE_LOOKUP_RE = re.compile(
+    r"\b(?:store\s+(?:(?:ka|ki|ke)\s+)?(?:name|naam|category)|"
+    r"my\s+store\s+(?:(?:name|category)|ki\s+category)|"
+    r"store\s+(?:name|category)|"
+    r"how\s+many\s+stores?|(?:kitne|kitane|kitna)\s+stores?|"
+    r"total\s+stores?|all\s+stores?|stores?\s+list|"
+    r"category\s+(?:kya|batao|ke\s+according))\b",
+    re.IGNORECASE,
+)
+
+
+def _is_app_document_query(text: str) -> bool:
+    """Avoid treating a store-profile lookup as product documentation."""
+    if not _APP_DOC_QUERY_RE.search(text):
+        return False
+    return not (
+        _GENERIC_CONCEPT_QUERY_RE.search(text)
+        and _FAMILY_RES["store"].search(text)
+        and not _APP_BRAND_OR_DOC_TOPIC_RE.search(text)
+    )
+
+
 _EXPOSURE_RES = tuple(
     (
         re.compile(
@@ -1900,7 +1930,12 @@ def resolve_domain_turn_intent(
     if is_pure_chitchat(text):
         return TurnIntent(routing="neither", tool_names=frozenset())
 
-    has_howto = bool(_HOW_TO_RE.search(text) or _APP_DOC_QUERY_RE.search(text))
+    has_howto = bool(_HOW_TO_RE.search(text) or _is_app_document_query(text))
+    if _STORE_PROFILE_LOOKUP_RE.search(text):
+        tool_names = frozenset({"list_stores"} & available_set)
+        routing: RoutingLabel = "both" if has_howto else "tools"
+        return TurnIntent(routing=routing, tool_names=tool_names)
+
     domains = detect_query_domains(text)
 
     # 2. Domains matched -> expose full domain bundles + write cues
@@ -1921,7 +1956,15 @@ def resolve_domain_turn_intent(
         tool_names = (
             bundle_tools
             | current_writes
-            | (carried & {"create_expense", "update_expense", "create_invoice_draft", "update_invoice_draft"})
+            | (
+                carried
+                & {
+                    "create_expense",
+                    "update_expense",
+                    "create_invoice_draft",
+                    "update_invoice_draft",
+                }
+            )
         ) & available_set
 
         routing: RoutingLabel = "both" if has_howto else "tools"
@@ -1988,7 +2031,7 @@ def resolve_turn_intent(
     is_neither = is_pure_chitchat(text)
     has_tools = bool(matched_reads) and not is_neither
     has_howto = (
-        bool(_HOW_TO_RE.search(text) or _APP_DOC_QUERY_RE.search(text))
+        bool(_HOW_TO_RE.search(text) or _is_app_document_query(text))
         and not is_neither
     )
 
@@ -2067,7 +2110,10 @@ def user_requested_sensitive_action(question: str, tool_name: str) -> bool:
         )
         for c in candidates:
             if c.tool_name == tool_name:
-                if tool_name == "ledger_credit" and not _LEDGER_CREDIT_FLEX_RE.search(text):
+                if (
+                    tool_name == "ledger_credit"
+                    and not _LEDGER_CREDIT_FLEX_RE.search(text)
+                ):
                     continue
                 if tool_name == "ledger_debit" and _LEDGER_CREDIT_FLEX_RE.search(text):
                     continue

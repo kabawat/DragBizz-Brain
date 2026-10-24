@@ -1,0 +1,450 @@
+[
+  {
+    "source": "api/public-endpoints.md",
+    "sha256": "981e27b0e1b786051cf6478a53b85f59c51b3da9d8e1e47a69e6f54a6e797c5c",
+    "bytes": 3188,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "customer/khata.md",
+    "sha256": "e55c02e033a9805f772a841bde78238a333d8cb98eb56089e62215fd6117807b",
+    "bytes": 3839,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "customer/management.md",
+    "sha256": "286b4a2a291ab5a9d6b8772fcf88f7fa40236d3f33f4330cf1ab15dc5fae6ef4",
+    "bytes": 4373,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "customer/opening-balance.md",
+    "sha256": "aedba8c1cf475dba778090d9a627e91c00b332146b4ad1e6a76b8e5c89df572f",
+    "bytes": 2940,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "customer/payments.md",
+    "sha256": "c48048a86ac23747cf541983742b6c7a93c4bdcbd2a93afd9fc731bdc1f861e9",
+    "bytes": 3959,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "customer/reminders.md",
+    "sha256": "f0af7129d708d0d7cdecaceaec34c122de0df19e389a2a4d141984f544a04264",
+    "bytes": 2715,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "dashboard/cashbook.md",
+    "sha256": "5e721deaf3629f4be4156fe69ec90c0c5e37ace19f46f870e39f3139bdc2e478",
+    "bytes": 2924,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "dashboard/expenses.md",
+    "sha256": "2ba3fd67a4a31c82b5df6cd8d1b80a3c3d211a39cb2c9775d4caec6cfab07fb7",
+    "bytes": 3287,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "dashboard/overview.md",
+    "sha256": "3e13f20d98c6a8153a58ec65a2a5c9f7dd793fd2e0fb5ea4ed81046e9ce70bcd",
+    "bytes": 2330,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "dashboard/voice-assistant.md",
+    "sha256": "9ec6afe5c0d92aa8ae8576465b26b4baa7ed7a57984da3160ea0d464e487a862",
+    "bytes": 3985,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "faq/common-errors.md",
+    "sha256": "075772fb9ddfe7d1220a50cfb841634018a8512b30cf4c6513337092ba020dd6",
+    "bytes": 3340,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "faq/desktop-sync.md",
+    "sha256": "911ef123cb4419b4bcb608d70020b029422523bc076397d5a0767308bef17a07",
+    "bytes": 2799,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "faq/login-security.md",
+    "sha256": "4e5382c0071494277db157de4f41e92b4530cacb21ee0864c20c3fcaf095d89a",
+    "bytes": 2135,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "faq/onboarding.md",
+    "sha256": "e73358f9cb70e532de6ebfd1455730301a70bd17f93f85648142307c7adcebd3",
+    "bytes": 2738,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "faq/shortcuts-support.md",
+    "sha256": "4493f5ab8dbe6e747aa9a0b269f2155a8d70d5dfeb8a1ffeb594a38a7c11665b",
+    "bytes": 3259,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "faq/what-is-dragbizz.md",
+    "sha256": "bd7f4fdaf0f495ad597ef5a829a50a909e902b7d0f4e9c7c932b933a22884c1b",
+    "bytes": 4287,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "gst/analytics.md",
+    "sha256": "039d773b78bc1b3f08f097f872e879865e2ca2ecd7701d0226ba68ec6edff079",
+    "bytes": 3868,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "gst/ca-export.md",
+    "sha256": "4d27e1070b5bc1247e8d6a3dd0058226fa7ef66404d9bcfacea42b70e488e93e",
+    "bytes": 2381,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "gst/gstin-verification.md",
+    "sha256": "d6245b8e730ce18a644e500967f43e3193078f1d73a89c14048219f77c70fbbb",
+    "bytes": 2817,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "gst/tally.md",
+    "sha256": "d65765622f15d5d6b5b1e34cd1988d6f762fc0d892bfdad9f6da90ddacf9e60c",
+    "bytes": 3503,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "inventory/categories.md",
+    "sha256": "35cc95fe89509a022f3efffb42e466bd3a88fc14cc5d2a550f633002aa1175a2",
+    "bytes": 2606,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "inventory/low-stock.md",
+    "sha256": "38eb497ff356b6a90050e97c47f5a79e380b2c50ecd274cd32d831be92fc5f8f",
+    "bytes": 2926,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "inventory/pricing.md",
+    "sha256": "4f952d46770816ed02f36389a2208272fb827d534e33ce033319dd92da88537e",
+    "bytes": 3014,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "inventory/products.md",
+    "sha256": "ec57b24ee389facb8a7a9318a2346f3cad7c1db5eaeefe7a3384dd6ee307101c",
+    "bytes": 4140,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "inventory/stock.md",
+    "sha256": "2d0c7dbcd8d57c18f52ca1f4bc30c5a99cde713f57ab51e6f8990dbe84e12ed1",
+    "bytes": 3976,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "invoice/customer-payment-display.md",
+    "sha256": "8eb5f47fb9188562b6b0fba65026b4f44331d48d90d88a3648c76b7fb766b58a",
+    "bytes": 2583,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "invoice/lifecycle-faq.md",
+    "sha256": "fd7096ecb3e76230c98b2e994bc78c197258f37dc48eaed509d55f21fcc47fef",
+    "bytes": 1583,
+    "chunk_count": 1,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "invoice/lifecycle.md",
+    "sha256": "ccb5398ad18c71b903f75506964c1deebb36afa9f0b91672bb248989db6613dd",
+    "bytes": 3406,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "invoice/numbering.md",
+    "sha256": "7a9fc0ce19d8a6c30f375141faebe388b79093192aedaf2aeb82a538b4fd9122",
+    "bytes": 2499,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "invoice/payments.md",
+    "sha256": "5874185465d1bc3cb192adcf255fce09447b868756bb7b763b6383948b829abb",
+    "bytes": 3481,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "invoice/pos.md",
+    "sha256": "4cf4d04e92a332ef0a8d389cc22c00d375c0fe19d17d4a65b2f27667c88691e8",
+    "bytes": 3052,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "invoice/printing.md",
+    "sha256": "781a2dfdd2eee029390f928e9f42b5d1b0e5cee79ef7a574ae5c4b7150ce3fd5",
+    "bytes": 2536,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "invoice/public-invoice.md",
+    "sha256": "79b3db69180eeef4a531d47232437ed492907c8e9a34f0cf9031d52976129b49",
+    "bytes": 2165,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "reports/analytics-pages.md",
+    "sha256": "392a03ec227d5c4202425b59398db76e8b7987f07978e083af2387b167db82c9",
+    "bytes": 3723,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "reports/analytics.md",
+    "sha256": "d97fd1cd1d2f94fe54b0901e10a6936188ce4e225c239307be47acb69d23da6d",
+    "bytes": 3514,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "sales-order/management.md",
+    "sha256": "2d096ef4fb97a1ea3e95c03926b893f1f5ef745ad0f0b2f743d0d4e2db901158",
+    "bytes": 2974,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "sales-order/ordering.md",
+    "sha256": "5f4de4d8bf527a5a1c132916bc5a94c1e742315e6a7c3a1b3db3d8baab95bd42",
+    "bytes": 2691,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "sales-order/public-catalog.md",
+    "sha256": "ec13a1285b52c41bfdec78169458fcc1aa0a6176d8e5b5611aaff34b1283c23b",
+    "bytes": 2821,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "settings/account.md",
+    "sha256": "1a6a901bb742183a164ab79455a0ecf897f54e8de31bafe98485667b087e5e8d",
+    "bytes": 3465,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "settings/appearance.md",
+    "sha256": "798571ad74ea27e7d377360c289b602a6b259da1e67c6b641e3410c646734a8c",
+    "bytes": 4534,
+    "chunk_count": 4,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "settings/language.md",
+    "sha256": "bf59da30da20432dcc27b4af735bd8e5eb3563e2c98abf7ffe05feeafea63719",
+    "bytes": 3028,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "settings/notifications.md",
+    "sha256": "7558ca0fd3defa3f42bbe4dd534e1b57558e513bae12711c2787db1faa3c133e",
+    "bytes": 2573,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "settings/payments.md",
+    "sha256": "903752f7ba1a70529e84f313f13a1c38e4b51f095e6d325f88a695f77481d144",
+    "bytes": 4245,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "settings/signatures.md",
+    "sha256": "7dca91872c821ed2176f361dd80a8cc4cafbfc9dbc9e88055195ef0ec9470274",
+    "bytes": 1851,
+    "chunk_count": 1,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "settings/store.md",
+    "sha256": "fe9f76e4c288ff492952ddf3700dc3d04efee64042bb04f2081198ec82b2a798",
+    "bytes": 3283,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "staff/attendance.md",
+    "sha256": "0de2c3d94d9da011e262277d02e8ead102679577eadfefc33c2364566667e4db",
+    "bytes": 2169,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "staff/management.md",
+    "sha256": "a3ccaebce0934fec933ba7bfc7d5c1ca4d4a84c16632dff39afc446681ba1e4c",
+    "bytes": 3433,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "staff/salary.md",
+    "sha256": "bad5d95a7bcbfa1d1f9a612ef653c0fd190392e9ac65b3bfd04fde03e99c575e",
+    "bytes": 2448,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "subscription/billing.md",
+    "sha256": "beaa67f54dc55dc8baf56a3c21b332ceddc3aa5056fc083a1c7e5f768d72cde8",
+    "bytes": 3006,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "subscription/limits.md",
+    "sha256": "c6bcd6cd5cba23c87060acb7759f5133b1917dec6ac01e4b7678b4103b8955d6",
+    "bytes": 3008,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "subscription/plans.md",
+    "sha256": "0fbfe0101814249ae99df4383b10042e82d24bd65dbd019ac7e11194fe1d5bc7",
+    "bytes": 4167,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "supplier/bills.md",
+    "sha256": "d3d15998c2a276229d691fb65d0f55495bedb579293a2a88c8cef726a59fafba",
+    "bytes": 3669,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "supplier/management.md",
+    "sha256": "05c83b92cd76b14f506f65327b7d541fdfa554bf3b8af36b58425eef14b9889a",
+    "bytes": 3894,
+    "chunk_count": 3,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "supplier/payments.md",
+    "sha256": "be9868f0bb5d6ac4f8b4591f77c39e8bab968cb670cfd10880fa62676dc94c19",
+    "bytes": 3323,
+    "chunk_count": 2,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "supplier/public-purchase-order.md",
+    "sha256": "2f64421e49f83a2e76f3981ad4947e758df538479ec84befb1eb2393b57e4c99",
+    "bytes": 2009,
+    "chunk_count": 1,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  },
+  {
+    "source": "supplier/purchase-orders.md",
+    "sha256": "5e3c14327c2fffc8bec5ecc9b8396d7bbbba5bc82866dfe52674f96022d58a6d",
+    "bytes": 4405,
+    "chunk_count": 4,
+    "scope": "global product documentation; no tenant records in corpus",
+    "execution_verified": false
+  }
+]

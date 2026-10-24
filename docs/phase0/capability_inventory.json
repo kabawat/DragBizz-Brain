@@ -1,0 +1,2536 @@
+[
+  {
+    "name": "add_stock",
+    "domain": "inventory",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:add_stock",
+    "retailer_client_methods": [
+      "add_stock"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "inventory:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage stock-in for one or more products (needs user confirm). Resolve each productId via search_product first. Supports multi-line intake (product A from person X, product B from person Y) in one call via items[]. Optional sourceName is the person/supplier name for display only. Does not post until confirmed. Preview shows currentStock, adding, finalStock per line.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "productId": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{24}$",
+                "description": "Product ObjectId from search"
+              },
+              "quantity": {
+                "type": "number",
+                "minimum": 0.01,
+                "description": "Units to add"
+              },
+              "productName": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Display name from search"
+              },
+              "sourceName": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Who stock came from (person/supplier name). Display only — not a supplier id."
+              },
+              "currentStock": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Current available qty from search_product.stock if known"
+              },
+              "purchasePrice": {
+                "type": "number",
+                "minimum": 0.01,
+                "description": "Cost per unit. Use product cost/sellingPrice when user did not give one."
+              }
+            },
+            "required": [
+              "productId",
+              "quantity"
+            ]
+          }
+        }
+      },
+      "required": [
+        "storeId",
+        "items"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "bill_summary",
+    "domain": "procurement",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:bill_summary",
+    "retailer_client_methods": [
+      "get_bill_analytics"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "bills:read"
+    ],
+    "allows_parallel": true,
+    "description": "Supplier purchase bill analytics: total bills, paid bills, pending/overdue bills, and payable/paid/due amounts.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "cashbook_summary",
+    "domain": "finance",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:cashbook_summary",
+    "retailer_client_methods": [
+      "get_cashbook_summary"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "cashbook:read"
+    ],
+    "allows_parallel": true,
+    "description": "Daily and periodic cashbook summary: cash in/out, opening/closing balance, and day status.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "fromDate": {
+          "type": "string",
+          "description": "From date (YYYY-MM-DD)"
+        },
+        "toDate": {
+          "type": "string",
+          "description": "To date (YYYY-MM-DD)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "create_collect_link",
+    "domain": "khata",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:create_collect_link",
+    "retailer_client_methods": [
+      "create_collect_link"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "payments:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage a payment collect link for a customer (needs confirm). Optional amount; omit to collect full due.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Customer ObjectId"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0.01,
+          "description": "Collect amount INR (optional)"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "storeId",
+        "customerId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "create_customer",
+    "domain": "khata",
+    "access": "write",
+    "risk": "write",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/write_tools.py:create_customer",
+    "retailer_client_methods": [
+      "create_customer"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "customers:write"
+    ],
+    "allows_parallel": false,
+    "description": "Create customer (name + either phone or email from user). Never invent name/phone/email/ids.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "phone": {
+          "type": "string",
+          "pattern": "^[6-9]\\d{9}$",
+          "description": "Indian 10-digit mobile number (required if email omitted)"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 200,
+          "description": "Customer email (required if phone omitted)"
+        }
+      },
+      "required": [
+        "storeId",
+        "name"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "create_expense",
+    "domain": "finance",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:create_expense",
+    "retailer_client_methods": [
+      "create_expense"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "expenses:write"
+    ],
+    "allows_parallel": false,
+    "description": "Record a new expense for the store (e.g. rent, electricity, tea/refreshments, salaries, maintenance, delivery, supplies). Requires user confirmation before execution.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "title": {
+          "type": "string",
+          "description": "Short description of expense (e.g. 'Store Rent', 'Electricity bill', 'Chai nashta')"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0.01,
+          "description": "Expense amount in INR (> 0)"
+        },
+        "category": {
+          "type": "string",
+          "description": "Expense category value. Valid values: 'daily-expenses' (Tea & Snacks / Chai / nashta / food), 'rent' (Rent / Kiraya), 'transport' (Delivery / Transport / Fuel / Dhulai), 'staff-wages' (Salary / Wages / Pagar), 'utilities' (Electricity / Water / Bijli), 'shop-supplies' (Bags / Packaging), 'office-supplies' (Stationery), 'maintenance' (Repairs), 'marketing', 'miscellaneous'"
+        },
+        "date": {
+          "type": "string",
+          "description": "Optional ISO date (YYYY-MM-DD)"
+        },
+        "paymentMode": {
+          "type": "string",
+          "description": "Optional payment mode: 'CASH', 'UPI', 'BANK_TRANSFER', 'CARD', 'OTHER'"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional professional description or note for the expense (e.g. 'Electricity bill for September 2026'). Intelligently formulate from user context."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PAID",
+            "PENDING",
+            "OVERDUE",
+            "CANCELLED"
+          ],
+          "description": "Optional payment status: 'PAID' (already paid / cleared, e.g. 'bill bhra'), 'PENDING' (yet to pay), or 'OVERDUE'. Default is 'PAID' if paid, else 'PENDING'."
+        }
+      },
+      "required": [
+        "storeId",
+        "title",
+        "amount",
+        "category"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "create_invoice_draft",
+    "domain": "sales",
+    "access": "write",
+    "risk": "write",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/write_tools.py:create_invoice_draft",
+    "retailer_client_methods": [
+      "create_invoice_draft"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "invoices:write"
+    ],
+    "allows_parallel": false,
+    "description": "Create DRAFT invoice only (no stock deduct). Items need real product ObjectIds + qty>=1; optional customerId (else walk-in).",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Optional customer ObjectId"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "product": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{24}$",
+                "description": "Product ObjectId from search"
+              },
+              "quantity": {
+                "type": "number",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "product",
+              "quantity"
+            ]
+          }
+        }
+      },
+      "required": [
+        "storeId",
+        "items"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "create_purchase_order",
+    "domain": "procurement",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:create_purchase_order",
+    "retailer_client_methods": [
+      "create_purchase_order"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "purchase_orders:write"
+    ],
+    "allows_parallel": false,
+    "description": "Draft a purchase order to order inventory from a supplier. Requires supplierId, items with productId and quantity. Requires user confirmation before execution.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "supplierId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Supplier ObjectId (from search_supplier)"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "productId": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{24}$",
+                "description": "Product ObjectId (from search_product)"
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Quantity to order"
+              },
+              "productName": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "Display name of product"
+              }
+            },
+            "required": [
+              "productId",
+              "quantity"
+            ]
+          }
+        },
+        "supplierName": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Display name of supplier"
+        },
+        "paymentTerms": {
+          "type": "string",
+          "description": "Payment terms (e.g. '30_DAYS', 'IMMEDIATE')"
+        },
+        "reference": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Optional reference or memo"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional notes or instructions"
+        },
+        "expectedDeliveryDate": {
+          "type": "string",
+          "description": "Optional expected delivery date (YYYY-MM-DD)"
+        }
+      },
+      "required": [
+        "storeId",
+        "supplierId",
+        "items"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "customer_detailed_analytics",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:customer_detailed_analytics",
+    "retailer_client_methods": [
+      "get_customer_detailed_analytics"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "customers:read"
+    ],
+    "allows_parallel": true,
+    "description": "Detailed periodic customer analytics (growth, acquisition, order frequency) over 7, 15, or 30 days.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "periodDays": {
+          "type": "integer",
+          "enum": [
+            7,
+            15,
+            30
+          ],
+          "description": "Lookback period in days (7, 15, 30)"
+        },
+        "analyticsType": {
+          "type": "string",
+          "enum": [
+            "overview",
+            "growth",
+            "cohort"
+          ],
+          "description": "Analytics slice (default overview)"
+        }
+      },
+      "required": [
+        "storeId",
+        "periodDays"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "customer_dossier",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:customer_dossier",
+    "retailer_client_methods": [
+      "get_invoices"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "customers:read"
+    ],
+    "allows_parallel": true,
+    "description": "Who someone is: one customer match plus their saved memo, dues if present, and up to 10 recent bills. Not a biography.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Customer name, phone, or email search text"
+        }
+      },
+      "required": [
+        "storeId",
+        "query"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "customer_summary",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:customer_summary",
+    "retailer_client_methods": [
+      "get_customer_analytics",
+      "get_customer_detailed_analytics"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "customers:read"
+    ],
+    "allows_parallel": true,
+    "description": "Store customer totals: total customers, today new, and new customers in last 7/15/30 days (and longer windows). Set periodDays for detailed period analytics (growth, averages).",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "periodDays": {
+          "type": "integer",
+          "enum": [
+            7,
+            15,
+            30
+          ],
+          "description": "Optional lookback for detailed customer analytics. Omit for all-time totals + new-customer windows."
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "expense_summary",
+    "domain": "finance",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:expense_summary",
+    "retailer_client_methods": [
+      "get_expense_analytics"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "expenses:read"
+    ],
+    "allows_parallel": true,
+    "description": "Store expense summary totals and category breakdown.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "get_customer_ledger",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:get_customer_ledger",
+    "retailer_client_methods": [
+      "get_customer_ledger"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "ledger:read"
+    ],
+    "allows_parallel": true,
+    "description": "Standalone khata ledger lines for one customer (running balance, type, amount). Prefer this over search_customer ledger slice when the user asks for ledger history.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Customer ObjectId"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Max ledger lines (default 50)"
+        }
+      },
+      "required": [
+        "storeId",
+        "customerId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "get_customer_payment",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:get_customer_payment",
+    "retailer_client_methods": [
+      "get_payment"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "payments:read"
+    ],
+    "allows_parallel": true,
+    "description": "Fetch one customer payment by payment ObjectId.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "paymentId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Payment ObjectId"
+        }
+      },
+      "required": [
+        "storeId",
+        "paymentId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "gst_summary",
+    "domain": "finance",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:gst_summary",
+    "retailer_client_methods": [
+      "get_gst_health_score",
+      "get_gst_summary"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "gst:read"
+    ],
+    "allows_parallel": true,
+    "description": "GST summary (taxable value, IGST, CGST, SGST, total tax) and GST compliance health score.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "month": {
+          "type": "string",
+          "description": "Month number (1-12) or name"
+        },
+        "quarter": {
+          "type": "string",
+          "description": "Quarter (Q1, Q2, Q3, Q4)"
+        },
+        "year": {
+          "type": "string",
+          "description": "Financial/calendar year (e.g. 2025)"
+        },
+        "period": {
+          "type": "string",
+          "description": "Period identifier (e.g. 2025-03, Q4-2025)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "inventory_velocity",
+    "domain": "inventory",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:inventory_velocity",
+    "retailer_client_methods": [
+      "get_stock_items"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "inventory:read"
+    ],
+    "allows_parallel": true,
+    "description": "Deterministic inventory sales velocity and scanning: correlates catalog stock against observed sales to identify fast-moving products and items with zero sales observed in the scanned window.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "window": {
+          "type": "string",
+          "enum": [
+            "today",
+            "7d",
+            "30d",
+            "90d"
+          ],
+          "description": "Analysis window (default '7d')"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum items per category (default 20)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "invoice_detailed_analytics",
+    "domain": "sales",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:invoice_detailed_analytics",
+    "retailer_client_methods": [
+      "get_invoice_detailed_analytics"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "invoices:read"
+    ],
+    "allows_parallel": true,
+    "description": "Macro trend analytics (revenue trend, growth rates, status breakdown) over a multi-day window (7, 15, or 30 days). For specific day sales or bills (e.g. kal, aaj, or a specific date), use list_invoices or today_sale instead.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "periodDays": {
+          "type": "integer",
+          "enum": [
+            1,
+            7,
+            15,
+            30
+          ],
+          "description": "Lookback period in days (1, 7, 15, 30)"
+        }
+      },
+      "required": [
+        "storeId",
+        "periodDays"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "invoice_summary",
+    "domain": "sales",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:invoice_summary",
+    "retailer_client_methods": [
+      "get_invoice_analytics",
+      "get_invoice_detailed_analytics"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "invoices:read"
+    ],
+    "allows_parallel": true,
+    "description": "Invoice/bill counts and amounts. Returns all-time totals, today's invoices, and optionally a period window (periodDays=7/15/30) for last N days invoice count/revenue.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "periodDays": {
+          "type": "integer",
+          "enum": [
+            1,
+            7,
+            15,
+            30
+          ],
+          "description": "Optional lookback window in days. Use 7 for last week, 30 for last month. Omit for all-time + today only."
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "ledger_credit",
+    "domain": "khata",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:ledger_credit",
+    "retailer_client_methods": [],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "ledger:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage customer PAYMENT (khata credit) for user confirm. Real customerId and amount. Does not post until confirmed.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Customer ObjectId"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0.01,
+          "description": "Amount in INR"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "storeId",
+        "customerId",
+        "amount"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "ledger_debit",
+    "domain": "khata",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:ledger_debit",
+    "retailer_client_methods": [],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "ledger:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage customer DEBIT on khata (increases due) for user confirm. Real customerId and amount. Does not post until confirmed.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Customer ObjectId"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0.01,
+          "description": "Amount in INR"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "storeId",
+        "customerId",
+        "amount"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "list_customer_accounts",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:list_customer_accounts",
+    "retailer_client_methods": [
+      "list_customer_accounts"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "customers:read"
+    ],
+    "allows_parallel": true,
+    "description": "List customer khata accounts (dues/advance). Use hasDue=true for customers with outstanding balance.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Optional filter to one customer"
+        },
+        "hasDue": {
+          "type": "boolean",
+          "description": "If true, only accounts with dues"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Max accounts (default 20)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "list_expenses",
+    "domain": "finance",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:list_expenses",
+    "retailer_client_methods": [
+      "get_expenses"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "expenses:read"
+    ],
+    "allows_parallel": true,
+    "description": "List recent expenses with title, category, amount, payment mode, and date. Capped at 20.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "category": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Filter by expense category"
+        },
+        "startDate": {
+          "type": "string",
+          "description": "Start date filter (YYYY-MM-DD)"
+        },
+        "endDate": {
+          "type": "string",
+          "description": "End date filter (YYYY-MM-DD)"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Max expenses (default 20)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "list_invoices",
+    "domain": "sales",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:list_invoices",
+    "retailer_client_methods": [
+      "list_invoices"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "invoices:read"
+    ],
+    "allows_parallel": true,
+    "description": "List invoices/bills with invoiceNumber, customer, date/time (IST), totalAmount, totalProfit, and paymentStatus. Use startDate and endDate (YYYY-MM-DD) to get invoices for a specific calendar day (e.g. yesterday 'kal', today 'aaj', or past dates).",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Optional customer ObjectId filter"
+        },
+        "invoiceStatus": {
+          "type": "string",
+          "enum": [
+            "RELEASED",
+            "DRAFT",
+            "CANCELLED"
+          ],
+          "description": "Filter by status (default RELEASED)"
+        },
+        "paymentStatus": {
+          "type": "string",
+          "enum": [
+            "PAID",
+            "PARTIALLY_PAID",
+            "UNPAID"
+          ],
+          "description": "Filter by payment status"
+        },
+        "startDate": {
+          "type": "string",
+          "format": "date",
+          "description": "Start date filter (YYYY-MM-DD)"
+        },
+        "endDate": {
+          "type": "string",
+          "format": "date",
+          "description": "End date filter (YYYY-MM-DD)"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Max invoices to return (default 20, capped at 50)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "list_payment_reminders",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:list_payment_reminders",
+    "retailer_client_methods": [
+      "list_payment_reminders"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "reminders:read"
+    ],
+    "allows_parallel": true,
+    "description": "List payment reminders sent for this store (optional customerId filter).",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Optional customer filter"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "list_purchase_orders",
+    "domain": "procurement",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:list_purchase_orders",
+    "retailer_client_methods": [
+      "get_purchase_orders"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "purchase_orders:read"
+    ],
+    "allows_parallel": true,
+    "description": "List purchase orders (PO) with PO number, supplier, status, date, and amount. Capped at 20.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "status": {
+          "type": "string",
+          "description": "PO status filter (e.g. DRAFT, PENDING, APPROVED, RECEIVED, CANCELLED)"
+        },
+        "supplierId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Optional supplier ObjectId filter"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Max purchase orders (default 20)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "list_sales_orders",
+    "domain": "sales",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:list_sales_orders",
+    "retailer_client_methods": [
+      "get_sales_orders"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "sales:read"
+    ],
+    "allows_parallel": true,
+    "description": "List customer sales orders with order number, customer, status, payment status, and total amount. Capped at 20.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "status": {
+          "type": "string",
+          "description": "Order status (PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED)"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Optional customer ObjectId filter"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Max orders (default 20)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "list_staff",
+    "domain": "general",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:list_staff",
+    "retailer_client_methods": [
+      "get_staff"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "staff:read"
+    ],
+    "allows_parallel": true,
+    "description": "List store staff and team members with name, phone, role, and active status.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "list_stores",
+    "domain": "general",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:list_stores",
+    "retailer_client_methods": [
+      "get_stores"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "stores:read"
+    ],
+    "allows_parallel": true,
+    "description": "List accessible stores with name, category, subCategories, and which is active. Use for store name, category, count, or which products/categories fit THIS store — never guess category from the store name alone.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "merge_customers",
+    "domain": "khata",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:merge_customers",
+    "retailer_client_methods": [
+      "merge_customers"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "customers:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage merge of duplicate customer into primary (needs confirm). Pass real primaryId + duplicateId from search_customer. Duplicate is soft-deactivated.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "primaryId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Customer to keep"
+        },
+        "duplicateId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Duplicate to merge away"
+        }
+      },
+      "required": [
+        "storeId",
+        "primaryId",
+        "duplicateId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "payment_history",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:payment_history",
+    "retailer_client_methods": [
+      "get_payments"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "payments:read"
+    ],
+    "allows_parallel": true,
+    "description": "Recent customer payments for this store. Not one customer's ledger lines.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "payment_mix",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:payment_mix",
+    "retailer_client_methods": [],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "payments:read"
+    ],
+    "allows_parallel": true,
+    "description": "Deterministic breakdown of store payment collections by channel (Cash, UPI, Card, Credit/Udhaar, Bank Transfer) over a time window (today, 7d, 30d).",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "window": {
+          "type": "string",
+          "enum": [
+            "today",
+            "7d",
+            "30d",
+            "90d"
+          ],
+          "description": "Analysis window (default '7d')"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "product_summary",
+    "domain": "inventory",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:product_summary",
+    "retailer_client_methods": [
+      "get_product_analytics"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "inventory:read"
+    ],
+    "allows_parallel": true,
+    "description": "How many products are listed/created in the catalog (total, active, inactive) — includes products with zero stock. Use for 'total products' / 'kitne product listed'.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "record_customer_payment",
+    "domain": "khata",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:record_customer_payment",
+    "retailer_client_methods": [
+      "create_customer_payment"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "payments:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage a structured customer payment (needs confirm). Use for formal payment entries with method/type. For quick khata jama prefer ledger_credit. paymentType: LEDGER_PAYMENT | INVOICE_PAYMENT | ADJUSTMENT | REFUND.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Customer ObjectId"
+        },
+        "paymentType": {
+          "type": "string",
+          "enum": [
+            "LEDGER_PAYMENT",
+            "INVOICE_PAYMENT",
+            "ADJUSTMENT",
+            "REFUND"
+          ]
+        },
+        "payment": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "CASH",
+                  "UPI",
+                  "BANK_TRANSFER",
+                  "CHEQUE",
+                  "CREDIT"
+                ]
+              },
+              "amount": {
+                "type": "number",
+                "minimum": 0.01
+              }
+            },
+            "required": [
+              "method",
+              "amount"
+            ]
+          }
+        },
+        "invoiceId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Required for INVOICE_PAYMENT if no allocations"
+        },
+        "invoiceAllocations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "invoice": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{24}$"
+              },
+              "amount": {
+                "type": "number",
+                "minimum": 0.01
+              }
+            },
+            "required": [
+              "invoice",
+              "amount"
+            ]
+          }
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "storeId",
+        "customerId",
+        "paymentType",
+        "payment"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "release_invoice",
+    "domain": "sales",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:release_invoice",
+    "retailer_client_methods": [
+      "release_invoice"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "invoices:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage DRAFT release (stock deduct); needs user confirm. Real draft invoice ObjectId only.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "invoiceId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Draft invoice ObjectId to release"
+        }
+      },
+      "required": [
+        "storeId",
+        "invoiceId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "sales_pareto",
+    "domain": "sales",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:sales_pareto",
+    "retailer_client_methods": [],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "sales:read"
+    ],
+    "allows_parallel": true,
+    "description": "Deterministic 80/20 Pareto product sales analysis: calculates top revenue-generating products, units sold, and cumulative revenue shares from verified invoices over a time window (today, 7d, 30d).",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "window": {
+          "type": "string",
+          "enum": [
+            "today",
+            "7d",
+            "30d",
+            "90d"
+          ],
+          "description": "Analysis window (default '7d')"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum top products to return (default 20)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "search_customer",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:search_customer",
+    "retailer_client_methods": [],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "customers:read"
+    ],
+    "allows_parallel": true,
+    "description": "Find a customer by name, phone, or email. Basic result is name, phone, email, and active status. Address, GST, khata totals, and ledger lines are added only when the user asked for that part.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Customer name, phone, or email search text"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum customers to search (default 20, max 50)"
+        }
+      },
+      "required": [
+        "storeId",
+        "query"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "search_product",
+    "domain": "inventory",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:search_product",
+    "retailer_client_methods": [
+      "get_inventory",
+      "get_products"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "inventory:read"
+    ],
+    "allows_parallel": true,
+    "description": "Search live products by name/SKU (price, stock, status).",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Product search text"
+        }
+      },
+      "required": [
+        "storeId",
+        "query"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "search_supplier",
+    "domain": "procurement",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:search_supplier",
+    "retailer_client_methods": [
+      "get_suppliers"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "suppliers:read"
+    ],
+    "allows_parallel": true,
+    "description": "Search suppliers/vendors by name, company, phone, or GST number.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Supplier name, phone, or company search text"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Max suppliers (default 10)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "send_payment_reminder",
+    "domain": "khata",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:send_payment_reminder",
+    "retailer_client_methods": [
+      "create_payment_reminder"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "reminders:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage a payment reminder to a customer (needs confirm). channel defaults to EMAIL (SMS/WHATSAPP may be unavailable).",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Customer ObjectId"
+        },
+        "channel": {
+          "type": "string",
+          "enum": [
+            "EMAIL",
+            "SMS",
+            "WHATSAPP"
+          ],
+          "description": "Delivery channel (default EMAIL)"
+        },
+        "includePaymentLink": {
+          "type": "boolean",
+          "description": "Include collect link (default true)"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "storeId",
+        "customerId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "set_opening_balance",
+    "domain": "khata",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:set_opening_balance",
+    "retailer_client_methods": [
+      "create_customer_account"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "ledger:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage opening khata balance for a customer who has no account yet (needs confirm). Never use for file import or bulk. Pass customerId + totalDue and/or totalPaid.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Customer ObjectId"
+        },
+        "totalDue": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Opening due amount INR"
+        },
+        "totalPaid": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Opening paid/advance INR"
+        },
+        "totalAmount": {
+          "type": "number",
+          "minimum": 0
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "storeId",
+        "customerId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "stock_items",
+    "domain": "inventory",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:stock_items",
+    "retailer_client_methods": [
+      "get_stock_items"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "inventory:read"
+    ],
+    "allows_parallel": true,
+    "description": "Itemized inventory stock rows across products and variants (name, SKU, stock quantity, stock status, purchase & selling prices). Capped at 30 items.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "includeServices": {
+          "type": "boolean",
+          "description": "Include service items without physical stock"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "stock_summary",
+    "domain": "inventory",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:stock_summary",
+    "retailer_client_methods": [
+      "get_stock"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "inventory:read"
+    ],
+    "allows_parallel": true,
+    "description": "Inventory/stock totals only (qty on hand, low/out of stock). Not the count of listed products — use product_summary for how many products are created/listed.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "store_brief",
+    "domain": "general",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:store_brief",
+    "retailer_client_methods": [
+      "get_customer_analytics",
+      "get_expense_analytics",
+      "get_revenue",
+      "get_stock"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "stores:read"
+    ],
+    "allows_parallel": true,
+    "description": "Deterministic composite executive store brief: combines live sales today, inventory stock alerts, customer receivables/dues, and expenses into a single verified report.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Optional date in YYYY-MM-DD format (defaults to today)"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "supplier_summary",
+    "domain": "procurement",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:supplier_summary",
+    "retailer_client_methods": [
+      "get_bill_analytics",
+      "get_supplier_analytics"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "suppliers:read"
+    ],
+    "allows_parallel": true,
+    "description": "Supplier analytics: total suppliers count and total payable/due amounts.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "today_sale",
+    "domain": "sales",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:today_sale",
+    "retailer_client_methods": [
+      "get_revenue"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "sales:read"
+    ],
+    "allows_parallel": true,
+    "description": "Today's live sales: revenue, profit, bill count.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "top_customers",
+    "domain": "khata",
+    "access": "read",
+    "risk": "read",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/read_tools.py:top_customers",
+    "retailer_client_methods": [
+      "list_invoices"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "customers:read"
+    ],
+    "allows_parallel": true,
+    "description": "Customers who spent the most in up to 50 recent released bills.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "How many customers to return"
+        }
+      },
+      "required": [
+        "storeId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "update_customer",
+    "domain": "khata",
+    "access": "write",
+    "risk": "write",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/write_tools.py:update_customer",
+    "retailer_client_methods": [
+      "update_customer"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "customers:write"
+    ],
+    "allows_parallel": false,
+    "description": "Update customer by real ObjectId. Always send name + phone or email (Core requires them). Optional: note, companyDetails (GST), addresses (billing/shipping). Resolve via search_customer first. Not for delete/bulk.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Existing customer ObjectId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100
+        },
+        "phone": {
+          "type": "string",
+          "pattern": "^[6-9]\\d{9}$",
+          "description": "Indian 10-digit mobile number (required if email omitted)"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 200,
+          "description": "Customer email (required if phone omitted)"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Freeform customer note"
+        },
+        "companyDetails": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gstin": {
+              "type": "string",
+              "minLength": 15,
+              "maxLength": 15,
+              "description": "15-char GSTIN"
+            },
+            "companyName": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "gstDetail": {
+              "type": "string",
+              "maxLength": 500,
+              "description": "Required when gstin is set"
+            }
+          }
+        },
+        "addresses": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "billing": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "addressLine1": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "city": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "stateCode": {
+                  "type": "string",
+                  "maxLength": 10,
+                  "description": "Indian state code (e.g. MH, DL)"
+                },
+                "pincode": {
+                  "type": "string",
+                  "maxLength": 10
+                }
+              }
+            },
+            "shipping": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "addressLine1": {
+                  "type": "string",
+                  "maxLength": 300
+                },
+                "city": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "stateCode": {
+                  "type": "string",
+                  "maxLength": 10,
+                  "description": "Indian state code (e.g. MH, DL)"
+                },
+                "pincode": {
+                  "type": "string",
+                  "maxLength": 10
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "storeId",
+        "customerId",
+        "name"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "update_customer_payment",
+    "domain": "khata",
+    "access": "write",
+    "risk": "sensitive",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/confirm_tools.py:update_customer_payment",
+    "retailer_client_methods": [
+      "update_customer_payment"
+    ],
+    "requires_confirmation": true,
+    "required_permissions": [
+      "payments:write"
+    ],
+    "allows_parallel": false,
+    "description": "Stage update of payment notes only (needs confirm). Cannot change amount/method.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "paymentId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Payment ObjectId"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Updated notes"
+        }
+      },
+      "required": [
+        "storeId",
+        "paymentId",
+        "notes"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "update_expense",
+    "domain": "finance",
+    "access": "write",
+    "risk": "write",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/write_tools.py:update_expense",
+    "retailer_client_methods": [
+      "update_expense"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "expenses:write"
+    ],
+    "allows_parallel": false,
+    "description": "Update an existing expense by its expenseId (e.g. change payment status to 'OVERDUE', 'PAID', 'PENDING', or 'CANCELLED', update amount, title, category, date, or description/note). Only provide fields to update.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "expenseId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Existing expense ObjectId from prior context or search"
+        },
+        "title": {
+          "type": "string",
+          "description": "Optional updated title/name of expense"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0.01,
+          "description": "Optional updated expense amount in INR (> 0)"
+        },
+        "category": {
+          "type": "string",
+          "description": "Optional updated expense category: 'daily-expenses', 'rent', 'transport', 'staff-wages', 'utilities', 'shop-supplies', 'office-supplies', 'maintenance', 'marketing', or 'miscellaneous'"
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Optional updated ISO date (YYYY-MM-DD)"
+        },
+        "paymentMode": {
+          "type": "string",
+          "description": "Optional updated payment mode: 'CASH', 'UPI', 'BANK_TRANSFER', 'CARD', 'OTHER'"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional updated description or note"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PAID",
+            "PENDING",
+            "OVERDUE",
+            "CANCELLED"
+          ],
+          "description": "Payment status to set: 'PAID', 'PENDING', 'OVERDUE', or 'CANCELLED'"
+        }
+      },
+      "required": [
+        "storeId",
+        "expenseId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  },
+  {
+    "name": "update_invoice_draft",
+    "domain": "sales",
+    "access": "write",
+    "risk": "write",
+    "registered_at_startup": true,
+    "handler": "app/tools/handlers/write_tools.py:update_invoice_draft",
+    "retailer_client_methods": [
+      "update_invoice_draft"
+    ],
+    "requires_confirmation": false,
+    "required_permissions": [
+      "invoices:write"
+    ],
+    "allows_parallel": false,
+    "description": "Update existing DRAFT: link customer and/or replace items. Prefer this over a second draft for the same bill.",
+    "input_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "storeId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Active store ObjectId"
+        },
+        "invoiceId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Existing DRAFT invoice ObjectId"
+        },
+        "customerId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{24}$",
+          "description": "Real customer ObjectId to link"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "product": {
+                "type": "string",
+                "pattern": "^[a-fA-F0-9]{24}$",
+                "description": "Product ObjectId from search"
+              },
+              "quantity": {
+                "type": "number",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "product",
+              "quantity"
+            ]
+          }
+        }
+      },
+      "required": [
+        "storeId",
+        "invoiceId"
+      ]
+    },
+    "effective_user_authorization": "runtime permission dependent",
+    "execution_verified_by_inventory": false
+  }
+]
