@@ -31,8 +31,7 @@ ALL_NAMES = frozenset(d.name for d in ALL_DEFINITIONS)
 
 def test_registry_wide_metadata_completeness() -> None:
     """Verify that every single registered tool has complete discoverability metadata."""
-    assert len(ALL_NAMES) == 50
-    assert len(TOOL_METADATA_CATALOG) == 50
+    assert len(TOOL_METADATA_CATALOG) == len(ALL_NAMES)
 
     uncovered_tools = ALL_NAMES - set(TOOL_METADATA_CATALOG.keys())
     assert not uncovered_tools, f"Uncovered registered tools found: {uncovered_tools}"
@@ -47,9 +46,8 @@ def test_registry_wide_metadata_completeness() -> None:
 
 
 @pytest.mark.parametrize("tool_name", sorted(list(ALL_NAMES)))
-def test_all_50_tools_discoverable_by_canonical_name(tool_name: str) -> None:
+def test_all_tools_discoverable_by_canonical_name(tool_name: str) -> None:
     """Every registered tool must be discoverable using its canonical name or natural phrase."""
-    meta = TOOL_METADATA_CATALOG[tool_name]
     query = f"please run {tool_name.replace('_', ' ')}"
     candidates = GLOBAL_TOOL_RETRIEVER.retrieve_candidates(
         query, available_tools=ALL_NAMES, limit=5

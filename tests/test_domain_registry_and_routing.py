@@ -41,8 +41,8 @@ ALL_NAMES = frozenset(t.name for t in ALL_TOOL_DEFINITIONS)
 def test_unified_tool_registry_metadata() -> None:
     """Registry correctly maps definitions, handlers, domains, and access types."""
     registry = build_unified_tool_registry()
-    assert len(registry.definitions()) == 50
-    assert len(registry.entries()) == 50
+    assert len(registry.definitions()) == len(ALL_NAMES)
+    assert len(registry.entries()) == len(ALL_NAMES)
 
     # Verify inventory tools
     inv_tools = registry.definitions_for_domain(ToolDomain.INVENTORY)

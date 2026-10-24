@@ -1,8 +1,17 @@
+import asyncio
+import ssl
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from app.config import Settings
+from app.core.exceptions import AppError
 from app.providers.openai_compatible import (
+    OpenAICompatibleProvider,
     _parse_completion,
     _to_openai_message,
 )
-from app.schemas.chat import ChatMessage
+from app.schemas.chat import ChatMessage, GenerationRequest
 
 
 def test_gemini_thought_signature_round_trips() -> None:
@@ -49,3 +58,24 @@ def test_gemini_thought_signature_round_trips() -> None:
     assert echoed["tool_calls"][0]["extra_content"]["google"][
         "thought_signature"
     ] == signature
+
+
+def test_ssl_transport_failure_is_retryable() -> None:
+    async def run() -> None:
+        http_client = MagicMock()
+        http_client.post = AsyncMock(side_effect=ssl.SSLError("bad record mac"))
+        provider = OpenAICompatibleProvider(
+            Settings(),
+            http_client,
+            api_key="test-key",
+            base_url="https://example.test/v1",
+        )
+        request = GenerationRequest(messages=[ChatMessage(role="user", content="hi")])
+
+        with pytest.raises(AppError) as raised:
+            await provider.generate(request)
+
+        assert raised.value.code == "AI_PROVIDER_ERROR"
+        assert raised.value.retryable is True
+
+    asyncio.run(run())

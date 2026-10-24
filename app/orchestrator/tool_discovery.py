@@ -566,7 +566,24 @@ TOOL_METADATA_CATALOG: dict[str, ToolRetrievalMetadata] = {
             "purchase bill summary", "supplier bills summary", "purchase bills", "supplier payable",
             "vendor bills", "purchase bill report", "vendor payment pending",
         ),
-        companion_reads=("supplier_summary", "list_purchase_orders"),
+        companion_reads=("supplier_summary", "list_supplier_bills"),
+    ),
+    "list_supplier_bills": ToolRetrievalMetadata(
+        name="list_supplier_bills",
+        domain=ToolDomain.PROCUREMENT,
+        action_type=ActionType.READ,
+        entity_type="supplier_bill",
+        description=(
+            "List supplier bills with supplier, bill number, dates, totals, due, "
+            "and payment status."
+        ),
+        aliases=(
+            "list supplier bills", "supplier bills list", "purchase bills list",
+            "vendor bills list", "show supplier bills", "pending supplier bills",
+            "overdue supplier bills", "bill history", "supplier ka bill dikhao",
+            "purchase bill list dikhao", "vendor bill list",
+        ),
+        companion_reads=("bill_summary", "search_supplier"),
     ),
     "create_purchase_order": ToolRetrievalMetadata(
         name="create_purchase_order",
@@ -591,7 +608,7 @@ TOOL_METADATA_CATALOG: dict[str, ToolRetrievalMetadata] = {
             "list purchase orders", "purchase orders list", "po list", "list po", "recent po",
             "supplier orders list", "purane po", "purchase orders dikhao",
         ),
-        companion_reads=("search_supplier", "bill_summary"),
+        companion_reads=("search_supplier", "bill_summary", "list_supplier_bills"),
     ),
     "search_supplier": ToolRetrievalMetadata(
         name="search_supplier",
@@ -603,7 +620,11 @@ TOOL_METADATA_CATALOG: dict[str, ToolRetrievalMetadata] = {
             "search supplier", "find supplier", "supplier search", "vendor search", "find vendor",
             "search vendor", "supplier phone", "supplier details", "dealer search",
         ),
-        companion_reads=("supplier_summary", "list_purchase_orders"),
+        companion_reads=(
+            "supplier_summary",
+            "list_purchase_orders",
+            "list_supplier_bills",
+        ),
     ),
     "supplier_summary": ToolRetrievalMetadata(
         name="supplier_summary",
@@ -615,7 +636,7 @@ TOOL_METADATA_CATALOG: dict[str, ToolRetrievalMetadata] = {
             "supplier summary", "vendor summary", "total suppliers", "supplier count",
             "supplier payable total", "vendor count", "total vendors",
         ),
-        companion_reads=("search_supplier", "bill_summary"),
+        companion_reads=("search_supplier", "bill_summary", "list_supplier_bills"),
     ),
 
     # === GENERAL (3 tools) ===

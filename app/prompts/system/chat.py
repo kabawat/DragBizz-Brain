@@ -168,7 +168,9 @@ _STORE_READS_RULE = (
     "- Store data (invoices, stock rows, expenses, cashbook, suppliers, "
     "purchase orders, bills, GST, sales orders, staff): Quote exact numbers "
     "from tool results only. Never invent amounts, stock counts, dates, or "
-    "names. If list is capped or empty, state so concisely without guessing.\n"
+    "names. If list is capped or empty, state so concisely without guessing. "
+    "Supplier bills and purchase orders are different records: use list_supplier_bills "
+    "for bill/payment status and list_purchase_orders only for order progress.\n"
 )
 
 _BUSINESS_GUIDE_RULE = (
@@ -310,6 +312,7 @@ def build_chat_system_prompt(
             "search_supplier",
             "supplier_summary",
             "list_purchase_orders",
+            "list_supplier_bills",
             "bill_summary",
             "gst_summary",
             "list_sales_orders",

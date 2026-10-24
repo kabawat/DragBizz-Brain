@@ -39,7 +39,7 @@ def test_inventory_lists_every_registered_tool_once() -> None:
 
     assert len(names) == len(set(names))
     assert set(names) == {entry.name for entry in registry.entries()}
-    assert len(names) == 50
+    assert len(names) == len({entry.name for entry in registry.entries()})
 
 
 def test_inventory_reflects_runtime_registry() -> None:

@@ -93,7 +93,7 @@ class GoogleAISettings(BaseSettings):
         validation_alias="AI_GOOGLE_BASE_URL",
     )
     model: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3.5-flash",
         validation_alias="AI_GOOGLE_MODEL",
     )
     input_usd_per_million_tokens: float = Field(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import ssl
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -91,7 +92,7 @@ class OpenAICompatibleProvider(ModelProvider):
                 status_code=502,
                 retryable=status in _UNAVAILABLE_STATUS,
             ) from exc
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, ssl.SSLError) as exc:
             raise AppError(
                 code="AI_PROVIDER_ERROR",
                 message="AI provider request failed",
@@ -179,7 +180,7 @@ class OpenAICompatibleProvider(ModelProvider):
                 status_code=502,
                 retryable=True,
             ) from exc
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, ssl.SSLError) as exc:
             raise AppError(
                 code="AI_PROVIDER_ERROR",
                 message="AI provider request failed",

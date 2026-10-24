@@ -935,6 +935,44 @@ class RetailerClient:
             params=params,
         )
 
+    async def get_supplier_bills(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        limit: int = 20,
+        status: str | None = None,
+        payment_status: str | None = None,
+        supplier_id: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        search: str | None = None,
+        next_cursor: str | None = None,
+    ) -> RetailerResponse:
+        """Fetch supplier bills from their domain endpoint, never purchase orders."""
+        params: dict[str, Any] = {"limit": limit, "lightweight": "true"}
+        if status:
+            params["status"] = status
+        if payment_status:
+            params["paymentStatus"] = payment_status
+        if supplier_id:
+            params["supplier"] = supplier_id
+        if start_date:
+            params["startDate"] = start_date
+        if end_date:
+            params["endDate"] = end_date
+        if search:
+            params["search"] = search
+        if next_cursor:
+            params["nextCursor"] = next_cursor
+        return await self._request(
+            "GET",
+            "/supplier-account/bills",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
     async def create_purchase_order(
         self,
         *,

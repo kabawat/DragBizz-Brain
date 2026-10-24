@@ -87,9 +87,10 @@ def compact_result_for_model(result: ToolResult) -> ToolResult:
         "list_expenses",
         "list_sales_orders",
         "list_purchase_orders",
+        "list_supplier_bills",
         "top_customers",
     }:
-        for key in ("items", "suppliers", "invoices", "expenses", "orders"):
+        for key in ("items", "suppliers", "invoices", "expenses", "orders", "bills"):
             truncated = _truncate_list_field(out, key, _MODEL_MAX_LIST) or truncated
     if result.tool in {"invoice_detailed_analytics", "customer_detailed_analytics"}:
         for list_key in (

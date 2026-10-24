@@ -453,6 +453,11 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                     "type": "string",
                     "description": "End date filter (YYYY-MM-DD)",
                 },
+                "status": {
+                    "type": "string",
+                    "enum": ["Pending", "Paid", "Cancelled"],
+                    "description": "Optional expense status filter",
+                },
                 "limit": {
                     "type": "integer",
                     "minimum": 1,
@@ -557,6 +562,47 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                     "maximum": 20,
                     "description": "Max purchase orders (default 20)",
                 },
+            },
+            "required": ["storeId"],
+        },
+    ),
+    ToolDefinition(
+        name="list_supplier_bills",
+        description=(
+            "Supplier bills; distinct from purchase orders."
+        ),
+        risk=ToolRisk.READ,
+        allows_parallel=True,
+        parameters={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "storeId": _STORE_ID_PROP,
+                "supplierId": _OBJECT_ID_PROP,
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "DRAFT",
+                        "PENDING",
+                        "PAID",
+                        "PARTIAL",
+                        "OVERDUE",
+                        "CANCELLED",
+                    ],
+                },
+                "paymentStatus": {
+                    "type": "string",
+                    "enum": ["UNPAID", "PAID", "PARTIAL"],
+                },
+                "startDate": {
+                    "type": "string",
+                    "format": "date",
+                },
+                "endDate": {
+                    "type": "string",
+                    "format": "date",
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20},
             },
             "required": ["storeId"],
         },
@@ -1597,6 +1643,7 @@ TOOL_DOMAINS: dict[str, ToolDomain] = {
     "search_supplier": ToolDomain.PROCUREMENT,
     "supplier_summary": ToolDomain.PROCUREMENT,
     "list_purchase_orders": ToolDomain.PROCUREMENT,
+    "list_supplier_bills": ToolDomain.PROCUREMENT,
     "bill_summary": ToolDomain.PROCUREMENT,
     "create_purchase_order": ToolDomain.PROCUREMENT,
     # Sales
@@ -1656,6 +1703,7 @@ TOOL_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "search_supplier": ("suppliers:read",),
     "supplier_summary": ("suppliers:read",),
     "list_purchase_orders": ("purchase_orders:read",),
+    "list_supplier_bills": ("bills:read",),
     "bill_summary": ("bills:read",),
     "create_purchase_order": ("purchase_orders:write",),
     # Sales

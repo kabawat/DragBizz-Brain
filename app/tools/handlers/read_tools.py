@@ -28,7 +28,11 @@ async def search_product(arguments: dict[str, Any], context: ToolContext) -> Too
     except RetailerHttpError as exc:
         return _failure("search_product", exc)
 
-    raw_items = response.body.get("data") or []
+    raw_items, _ = _extract_list_payload(
+        response.body, ("products", "items")
+    )
+    if raw_items is None:
+        return _invalid_read_response("search_product")
     # Compact projection: enough for the LLM to pick a real id and
     # quote price/stock without dumping full productsSerializer docs.
     # Contract: GET /product list nests price under pricing; GST rate
@@ -272,6 +276,8 @@ async def search_customer(
         )
     except RetailerHttpError as exc:
         return _failure("search_customer", exc)
+    except ValueError:
+        return _invalid_read_response("search_customer")
 
     if not raw_items and effective_query != raw_query:
         clean_name = re.sub(r"\(?[6-9]\d{9}\)?", "", raw_query).strip()
@@ -343,6 +349,44 @@ def _safe_limit(value: Any, default: int = 20) -> int:
     return min(value, 50)
 
 
+def _extract_list_payload(
+    body: Any, collection_keys: tuple[str, ...]
+) -> tuple[list[Any] | None, Any]:
+    """Return an explicitly present list and its envelope for pagination.
+
+    A successful HTTP response with an unknown shape is not an empty result.
+    Keeping that distinction prevents schema drift from being told to users as
+    "no records found".
+    """
+    if not isinstance(body, dict) or "data" not in body:
+        return None, None
+    payload = body["data"]
+    if isinstance(payload, list):
+        return payload, payload
+    if isinstance(payload, dict):
+        for key in collection_keys + ("items", "results"):
+            if key in payload:
+                value = payload[key]
+                return (value, payload) if isinstance(value, list) else (None, payload)
+        if isinstance(payload.get("data"), list):
+            return payload["data"], payload
+    return None, payload
+
+
+def _invalid_read_response(tool: str) -> ToolResult:
+    return ToolResult(
+        tool=tool,
+        success=False,
+        data={
+            "code": "RESPONSE_SCHEMA_MISMATCH",
+            "message": (
+                "Store data could not be verified because the response format "
+                "was unexpected."
+            ),
+        },
+    )
+
+
 def _customer_cursor(body: dict[str, Any]) -> str | None:
     meta = body.get("meta")
     pagination = meta.get("pagination") if isinstance(meta, dict) else None
@@ -383,11 +427,12 @@ async def _collect_customers(
             next_cursor=cursor,
         )
         body = response.body if isinstance(response.body, dict) else {}
-        page = body.get("data") or []
-        if isinstance(page, list):
-            collected.extend(item for item in page if isinstance(item, dict))
-            if len(collected) >= limit:
-                return collected[:limit]
+        page, _ = _extract_list_payload(body, ("customers",))
+        if page is None:
+            raise ValueError("Unexpected customer response shape")
+        collected.extend(item for item in page if isinstance(item, dict))
+        if len(collected) >= limit:
+            return collected[:limit]
         nxt = _customer_cursor(body)
         if not nxt or nxt in seen:
             break
@@ -407,6 +452,8 @@ async def customer_dossier(
         )
     except RetailerHttpError as exc:
         return _failure("customer_dossier", exc)
+    except ValueError:
+        return _invalid_read_response("customer_dossier")
     items = [_dossier_customer(item) for item in raw_items if isinstance(item, dict)]
     items, match_by = _rank_customers(items, arguments["query"])
     match_count = len(items)
@@ -450,8 +497,12 @@ async def customer_dossier(
         data["billsError"] = exc.code
         return ToolResult(tool="customer_dossier", success=True, data=data)
 
-    raw_bills = invoices.body.get("data") if isinstance(invoices.body, dict) else None
-    bills = _compact_bills(raw_bills if isinstance(raw_bills, list) else [])
+    raw_bills, _ = _extract_list_payload(invoices.body, ("invoices", "bills"))
+    if raw_bills is None:
+        data["billsStatus"] = "unavailable"
+        data["billsError"] = "RESPONSE_SCHEMA_MISMATCH"
+        return ToolResult(tool="customer_dossier", success=True, data=data)
+    bills = _compact_bills(raw_bills)
     data["bills"] = bills
     data["billsScanned"] = len(bills)
     data["billsStatus"] = "ok" if bills else "empty"
@@ -479,11 +530,12 @@ async def top_customers(arguments: dict[str, Any], context: ToolContext) -> Tool
                 next_cursor=cursor,
             )
             body = response.body if isinstance(response.body, dict) else {}
-            page = body.get("data") or []
-            if isinstance(page, list):
-                for bill in page:
-                    if isinstance(bill, dict) and _add_purchase(totals, bill):
-                        scanned += 1
+            page, _ = _extract_list_payload(body, ("invoices", "bills"))
+            if page is None:
+                return _invalid_read_response("top_customers")
+            for bill in page:
+                if isinstance(bill, dict) and _add_purchase(totals, bill):
+                    scanned += 1
             nxt = _customer_cursor(body)
             if not nxt or nxt in seen:
                 break
@@ -1220,11 +1272,9 @@ async def stock_items(arguments: dict[str, Any], context: ToolContext) -> ToolRe
     except RetailerHttpError as exc:
         return _failure("stock_items", exc)
 
-    raw_items = response.body.get("data")
-    if isinstance(raw_items, dict) and "items" in raw_items:
-        raw_items = raw_items["items"]
-    if not isinstance(raw_items, list):
-        raw_items = []
+    raw_items, payload = _extract_list_payload(response.body, ("items", "products"))
+    if raw_items is None:
+        return _invalid_read_response("stock_items")
 
     items = []
     for item in raw_items[:30]:
@@ -1267,11 +1317,7 @@ async def stock_items(arguments: dict[str, Any], context: ToolContext) -> ToolRe
         "items": items,
         "coverage": f"scanned {len(items)} items",
     }
-    if len(raw_items) > len(items):
-        data["pagination"] = {
-            "hasMore": True,
-            "totalCount": len(raw_items),
-        }
+    _add_list_pagination(data, response.body, payload, len(raw_items), 30)
     return ToolResult(
         tool="stock_items",
         success=True,
@@ -1315,13 +1361,11 @@ async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> Tool
     except RetailerHttpError as exc:
         return _failure("list_invoices", exc)
 
-    payload = response.body.get("data")
-    if isinstance(payload, dict) and "invoices" in payload:
-        raw_invoices = payload["invoices"]
-    elif isinstance(payload, list):
-        raw_invoices = payload
-    else:
-        raw_invoices = []
+    raw_invoices, payload = _extract_list_payload(
+        response.body, ("invoices",)
+    )
+    if raw_invoices is None:
+        return _invalid_read_response("list_invoices")
 
     invoices = []
     for inv in raw_invoices[:limit_val]:
@@ -1418,15 +1462,21 @@ def _add_list_pagination(
         pagination = meta.get("pagination") if isinstance(meta, dict) else None
     pagination = dict(pagination) if isinstance(pagination, dict) else {}
     has_more = pagination.get("hasMore", pagination.get("hasNextPage"))
+    total = pagination.get("totalCount", pagination.get("total"))
+    if isinstance(total, int) and total > raw_count and has_more is None:
+        has_more = True
     if raw_count > limit:
         has_more = True
-    if has_more is not None or pagination.get("totalCount") is not None:
+    if has_more is not None or total is not None:
         normalized: dict[str, Any] = {}
         if has_more is not None:
             normalized["hasMore"] = bool(has_more)
         for key in ("nextCursor", "page", "pageSize", "totalCount"):
-            if pagination.get(key) is not None:
-                normalized[key] = pagination[key]
+            value = pagination.get(key)
+            if value is None and key == "totalCount":
+                value = total
+            if value is not None:
+                normalized[key] = value
         if raw_count > limit and "totalCount" not in normalized:
             normalized["totalCount"] = raw_count
         output["pagination"] = normalized
@@ -1474,6 +1524,7 @@ async def list_expenses(arguments: dict[str, Any], context: ToolContext) -> Tool
     limit = arguments.get("limit")
     limit_val = min(_safe_limit(limit), 20)
     category = arguments.get("category")
+    status = arguments.get("status")
     start_date = arguments.get("startDate")
     end_date = arguments.get("endDate")
 
@@ -1489,17 +1540,14 @@ async def list_expenses(arguments: dict[str, Any], context: ToolContext) -> Tool
             category=category if isinstance(category, str) else None,
             start_date=start_date if isinstance(start_date, str) else None,
             end_date=end_date if isinstance(end_date, str) else None,
+            status=status if isinstance(status, str) else None,
         )
     except RetailerHttpError as exc:
         return _failure("list_expenses", exc)
 
-    payload = response.body.get("data")
-    if isinstance(payload, dict) and "expenses" in payload:
-        raw_items = payload["expenses"]
-    elif isinstance(payload, list):
-        raw_items = payload
-    else:
-        raw_items = []
+    raw_items, payload = _extract_list_payload(response.body, ("expenses",))
+    if raw_items is None:
+        return _invalid_read_response("list_expenses")
 
     expenses = []
     for exp in raw_items[:limit_val]:
@@ -1581,13 +1629,9 @@ async def search_supplier(
     except RetailerHttpError as exc:
         return _failure("search_supplier", exc)
 
-    payload = response.body.get("data")
-    if isinstance(payload, dict) and "suppliers" in payload:
-        raw_items = payload["suppliers"]
-    elif isinstance(payload, list):
-        raw_items = payload
-    else:
-        raw_items = []
+    raw_items, payload = _extract_list_payload(response.body, ("suppliers",))
+    if raw_items is None:
+        return _invalid_read_response("search_supplier")
 
     suppliers = []
     multiple_matches = len(raw_items) > 1
@@ -1725,13 +1769,11 @@ async def list_purchase_orders(
     except RetailerHttpError as exc:
         return _failure("list_purchase_orders", exc)
 
-    payload = response.body.get("data")
-    if isinstance(payload, dict) and "purchaseOrders" in payload:
-        raw_items = payload["purchaseOrders"]
-    elif isinstance(payload, list):
-        raw_items = payload
-    else:
-        raw_items = []
+    raw_items, payload = _extract_list_payload(
+        response.body, ("purchaseOrders", "orders")
+    )
+    if raw_items is None:
+        return _invalid_read_response("list_purchase_orders")
 
     pos = []
     for po in raw_items[:limit_val]:
@@ -1769,6 +1811,95 @@ async def list_purchase_orders(
         success=True,
         data=data,
     )
+
+
+async def list_supplier_bills(
+    arguments: dict[str, Any], context: ToolContext
+) -> ToolResult:
+    limit = min(_safe_limit(arguments.get("limit")), 20)
+    start_date = arguments.get("startDate")
+    end_date = arguments.get("endDate")
+    if bool(start_date) != bool(end_date):
+        return ToolResult(
+            tool="list_supplier_bills",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "Provide both startDate and endDate for a bill date range.",
+            },
+        )
+    date_error = _validate_date_range(start_date, end_date)
+    if date_error:
+        return ToolResult(tool="list_supplier_bills", success=False, data=date_error)
+
+    try:
+        response = await context.retailer.get_supplier_bills(
+            access_token=context.access_token,
+            store_id=context.store_id,
+            limit=limit,
+            status=(
+                arguments.get("status")
+                if isinstance(arguments.get("status"), str)
+                else None
+            ),
+            payment_status=(
+                arguments.get("paymentStatus")
+                if isinstance(arguments.get("paymentStatus"), str)
+                else None
+            ),
+            supplier_id=(
+                arguments.get("supplierId")
+                if isinstance(arguments.get("supplierId"), str)
+                else None
+            ),
+            start_date=start_date if isinstance(start_date, str) else None,
+            end_date=end_date if isinstance(end_date, str) else None,
+            search=(
+                arguments.get("search")
+                if isinstance(arguments.get("search"), str)
+                else None
+            ),
+        )
+    except RetailerHttpError as exc:
+        return _failure("list_supplier_bills", exc)
+
+    raw_bills, payload = _extract_list_payload(
+        response.body, ("bills", "supplierBills")
+    )
+    if raw_bills is None:
+        return _invalid_read_response("list_supplier_bills")
+
+    bills: list[dict[str, Any]] = []
+    for bill in raw_bills[:limit]:
+        if not isinstance(bill, dict):
+            continue
+        supplier = bill.get("supplier")
+        supplier_info = None
+        if isinstance(supplier, dict):
+            supplier_info = {
+                "id": str(supplier.get("id") or supplier.get("_id") or ""),
+                "name": supplier.get("name"),
+            }
+        elif isinstance(supplier, str):
+            supplier_info = {"id": supplier}
+        row = {
+            "id": str(bill.get("id") or bill.get("_id") or ""),
+            "billNumber": bill.get("billNumber"),
+            "supplier": supplier_info,
+            "billDate": format_iso_to_ist(bill.get("billDate")),
+            "dueDate": format_iso_to_ist(bill.get("dueDate")),
+            "totalAmount": bill.get("totalAmount"),
+            "paidAmount": bill.get("paidAmount"),
+            "dueAmount": bill.get("dueAmount"),
+            "paymentStatus": bill.get("paymentStatus"),
+            "status": bill.get("billStatus") or bill.get("status"),
+            "isOverdue": bill.get("isOverdue"),
+        }
+        bills.append({key: value for key, value in row.items() if value is not None})
+
+    data: dict[str, Any] = {"count": len(bills), "bills": bills}
+    _add_list_pagination(data, response.body, payload, len(raw_bills), limit)
+    return ToolResult(tool="list_supplier_bills", success=True, data=data)
 
 
 async def bill_summary(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
@@ -1891,13 +2022,11 @@ async def list_sales_orders(
     except RetailerHttpError as exc:
         return _failure("list_sales_orders", exc)
 
-    payload = response.body.get("data")
-    if isinstance(payload, dict) and "orders" in payload:
-        raw_items = payload["orders"]
-    elif isinstance(payload, list):
-        raw_items = payload
-    else:
-        raw_items = []
+    raw_items, payload = _extract_list_payload(
+        response.body, ("orders", "salesOrders")
+    )
+    if raw_items is None:
+        return _invalid_read_response("list_sales_orders")
 
     orders = []
     for order in raw_items[:limit_val]:
@@ -2306,6 +2435,7 @@ READ_TOOL_HANDLERS = {
     "search_supplier": search_supplier,
     "supplier_summary": supplier_summary,
     "list_purchase_orders": list_purchase_orders,
+    "list_supplier_bills": list_supplier_bills,
     "bill_summary": bill_summary,
     "gst_summary": gst_summary,
     "list_sales_orders": list_sales_orders,

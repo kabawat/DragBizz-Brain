@@ -1306,6 +1306,39 @@ def project_list_purchase_orders(data: dict[str, Any]) -> dict[str, Any]:
     return {"count": len(orders), "purchaseOrders": orders}
 
 
+def project_list_supplier_bills(data: dict[str, Any]) -> dict[str, Any]:
+    raw = data.get("bills")
+    if not isinstance(raw, list):
+        return {"count": 0, "bills": []}
+    bills: list[dict[str, Any]] = []
+    for bill in raw[:20]:
+        if not isinstance(bill, dict):
+            continue
+        entry = _pick(
+            bill,
+            (
+                "id",
+                "billNumber",
+                "billDate",
+                "dueDate",
+                "totalAmount",
+                "paidAmount",
+                "dueAmount",
+                "paymentStatus",
+                "status",
+                "isOverdue",
+            ),
+        )
+        supplier = bill.get("supplier")
+        if isinstance(supplier, dict):
+            entry["supplier"] = _pick(supplier, ("id", "name"))
+        bills.append(entry)
+    out: dict[str, Any] = {"count": len(bills), "bills": bills}
+    if isinstance(data.get("pagination"), dict):
+        out["pagination"] = dict(data["pagination"])
+    return out
+
+
 def project_bill_summary(data: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     counts = data.get("counts")
@@ -1574,6 +1607,7 @@ TOOL_PROJECTORS: dict[str, _Projector] = {
     "search_supplier": project_search_supplier,
     "supplier_summary": project_supplier_summary,
     "list_purchase_orders": project_list_purchase_orders,
+    "list_supplier_bills": project_list_supplier_bills,
     "bill_summary": project_bill_summary,
     "gst_summary": project_gst_summary,
     "list_sales_orders": project_list_sales_orders,

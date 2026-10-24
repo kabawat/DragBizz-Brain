@@ -42,6 +42,7 @@ _READ_TOOLS = frozenset(
         "search_supplier",
         "supplier_summary",
         "list_purchase_orders",
+        "list_supplier_bills",
         "bill_summary",
         "gst_summary",
         "list_sales_orders",
@@ -78,6 +79,7 @@ DOMAIN_READ_BUNDLES: dict[ToolDomain, frozenset[str]] = {
     ToolDomain.PROCUREMENT: frozenset(
         {
             "list_purchase_orders",
+            "list_supplier_bills",
             "search_supplier",
             "supplier_summary",
             "bill_summary",
@@ -209,11 +211,15 @@ _FAMILY_READS: dict[str, frozenset[str]] = {
     "invoice_stats": frozenset({"invoice_summary", "today_sale"}),
     "expense": frozenset({"expense_summary", "list_expenses"}),
     "cashbook": frozenset({"cashbook_summary", "today_sale"}),
-    "supplier": frozenset({"search_supplier", "supplier_summary", "bill_summary"}),
+    "supplier": frozenset(
+        {"search_supplier", "supplier_summary", "bill_summary", "list_supplier_bills"}
+    ),
     "purchase_order": frozenset(
         {"list_purchase_orders", "search_supplier", "search_product"}
     ),
-    "bill": frozenset({"bill_summary", "supplier_summary", "search_supplier"}),
+    "bill": frozenset(
+        {"bill_summary", "list_supplier_bills", "supplier_summary", "search_supplier"}
+    ),
     "gst": frozenset({"gst_summary", "invoice_summary"}),
     "sales_order": frozenset({"list_sales_orders", "search_customer"}),
     "staff": frozenset({"list_staff"}),
