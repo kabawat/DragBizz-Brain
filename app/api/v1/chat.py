@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from app.core.exceptions import AppError
 from app.core.security import get_current_user
+from app.core.store_access import authorize_store_access
 from app.limits.concurrency import Lease
 from app.observability.context import reset_auth_context, set_auth_context
 from app.observability.events import (
@@ -68,6 +69,7 @@ async def chat(
             message="Access token missing or invalid",
             status_code=401,
         )
+    await authorize_store_access(request, user, store_id)
     user_id = str(user["sub"])
     auth_tokens = set_auth_context(
         user_id=user_id,
@@ -137,6 +139,7 @@ async def chat_stream(
             message="Access token missing or invalid",
             status_code=401,
         )
+    await authorize_store_access(request, user, store_id)
     user_id = str(user["sub"])
     rate_limiter = getattr(request.app.state, "rate_limiter", None)
     concurrency_gate = getattr(request.app.state, "concurrency_gate", None)
@@ -237,6 +240,7 @@ async def confirm_chat(
             message="Access token missing or invalid",
             status_code=401,
         )
+    await authorize_store_access(request, user, store_id)
     user_id = str(user["sub"])
     auth_tokens = set_auth_context(
         user_id=user_id,

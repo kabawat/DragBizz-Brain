@@ -110,14 +110,27 @@ def _choice_reply(data: dict[str, Any], *, hindi: bool) -> str:
     if not isinstance(count, int) or isinstance(count, bool):
         count = len(items)
     by_email = data.get("matchBy") == "email"
+    labels = [
+        item.get("name", "").strip().casefold()
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    ]
+    same_name = len(labels) > 1 and len(set(labels)) == 1
+    if same_name:
+        if hindi:
+            return (
+                f"**{name}** naam ke {count} customer mile. Sahi record dhoondhne "
+                "ke liye registered phone number ya email share kar dijiye."
+            )
+        return (
+            f"I found {count} customers named **{name}**. Please share the "
+            "registered phone number or email so I can identify the right record."
+        )
     if by_email:
         if hindi:
-            head = (
-                f"**{name}** naam se koi customer nahi mila. "
-                f"Email se {count} mile. Kaun sa?"
-            )
+            head = f"**{name}** se {count} customer records match hue. Kaun sa?"
         else:
-            head = f"No customer named **{name}**. {count} matched by email. Which one?"
+            head = f"{count} customer records matched **{name}**. Which one?"
     elif hindi:
         head = f"**{name}** naam se {count} customers mile. Kaun sa?"
     else:

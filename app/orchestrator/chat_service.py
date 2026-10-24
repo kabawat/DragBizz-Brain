@@ -9,6 +9,7 @@ from typing import Any
 from app.config import Settings
 from app.confirmations import ConfirmationStore, InMemoryConfirmationStore
 from app.core.exceptions import AppError
+from app.core.store_access import explicit_store_permissions, filter_tool_definitions
 from app.executors.tool_executor import ToolExecutor
 from app.guards.input_guard import InputGuard
 from app.guards.output_guard import (
@@ -221,6 +222,14 @@ class ChatService:
                 await res
 
         available = {definition.name for definition in self._registry.definitions()}
+        permissions = explicit_store_permissions(user, store_id)
+        if permissions is not None:
+            available = {
+                definition.name
+                for definition in filter_tool_definitions(
+                    self._registry.definitions(), permissions
+                )
+            }
         prior_turns = await self._sessions.load_history(
             session_id=body.session_id,
             user_id=user_id,

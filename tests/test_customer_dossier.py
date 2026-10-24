@@ -24,7 +24,12 @@ from app.tools.definitions import (
     WRITE_TOOL_DEFINITIONS,
 )
 from app.tools.handlers.confirm_tools import SENSITIVE_TOOL_HANDLERS
-from app.tools.handlers.read_tools import READ_TOOL_HANDLERS, customer_dossier
+from app.tools.handlers.read_tools import (
+    READ_TOOL_HANDLERS,
+    customer_dossier,
+    search_customer,
+    search_supplier,
+)
 from app.tools.handlers.write_tools import WRITE_TOOL_HANDLERS
 from app.tools.projection import project_tool_result
 from app.tools.registry import ToolRegistry
@@ -301,7 +306,7 @@ def test_top_customers_ranks_released_bills() -> None:
     assert "₹150" in outcome.message
     assert "₹80" in outcome.message
     assert "Draft Only" not in outcome.message
-    assert "9876465111" in outcome.message
+    assert "9876465111" not in outcome.message
 
 
 def test_due_list_uses_accounts_not_recent_names() -> None:
@@ -537,7 +542,7 @@ def test_dossier_email_matches_stay_a_list() -> None:
     assert retailer.invoice_calls == 0
     assert result.data["matchBy"] == "email"
     assert result.data["billsStatus"] == "ambiguous"
-    assert result.data["items"][0]["email"] == "vikram@example.com"
+    assert result.data["items"] == [{"name": "Pratik Dave"}]
 
 
 def test_dossier_drops_unrelated_names() -> None:
@@ -739,10 +744,117 @@ def test_fast_dossier_lists_ambiguous_without_biography() -> None:
         )
     )
     assert outcome is not None
-    assert "9812345678" in outcome.message
-    assert "9812345679" in outcome.message
+    assert "9812345678" not in outcome.message
+    assert "9812345679" not in outcome.message
     assert "prefers" not in outcome.message.lower()
     assert "khata" not in outcome.message.lower()
+
+
+def test_customer_search_omits_contact_fields_unless_requested() -> None:
+    retailer = _Retailer(
+        [
+            {
+                "id": CUSTOMER,
+                "name": "Kishanlal Bansal",
+                "phone": "9812345678",
+                "email": "k@example.com",
+            }
+        ]
+    )
+    context = _context(retailer)
+    context = ToolContext(
+        **{**context.__dict__, "question": "Kishanlal ka record dikhao"}
+    )
+    result = asyncio.run(search_customer({"query": "Kishanlal"}, context))
+    assert result.data["items"] == [
+        {"id": CUSTOMER, "name": "Kishanlal Bansal", "isActive": None}
+    ]
+
+
+def test_customer_search_returns_phone_when_explicitly_requested() -> None:
+    retailer = _Retailer(
+        [{"id": CUSTOMER, "name": "Kishanlal Bansal", "phone": "9812345678"}]
+    )
+    context = _context(retailer)
+    context = ToolContext(
+        **{
+            **context.__dict__,
+            "question": "Kishanlal ka phone number kya hai?",
+        }
+    )
+    result = asyncio.run(search_customer({"query": "Kishanlal"}, context))
+    assert result.data["items"][0]["phone"] == "9812345678"
+
+
+def test_ambiguous_customer_search_returns_names_only() -> None:
+    retailer = _Retailer(
+        [
+            {
+                "id": CUSTOMER,
+                "name": "Rohit Sharma",
+                "phone": "9812345678",
+                "email": "a@example.com",
+            },
+            {
+                "id": "c" * 24,
+                "name": "Rohit Sharma",
+                "phone": "9812345679",
+                "email": "b@example.com",
+            },
+        ]
+    )
+    context = _context(retailer)
+    context = ToolContext(
+        **{**context.__dict__, "question": "Rohit customer khojo"}
+    )
+    result = asyncio.run(search_customer({"query": "Rohit"}, context))
+    assert result.data["items"] == [
+        {"name": "Rohit Sharma"},
+        {"name": "Rohit Sharma"},
+    ]
+    assert result.data["disambiguationRequired"] is True
+
+
+def test_ambiguous_supplier_search_omits_contacts_and_financial_details() -> None:
+    class SupplierRetailer(_Retailer):
+        async def get_suppliers(self, **_kwargs):
+            return RetailerResponse(
+                status_code=200,
+                body={
+                    "data": {
+                        "suppliers": [
+                            {
+                                "id": "1" * 24,
+                                "name": "Gupta Traders",
+                                "phone": "9812345678",
+                                "email": "a@example.com",
+                                "totalDue": 1200,
+                            },
+                            {
+                                "id": "2" * 24,
+                                "name": "Gupta Traders",
+                                "phone": "9812345679",
+                                "email": "b@example.com",
+                                "totalDue": 900,
+                            },
+                        ]
+                    }
+                },
+            )
+
+    context = _context(SupplierRetailer([]))
+    context = ToolContext(
+        **{
+            **context.__dict__,
+            "question": "Gupta Traders supplier search, phone and balance",
+        }
+    )
+    result = asyncio.run(search_supplier({"query": "Gupta Traders"}, context))
+    assert result.data["disambiguationRequired"] is True
+    assert result.data["suppliers"] == [
+        {"name": "Gupta Traders"},
+        {"name": "Gupta Traders"},
+    ]
 
 
 def test_dossier_prompt_only_when_tool_offered() -> None:
@@ -768,7 +880,8 @@ def test_dossier_prompt_only_when_tool_offered() -> None:
 def test_app_and_comparison_queries_bypass_dossier_and_route_to_docs() -> None:
     comparison_q = (
         "DragBizz ke bare me batao and main dragbizz kyo use kru ? "
-        "koiye ek strong reason batao main zoho, oodo, tally etc bhi to use kar sakta hu "
+        "koiye ek strong reason batao main zoho, oodo, tally etc bhi to use "
+        "kar sakta hu "
         "Dragbbiz me kyo paisa weat karo ?"
     )
     assert extract_who_is_query(comparison_q) is None

@@ -288,9 +288,36 @@ async def search_customer(
         [item for item in raw_items if isinstance(item, dict)],
         effective_query,
     )
-    items = [_customer_row(item, slices=slices) for item in ranked_items]
-    data: dict[str, Any] = {"items": items, "matchBy": match_by}
-    if "ledger" in slices and len(items) == 1 and items[0]["id"]:
+    if len(ranked_items) > 1:
+        # A name collision is not permission to disclose contact details or
+        # internal identifiers. Ask the model to clarify using names only.
+        items = [
+            {"name": item.get("name")}
+            for item in ranked_items
+            if isinstance(item.get("name"), str) and item["name"].strip()
+        ]
+        data: dict[str, Any] = {
+            "items": items,
+            "matchBy": match_by,
+            "disambiguationRequired": True,
+        }
+    else:
+        items = [
+            _customer_row(
+                item,
+                slices=slices,
+                include_phone=bool(_PHONE_REQUEST_RE.search(context.question)),
+                include_email=bool(_EMAIL_REQUEST_RE.search(context.question)),
+            )
+            for item in ranked_items
+        ]
+        data = {"items": items, "matchBy": match_by}
+    if (
+        "ledger" in slices
+        and len(items) == 1
+        and isinstance(items[0].get("id"), str)
+        and items[0]["id"]
+    ):
         items[0]["ledger"] = await _ledger_for_customer(
             context,
             store_id=context.store_id,
@@ -398,10 +425,17 @@ async def customer_dossier(
     # Email hits are a choice list, even when only one address contains the name.
     if match_by == "email" or match_count != 1 or not items[0].get("id"):
         data["items"] = [
-            _dossier_identity(item, with_email=match_by == "email") for item in items
+            {"name": item.get("name")}
+            for item in items
+            if isinstance(item.get("name"), str) and item["name"].strip()
         ]
         data["billsStatus"] = "ambiguous"
         return ToolResult(tool="customer_dossier", success=True, data=data)
+
+    if not _PHONE_REQUEST_RE.search(context.question):
+        items[0].pop("phone", None)
+    if not _EMAIL_REQUEST_RE.search(context.question):
+        items[0].pop("email", None)
 
     try:
         invoices = await context.retailer.get_invoices(
@@ -476,7 +510,15 @@ async def top_customers(arguments: dict[str, Any], context: ToolContext) -> Tool
     return ToolResult(
         tool="top_customers",
         success=True,
-        data={"items": items, "billsScanned": scanned, "capped": capped},
+        data={
+            "items": items,
+            "billsScanned": scanned,
+            "capped": capped,
+            "includeContact": bool(
+                _PHONE_REQUEST_RE.search(context.question)
+                or _EMAIL_REQUEST_RE.search(context.question)
+            ),
+        },
     )
 
 
@@ -649,6 +691,11 @@ _KHATA_RE = re.compile(
     r"kitna jama|kitna baaki|total due|total paid",
     re.IGNORECASE,
 )
+_PHONE_REQUEST_RE = re.compile(
+    r"\b(phone|mobile|contact number|telephone|number)\b|फोन|मोबाइल|नंबर",
+    re.IGNORECASE,
+)
+_EMAIL_REQUEST_RE = re.compile(r"\b(email|e-mail|mail address)\b|ईमेल", re.IGNORECASE)
 
 
 def _slices_for_question(question: str) -> frozenset[str]:
@@ -733,14 +780,22 @@ def _ledger_preview(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _customer_row(item: dict[str, Any], *, slices: frozenset[str]) -> dict[str, Any]:
+def _customer_row(
+    item: dict[str, Any],
+    *,
+    slices: frozenset[str],
+    include_phone: bool = False,
+    include_email: bool = False,
+) -> dict[str, Any]:
     row: dict[str, Any] = {
         "id": str(item.get("id") or ""),
         "name": item.get("name"),
-        "phone": item.get("phone"),
-        "email": item.get("email"),
         "isActive": item.get("isActive"),
     }
+    if include_phone and item.get("phone"):
+        row["phone"] = item["phone"]
+    if include_email and item.get("email"):
+        row["email"] = item["email"]
     note = item.get("note")
     if isinstance(note, str) and note.strip():
         row["note"] = note.strip()
@@ -922,7 +977,13 @@ async def list_customer_accounts(
         return _failure("list_customer_accounts", exc)
 
     body = response.body
-    data: dict[str, Any] = {"items": body.get("data") or []}
+    data: dict[str, Any] = {
+        "items": body.get("data") or [],
+        "includeContact": bool(
+            _PHONE_REQUEST_RE.search(context.question)
+            or _EMAIL_REQUEST_RE.search(context.question)
+        ),
+    }
     if body.get("pagination") is not None:
         data["pagination"] = body["pagination"]
     return ToolResult(tool="list_customer_accounts", success=True, data=data)
@@ -1483,21 +1544,30 @@ async def search_supplier(
         raw_items = []
 
     suppliers = []
+    multiple_matches = len(raw_items) > 1
+    include_contact = bool(
+        _PHONE_REQUEST_RE.search(context.question)
+        or _EMAIL_REQUEST_RE.search(context.question)
+    )
+    include_balance = bool(_KHATA_RE.search(context.question))
+    include_gst = bool(_GST_RE.search(context.question))
     for s in raw_items[:limit_val]:
         if not isinstance(s, dict):
             continue
         acc = s.get("account") if isinstance(s.get("account"), dict) else {}
-        suppliers.append(
-            {
-                "id": str(s.get("id") or s.get("_id") or ""),
-                "name": s.get("name"),
-                "phone": s.get("phone"),
-                "email": s.get("email"),
-                "companyName": s.get("companyName") or s.get("company"),
-                "gstNumber": s.get("gstNumber") or s.get("gstin"),
-                "totalDue": acc.get("totalDue") or s.get("totalDue") or 0.0,
-            }
-        )
+        row: dict[str, Any] = {"name": s.get("name")}
+        if not multiple_matches:
+            row["id"] = str(s.get("id") or s.get("_id") or "")
+            row["companyName"] = s.get("companyName") or s.get("company")
+            if include_contact:
+                for key in ("phone", "email"):
+                    if s.get(key):
+                        row[key] = s[key]
+            if include_gst:
+                row["gstNumber"] = s.get("gstNumber") or s.get("gstin")
+            if include_balance:
+                row["totalDue"] = acc.get("totalDue") or s.get("totalDue") or 0.0
+        suppliers.append(row)
     data: dict[str, Any] = {
         "count": len(suppliers),
         "suppliers": suppliers,

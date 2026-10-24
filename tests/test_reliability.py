@@ -1130,7 +1130,7 @@ async def test_chat_endpoints_teardown_swallows_release_error() -> None:
         },
     }
     mock_request = Request(scope)
-    user = {"sub": "u1", "agencyId": "ag1"}
+    user = {"sub": "u1", "agencyId": "ag1", "stores": [STORE]}
     chat_service = MockChatService()
 
     # 1. /chat endpoint teardown resilience

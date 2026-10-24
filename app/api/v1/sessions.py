@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.core.security import get_current_user
+from app.core.store_access import authorize_store_access
 from app.schemas.chat import assert_valid_store_id
 from app.schemas.history import (
     ChatHistoryMessage,
@@ -38,6 +39,7 @@ async def list_chat_sessions(
     storeId: str = "",
 ) -> ChatSessionListResponse:
     store_id = assert_valid_store_id(storeId)
+    await authorize_store_access(request, user, store_id)
     rows = await _history_store(request).list_sessions(
         user_id=str(user["sub"]),
         store_id=store_id,
@@ -67,6 +69,7 @@ async def get_chat_session(
     storeId: str = "",
 ) -> ChatSessionDetail:
     store_id = assert_valid_store_id(storeId)
+    await authorize_store_access(request, user, store_id)
     detail = await _history_store(request).get_session(
         session_id=session_id,
         user_id=str(user["sub"]),
@@ -98,6 +101,7 @@ async def delete_chat_session(
     storeId: str = "",
 ) -> Response:
     store_id = assert_valid_store_id(storeId)
+    await authorize_store_access(request, user, store_id)
     await _history_store(request).delete_session(
         session_id=session_id,
         user_id=str(user["sub"]),

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.exceptions import AppError
 from app.core.security import get_current_user
+from app.core.store_access import authorize_store_access
 from app.proactive.notification_store import NotificationStore
 from app.schemas.chat import assert_valid_store_id
 
@@ -28,67 +29,10 @@ def _get_notification_store(request: Request) -> NotificationStore:
     return store
 
 
-def _validate_user_store_access(user: dict[str, Any], store_id: str) -> None:
-    # Only signed authentication claims establish store access. A requested
-    # storeId query parameter can select among those claims, but cannot grant it.
-    claimed: list[str] = []
-    stores = user.get("stores")
-    if stores is not None and not isinstance(stores, list):
-        raise AppError(
-            code="STORE_CONTEXT_REQUIRED",
-            message="An authorized store context is required",
-            status_code=403,
-        )
-    for entry in stores or []:
-        value = (
-            entry.get("storeId", entry.get("store_id", entry.get("id")))
-            if isinstance(entry, dict)
-            else entry
-        )
-        if not isinstance(value, str):
-            raise AppError(
-                code="STORE_CONTEXT_INVALID",
-                message="Authorized store context is invalid",
-                status_code=403,
-            )
-        try:
-            claimed.append(assert_valid_store_id(value))
-        except AppError as exc:
-            raise AppError(
-                code="STORE_CONTEXT_INVALID",
-                message="Authorized store context is invalid",
-                status_code=403,
-            ) from exc
-
-    single_store = user.get("storeId")
-    if single_store is not None:
-        if not isinstance(single_store, str):
-            raise AppError(
-                code="STORE_CONTEXT_INVALID",
-                message="Authorized store context is invalid",
-                status_code=403,
-            )
-        try:
-            claimed.append(assert_valid_store_id(single_store))
-        except AppError as exc:
-            raise AppError(
-                code="STORE_CONTEXT_INVALID",
-                message="Authorized store context is invalid",
-                status_code=403,
-            ) from exc
-
-    if not claimed:
-        raise AppError(
-            code="STORE_CONTEXT_REQUIRED",
-            message="An authorized store context is required",
-            status_code=403,
-        )
-    if store_id not in set(claimed):
-        raise AppError(
-            code="FORBIDDEN_STORE_ACCESS",
-            message="User does not have access to this store",
-            status_code=403,
-        )
+async def _validate_user_store_access(
+    request: Request, user: dict[str, Any], store_id: str
+) -> None:
+    await authorize_store_access(request, user, store_id)
 
 
 @router.get("")
@@ -102,7 +46,7 @@ async def list_notifications(
 ) -> dict[str, Any]:
     """Retrieve proactive alerts and briefings scoped to the caller's store."""
     valid_store_id = assert_valid_store_id(store_id)
-    _validate_user_store_access(user, valid_store_id)
+    await _validate_user_store_access(request, user, valid_store_id)
 
     store = _get_notification_store(request)
     records = await store.get_notifications(
@@ -130,7 +74,7 @@ async def mark_notification_read(
 ) -> dict[str, Any]:
     """Mark a notification as read within the caller's authorized store."""
     valid_store_id = assert_valid_store_id(store_id)
-    _validate_user_store_access(user, valid_store_id)
+    await _validate_user_store_access(request, user, valid_store_id)
 
     store = _get_notification_store(request)
     marked = await store.mark_read(
@@ -160,7 +104,7 @@ async def mark_all_notifications_read(
 ) -> dict[str, Any]:
     """Mark all notifications read for the authenticated store context."""
     valid_store_id = assert_valid_store_id(store_id)
-    _validate_user_store_access(user, valid_store_id)
+    await _validate_user_store_access(request, user, valid_store_id)
     store = _get_notification_store(request)
     updated = await store.mark_all_read(valid_store_id)
     return {

@@ -527,6 +527,24 @@ class RetailerClient:
             store_id=store_id,
         )
 
+    async def verify_store_access(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        agency_id: str | None = None,
+    ) -> RetailerResponse:
+        params: dict[str, Any] = {"id": store_id}
+        if agency_id:
+            params["agency"] = agency_id
+        return await self._request(
+            "GET",
+            "/store",
+            access_token=access_token,
+            store_id=store_id,
+            params=params,
+        )
+
     async def create_customer(
         self,
         *,

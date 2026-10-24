@@ -1,0 +1,68 @@
+[
+  {
+    "id": "PA-001",
+    "scenario": "Missing, empty, malformed, or unclaimed store claims",
+    "expected": "Reject with 403 before any store service or retailer call",
+    "test": "tests/test_phase1_privacy_auth.py"
+  },
+  {
+    "id": "PA-002",
+    "scenario": "Cross-store chat, stream, confirm, and session operations",
+    "expected": "Reject all six route variants with 403",
+    "test": "test_chat_and_session_routes_reject_cross_store_ids_before_access"
+  },
+  {
+    "id": "PA-003",
+    "scenario": "User has multiple signed store entries with different permissions",
+    "expected": "Permission set is selected from the matching store entry only",
+    "test": "test_store_scope_accepts_only_signed_claimed_store_and_permissions"
+  },
+  {
+    "id": "PA-004",
+    "scenario": "Read-only customer permission attempts customer update tool",
+    "expected": "Write tool is absent from model-visible tool set",
+    "test": "test_explicit_role_permissions_remove_unapproved_tools"
+  },
+  {
+    "id": "PA-005",
+    "scenario": "Tool added without a permission mapping",
+    "expected": "Regression fails until the tool's permission is declared",
+    "test": "test_every_registered_tool_has_declared_permission_requirements"
+  },
+  {
+    "id": "PA-006",
+    "scenario": "Ambiguous duplicate customer name",
+    "expected": "Names only; no contact, record IDs, or unrelated account data",
+    "test": "test_ambiguous_customer_search_returns_names_only"
+  },
+  {
+    "id": "PA-007",
+    "scenario": "Unique customer search without a contact request",
+    "expected": "No phone or email in projected result",
+    "test": "test_customer_search_omits_contact_fields_unless_requested"
+  },
+  {
+    "id": "PA-008",
+    "scenario": "Unique customer search explicitly asks for phone number",
+    "expected": "Return only the matching customer's requested phone",
+    "test": "test_customer_search_returns_phone_when_explicitly_requested"
+  },
+  {
+    "id": "PA-009",
+    "scenario": "Ambiguous supplier search even when contacts/balance are requested",
+    "expected": "Names only; ask for a safe disambiguator before returning details",
+    "test": "test_ambiguous_supplier_search_omits_contacts_and_financial_details"
+  },
+  {
+    "id": "PA-010",
+    "scenario": "Hinglish store-wide dues query explicitly requests number/email",
+    "expected": "Contact may be included only because the prompt asks for it",
+    "test": "test_due_list_uses_accounts_not_recent_names"
+  },
+  {
+    "id": "PA-011",
+    "scenario": "Top customer ranking without contact request",
+    "expected": "Names and purchase totals only; phone omitted",
+    "test": "test_top_customers_ranks_released_bills"
+  }
+]

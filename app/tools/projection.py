@@ -641,9 +641,13 @@ def project_customer_accounts(data: dict[str, Any]) -> dict[str, Any]:
                 cust_id = _entity_id(customer)
                 if cust_id is not None:
                     cust["id"] = cust_id
-                for key in ("name", "phone", "email"):
+                for key in ("name",):
                     if isinstance(customer.get(key), str):
                         cust[key] = customer[key]
+                if data.get("includeContact") is True:
+                    for key in ("phone", "email"):
+                        if isinstance(customer.get(key), str):
+                            cust[key] = customer[key]
                 if cust:
                     row["customer"] = cust
             elif isinstance(item.get("customer"), str):
@@ -944,6 +948,8 @@ def project_customer_dossier(data: dict[str, Any]) -> dict[str, Any]:
     match_by = data.get("matchBy")
     if match_by in {"name", "phone", "email", "none"}:
         out["matchBy"] = match_by
+    if data.get("disambiguationRequired") is True:
+        out["disambiguationRequired"] = True
     match_count = data.get("matchCount")
     if isinstance(match_count, int) and not isinstance(match_count, bool):
         out["matchCount"] = match_count
@@ -1071,7 +1077,11 @@ def project_top_customers(data: dict[str, Any]) -> dict[str, Any]:
                 row["id"] = item["id"]
             if isinstance(item.get("name"), str):
                 row["name"] = item["name"]
-            if isinstance(item.get("phone"), str) and item["phone"]:
+            if (
+                data.get("includeContact") is True
+                and isinstance(item.get("phone"), str)
+                and item["phone"]
+            ):
                 row["phone"] = item["phone"]
             if _is_number(item.get("total")):
                 row["total"] = item["total"]
@@ -1139,7 +1149,7 @@ def project_list_invoices(data: dict[str, Any]) -> dict[str, Any]:
                 entry[key] = inv[key]
         cust = inv.get("customer")
         if isinstance(cust, dict):
-            entry["customer"] = _pick(cust, ("id", "name", "phone"))
+            entry["customer"] = _pick(cust, ("id", "name"))
         invoices.append(entry)
     out: dict[str, Any] = {"count": len(invoices), "invoices": invoices}
     if isinstance(data.get("status"), str):
@@ -1231,7 +1241,10 @@ def project_search_supplier(data: dict[str, Any]) -> dict[str, Any]:
         )
         if picked:
             suppliers.append(picked)
-    return {"count": len(suppliers), "suppliers": suppliers}
+    out: dict[str, Any] = {"count": len(suppliers), "suppliers": suppliers}
+    if data.get("disambiguationRequired") is True:
+        out["disambiguationRequired"] = True
+    return out
 
 
 def project_supplier_summary(data: dict[str, Any]) -> dict[str, Any]:
@@ -1337,7 +1350,7 @@ def project_list_sales_orders(data: dict[str, Any]) -> dict[str, Any]:
         )
         cust = so.get("customer")
         if isinstance(cust, dict):
-            entry["customer"] = _pick(cust, ("id", "name", "phone"))
+            entry["customer"] = _pick(cust, ("id", "name"))
         orders.append(entry)
     return {"count": len(orders), "salesOrders": orders}
 
@@ -1350,7 +1363,7 @@ def project_list_staff(data: dict[str, Any]) -> dict[str, Any]:
     for m in raw[:20]:
         if not isinstance(m, dict):
             continue
-        picked = _pick(m, ("id", "name", "phone", "role", "status"))
+        picked = _pick(m, ("id", "name", "role", "status"))
         if picked:
             staff_list.append(picked)
     return {"count": len(staff_list), "staff": staff_list}

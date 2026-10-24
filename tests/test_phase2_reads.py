@@ -312,7 +312,12 @@ async def test_supplier_and_po_handlers() -> None:
             }
         },
     )
-    ctx = _dummy_context(mock_retailer)
+    ctx = ToolContext(
+        **{
+            **_dummy_context(mock_retailer).__dict__,
+            "question": "Kishan supplier phone email and due balance",
+        }
+    )
 
     s_res = await search_supplier({"storeId": STORE_ID, "query": "Kishan"}, ctx)
     assert s_res.success is True
