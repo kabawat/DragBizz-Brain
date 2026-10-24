@@ -39,6 +39,10 @@
   but the response ended with `Request aborted`; Brain logs show an upstream AI
   provider TLS `SSLV3_ALERT_BAD_RECORD_MAC`. The user-visible AI answer is not
   verified locally in this run.
+- Live Malani dashboard smoke check passed after deployment: a read-only
+  Hinglish customer lookup returned only whether the record existed and did not
+  expose phone, email, or balance. Brain logged a successful `search_customer`
+  request.
 
 ## Security boundary and remaining proof
 
@@ -47,9 +51,9 @@ Brain now delegates store membership to Core for the actual Auth token format
 claims narrow model-visible tools when present; Core remains authoritative for
 each retailer operation. A local browser request reached the model after Core
 authorization, but upstream AI TLS failed before an answer was returned.
-Production has not yet been redeployed or smoke-checked in this phase. Indirect
-prompt-injection cases and a full role matrix against two provisioned staging
-tenants remain unverified.
+The production check was read-only and limited to this signed-in Malani store;
+it did not test a cross-tenant attempt. Indirect prompt-injection cases and a
+full role matrix against two provisioned staging tenants remain unverified.
 
 ## Regression catalog
 
