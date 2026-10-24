@@ -333,7 +333,7 @@ async def test_read_failure_isolation() -> None:
 
     assert len(results) == 2
     assert results[0].success is False
-    assert results[0].data.get("code") == "RETAILER_UNAVAILABLE"
+    assert results[0].data.get("code") == "INTERNAL_ERROR"
     # Sibling call succeeded without being aborted or discarded
     assert results[1].success is True
     assert results[1].data["found"] is True
@@ -379,7 +379,9 @@ async def test_timeouts_and_cancellation() -> None:
     assert len(results) == 1
     assert results[0].success is False
     assert results[0].data["code"] == "TOOL_TIMEOUT"
-    assert "timed out after 0.03s" in results[0].data["message"]
+    assert results[0].data["message"] == (
+        "The request timed out; the result could not be verified."
+    )
 
     # Test cancellation propagation
     task = asyncio.create_task(

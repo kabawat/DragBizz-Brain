@@ -51,24 +51,34 @@ def project_tool_result(result: ToolResult) -> ToolResult:
     """Return a ToolResult whose data is safe for model, guard, and client."""
     data = result.data
     if not isinstance(data, dict):
-        return ToolResult(tool=result.tool, success=result.success, data={})
+        return _copy_contract(result, data={})
 
     if not result.success and ("code" in data or "message" in data):
-        return ToolResult(
-            tool=result.tool,
-            success=False,
-            data=_error_passthrough(data),
-        )
+        return _copy_contract(result, data=_error_passthrough(data))
     if data.get("status") == "pending_confirmation":
-        return ToolResult(tool=result.tool, success=result.success, data=dict(data))
+        return _copy_contract(result, data=dict(data))
 
     projector = TOOL_PROJECTORS.get(result.tool)
     if projector is None:
-        return ToolResult(tool=result.tool, success=result.success, data={})
+        return _copy_contract(result, data={})
+    return _copy_contract(result, data=projector(data))
+
+
+def _copy_contract(result: ToolResult, *, data: dict[str, Any]) -> ToolResult:
     return ToolResult(
         tool=result.tool,
         success=result.success,
-        data=projector(data),
+        data=data,
+        result_status=result.result_status,
+        applied_filters=result.applied_filters,
+        returned_count=result.returned_count,
+        total_count=result.total_count,
+        pagination=result.pagination,
+        source=result.source,
+        source_timestamp=result.source_timestamp,
+        source_version=result.source_version,
+        effect_status=result.effect_status,
+        correlation_id=result.correlation_id,
     )
 
 

@@ -26,7 +26,7 @@ from app.observability.audit_trail import AuditTrail
 from app.observability.confirmation_audit import audit_confirmation
 from app.observability.metrics import MetricsRegistry
 from app.schemas.chat import ChatResponse, ConfirmRequest, PublicToolCall
-from app.schemas.tool import ToolCall, ToolResult
+from app.schemas.tool import ToolCall, ToolEffectStatus, ToolResult
 from app.sessions import (
     DurableHistoryStore,
     SessionStore,
@@ -348,6 +348,8 @@ _CUSTOMER_ACTION_TYPES = frozenset(
 def _is_ambiguous_failure(result: ToolResult | None) -> bool:
     if result is None or result.success:
         return False
+    if result.effect_status == ToolEffectStatus.UNKNOWN:
+        return True
     if not isinstance(result.data, dict):
         return False
     code = str(result.data.get("code") or "")

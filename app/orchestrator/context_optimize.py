@@ -7,7 +7,7 @@ from typing import Any
 
 from app.rag.chunker import estimate_tokens
 from app.schemas.chat import ChatMessage
-from app.schemas.tool import ToolDefinition, ToolResult, ToolRisk
+from app.schemas.tool import ToolDefinition, ToolResult, ToolResultStatus, ToolRisk
 from app.tools.registry import ToolRegistry
 
 # After Phase 3 projection; client egress still uses full projection.
@@ -76,6 +76,7 @@ def compact_result_for_model(result: ToolResult) -> ToolResult:
         return result
 
     out = dict(data)
+    truncated = False
     if result.tool in {
         "search_product",
         "search_supplier",
@@ -88,11 +89,8 @@ def compact_result_for_model(result: ToolResult) -> ToolResult:
         "list_purchase_orders",
         "top_customers",
     }:
-        _truncate_list_field(out, "items", _MODEL_MAX_LIST)
-        _truncate_list_field(out, "suppliers", _MODEL_MAX_LIST)
-        _truncate_list_field(out, "invoices", _MODEL_MAX_LIST)
-        _truncate_list_field(out, "expenses", _MODEL_MAX_LIST)
-        _truncate_list_field(out, "orders", _MODEL_MAX_LIST)
+        for key in ("items", "suppliers", "invoices", "expenses", "orders"):
+            truncated = _truncate_list_field(out, key, _MODEL_MAX_LIST) or truncated
     if result.tool in {"invoice_detailed_analytics", "customer_detailed_analytics"}:
         for list_key in (
             "statusBreakdown",
@@ -103,17 +101,48 @@ def compact_result_for_model(result: ToolResult) -> ToolResult:
         ):
             val = out.get(list_key)
             if isinstance(val, list):
-                _truncate_list_field(out, list_key, _MODEL_MAX_LIST)
+                was_truncated = _truncate_list_field(out, list_key, _MODEL_MAX_LIST)
+                truncated = was_truncated or truncated
+    pagination = dict(result.pagination.model_dump()) if result.pagination else None
+    returned_count = result.returned_count
+    total_count = result.total_count
+    if truncated:
+        if pagination is None:
+            pagination = {}
+        pagination["has_more"] = True
+        for key in ("items", "suppliers", "invoices", "expenses", "orders"):
+            rows = out.get(key)
+            if isinstance(rows, list) and returned_count is not None:
+                total_count = total_count or returned_count
+                returned_count = len(rows)
+                break
     if result.tool == "search_customer":
         ledger = out.get("ledger")
         if isinstance(ledger, dict):
             ledger = dict(ledger)
             if _truncate_list_field(ledger, "entries", _MODEL_MAX_LEDGER):
+                truncated = True
                 out["ledger"] = ledger
         # Downloads are client UI; model only needs availability.
         if isinstance(out.get("downloads"), dict):
             out["downloads"] = {"available": True}
-    return ToolResult(tool=result.tool, success=result.success, data=out)
+    return ToolResult(
+        tool=result.tool,
+        success=result.success,
+        data=out,
+        result_status=(
+            ToolResultStatus.SUCCESS_PARTIAL if truncated else result.result_status
+        ),
+        applied_filters=result.applied_filters,
+        returned_count=returned_count,
+        total_count=total_count,
+        pagination=pagination,
+        source=result.source,
+        source_timestamp=result.source_timestamp,
+        source_version=result.source_version,
+        effect_status=result.effect_status,
+        correlation_id=result.correlation_id,
+    )
 
 
 def compact_conversation_for_next_round(

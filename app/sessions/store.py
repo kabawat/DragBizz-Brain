@@ -298,6 +298,21 @@ def _compact_tool_context(
         {
             "tool": result.tool,
             "success": result.success,
+            "resultStatus": (
+                result.result_status.value if result.result_status else None
+            ),
+            "returnedCount": result.returned_count,
+            "totalCount": result.total_count,
+            "pagination": (
+                result.pagination.model_dump(by_alias=True)
+                if result.pagination is not None
+                else None
+            ),
+            "appliedFilters": result.applied_filters,
+            "correlationId": result.correlation_id,
+            "effectStatus": (
+                result.effect_status.value if result.effect_status else None
+            ),
             "data": _copy_data(result.data),
         }
         for result in tool_results

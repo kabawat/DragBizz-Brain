@@ -1262,14 +1262,20 @@ async def stock_items(arguments: dict[str, Any], context: ToolContext) -> ToolRe
                 "purchasePrice": (item.get("purchasePrice") or item.get("costPrice")),
             }
         )
+    data: dict[str, Any] = {
+        "count": len(items),
+        "items": items,
+        "coverage": f"scanned {len(items)} items",
+    }
+    if len(raw_items) > len(items):
+        data["pagination"] = {
+            "hasMore": True,
+            "totalCount": len(raw_items),
+        }
     return ToolResult(
         tool="stock_items",
         success=True,
-        data={
-            "count": len(items),
-            "items": items,
-            "coverage": f"scanned {len(items)} items",
-        },
+        data=data,
     )
 
 
@@ -1354,14 +1360,16 @@ async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> Tool
             }
         )
 
+    data: dict[str, Any] = {
+        "count": len(invoices),
+        "invoices": invoices,
+        "status": invoice_status or "RELEASED",
+    }
+    _add_list_pagination(data, response.body, payload, len(raw_invoices), limit_val)
     return ToolResult(
         tool="list_invoices",
         success=True,
-        data={
-            "count": len(invoices),
-            "invoices": invoices,
-            "status": invoice_status or "RELEASED",
-        },
+        data=data,
     )
 
 
@@ -1372,20 +1380,56 @@ def _validate_date_range(start: Any, end: Any) -> dict[str, str] | None:
         if value is None:
             continue
         if not isinstance(value, str):
-            return {"error": f"Invalid {label} date; use YYYY-MM-DD"}
+            return _invalid_date(f"Invalid {label} date; use YYYY-MM-DD")
         try:
             parsed[label] = date.fromisoformat(value)
         except ValueError:
-            return {"error": f"Invalid {label} date; use YYYY-MM-DD"}
+            return _invalid_date(f"Invalid {label} date; use YYYY-MM-DD")
 
     start_day = parsed.get("start")
     end_day = parsed.get("end")
     if start_day and end_day:
         if start_day > end_day:
-            return {"error": "Start date must be less than or equal to end date"}
+            return _invalid_date("Start date must be less than or equal to end date")
         if (end_day - start_day).days > 90:
-            return {"error": "Date range exceeds maximum allowed limit of 90 days"}
+            return _invalid_date(
+                "Date range exceeds maximum allowed limit of 90 days"
+            )
     return None
+
+
+def _invalid_date(message: str) -> dict[str, str]:
+    return {"code": "TOOL_ARGS_INVALID", "message": message}
+
+
+def _add_list_pagination(
+    output: dict[str, Any],
+    response_body: dict[str, Any],
+    payload: Any,
+    raw_count: int,
+    limit: int,
+) -> None:
+    """Carry upstream completeness metadata through list projections."""
+    pagination = payload.get("pagination") if isinstance(payload, dict) else None
+    if not isinstance(pagination, dict):
+        pagination = response_body.get("pagination")
+    if not isinstance(pagination, dict):
+        meta = response_body.get("meta")
+        pagination = meta.get("pagination") if isinstance(meta, dict) else None
+    pagination = dict(pagination) if isinstance(pagination, dict) else {}
+    has_more = pagination.get("hasMore", pagination.get("hasNextPage"))
+    if raw_count > limit:
+        has_more = True
+    if has_more is not None or pagination.get("totalCount") is not None:
+        normalized: dict[str, Any] = {}
+        if has_more is not None:
+            normalized["hasMore"] = bool(has_more)
+        for key in ("nextCursor", "page", "pageSize", "totalCount"):
+            if pagination.get(key) is not None:
+                normalized[key] = pagination[key]
+        if raw_count > limit and "totalCount" not in normalized:
+            normalized["totalCount"] = raw_count
+        output["pagination"] = normalized
 
 
 async def expense_summary(
@@ -1475,10 +1519,12 @@ async def list_expenses(arguments: dict[str, Any], context: ToolContext) -> Tool
                 "status": exp.get("status"),
             }
         )
+    data = {"count": len(expenses), "expenses": expenses}
+    _add_list_pagination(data, response.body, payload, len(raw_items), limit_val)
     return ToolResult(
         tool="list_expenses",
         success=True,
-        data={"count": len(expenses), "expenses": expenses},
+        data=data,
     )
 
 
@@ -1577,6 +1623,7 @@ async def search_supplier(
         data["message"] = f"No suppliers matching '{query}' found in this store."
     elif len(suppliers) > 1:
         data["disambiguationRequired"] = True
+    _add_list_pagination(data, response.body, payload, len(raw_items), limit_val)
 
     return ToolResult(
         tool="search_supplier",
@@ -1715,10 +1762,12 @@ async def list_purchase_orders(
             }
         )
 
+    data = {"count": len(pos), "purchaseOrders": pos}
+    _add_list_pagination(data, response.body, payload, len(raw_items), limit_val)
     return ToolResult(
         tool="list_purchase_orders",
         success=True,
-        data={"count": len(pos), "purchaseOrders": pos},
+        data=data,
     )
 
 
@@ -1879,10 +1928,12 @@ async def list_sales_orders(
             }
         )
 
+    data = {"count": len(orders), "salesOrders": orders}
+    _add_list_pagination(data, response.body, payload, len(raw_items), limit_val)
     return ToolResult(
         tool="list_sales_orders",
         success=True,
-        data={"count": len(orders), "salesOrders": orders},
+        data=data,
     )
 
 

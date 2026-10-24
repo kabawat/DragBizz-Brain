@@ -29,16 +29,15 @@ from app.orchestrator.ledger_auto import (
     ledger_pending_message,
     maybe_auto_ledger_call,
 )
+from app.orchestrator.progress import (
+    get_parallel_tools_label,
+    get_tool_progress_label,
+)
 from app.orchestrator.prompt_tokens import estimate_tool_schema_tokens
 from app.orchestrator.token_usage import RequestTokenUsage
 from app.orchestrator.tool_call_validator import ToolCallValidator
 from app.orchestrator.tool_selector import (
-    _exposure_tools,
     user_requested_sensitive_action,
-)
-from app.orchestrator.progress import (
-    get_parallel_tools_label,
-    get_tool_progress_label,
 )
 from app.rag.chunker import estimate_tokens
 from app.schemas.chat import ChatMessage, GenerationResponse
@@ -335,7 +334,9 @@ async def run_tool_loop(
                         "agent.progress",
                         {
                             "stage": "executing_tools",
-                            "label": get_parallel_tools_label([c.name for c in stage.calls]),
+                            "label": get_parallel_tools_label(
+                                [c.name for c in stage.calls]
+                            ),
                             "tools": [c.name for c in stage.calls],
                         },
                     )
@@ -556,6 +557,21 @@ async def run_tool_loop(
                         {
                             "tool": result.tool,
                             "success": result.success,
+                            "resultStatus": result.result_status.value,
+                            "returnedCount": result.returned_count,
+                            "totalCount": result.total_count,
+                            "pagination": (
+                                result.pagination.model_dump(by_alias=True)
+                                if result.pagination is not None
+                                else None
+                            ),
+                            "appliedFilters": result.applied_filters,
+                            "correlationId": result.correlation_id,
+                            "effectStatus": (
+                                result.effect_status.value
+                                if result.effect_status
+                                else None
+                            ),
                             "data": result.data,
                             "untrusted": True,
                         },
@@ -626,7 +642,9 @@ async def run_tool_loop(
             allow_more_tools = False
         else:
             allow_more_tools = (
-                staged_sensitive is None and round_index < max_rounds - 1 and not draft_done
+                staged_sensitive is None
+                and round_index < max_rounds - 1
+                and not draft_done
             )
         if budget is not None and not budget.can_continue():
             allow_more_tools = False

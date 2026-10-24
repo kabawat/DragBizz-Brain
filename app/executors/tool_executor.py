@@ -15,11 +15,19 @@ from app.idempotency import (
     InMemoryIdempotencyStore,
     build_idempotency_key,
 )
-from app.integrations.retailer_client import RetailerClient
+from app.integrations.retailer_client import RetailerClient, RetailerHttpError
 from app.observability import AuditTrail, MetricsRegistry
 from app.observability.events import TOOL_EXECUTION, emit_event
 from app.observability.middleware_telemetry import trace_tool_execution
-from app.schemas.tool import ToolCall, ToolResult, ToolRisk
+from app.schemas.tool import (
+    ToolCall,
+    ToolEffectStatus,
+    ToolPagination,
+    ToolResult,
+    ToolResultStatus,
+    ToolRetryPolicy,
+    ToolRisk,
+)
 from app.tools.context import ToolContext
 from app.tools.registry import ToolRegistry
 
@@ -311,7 +319,9 @@ class ToolExecutor:
                 "create_purchase_order",
             }:
                 arguments["idempotencyKey"] = key
-            result = await handler(arguments, context)
+            result = await _invoke_handler(
+                call.name, handler, arguments, context, side_effecting=True
+            )
             await self._idempotency.put(key, result)
             self._audit(
                 session_id=session_id,
@@ -457,21 +467,18 @@ class ToolExecutor:
                 ) from exc
 
         with trace_tool_execution(call.name, call.arguments):
-            if inspect.iscoroutinefunction(handler):
-                result = await handler(call.arguments, context)
-            else:
-                result = await asyncio.to_thread(handler, call.arguments, context)
+            result = await _invoke_handler(call.name, handler, call.arguments, context)
             # Read tools: at most one retry on ambiguous Retailer errors.
             if (
                 not result.success
-                and isinstance(result.data, dict)
-                and result.data.get("code")
-                in {"RETAILER_TIMEOUT", "RETAILER_UNAVAILABLE"}
+                and self._registry.get_definition(call.name).retry_policy
+                == ToolRetryPolicy.SAFE_READ
+                and result.result_status
+                in {ToolResultStatus.TIMEOUT, ToolResultStatus.DEPENDENCY_ERROR}
             ):
-                if inspect.iscoroutinefunction(handler):
-                    result = await handler(call.arguments, context)
-                else:
-                    result = await asyncio.to_thread(handler, call.arguments, context)
+                result = await _invoke_handler(
+                    call.name, handler, call.arguments, context
+                )
         latency_ms = (time.perf_counter() - started) * 1000
         self._audit(
             session_id=session_id,
@@ -516,7 +523,13 @@ class ToolExecutor:
             return cached
 
         with trace_tool_execution(call.name, call.arguments):
-            result = await handler(dict(call.arguments), context)
+            result = await _invoke_handler(
+                call.name,
+                handler,
+                dict(call.arguments),
+                context,
+                side_effecting=True,
+            )
         await self._idempotency.put(key, result)
         self._audit(
             session_id=session_id,
@@ -607,3 +620,147 @@ def _error_code(result: ToolResult) -> str | None:
         return None
     code = result.data.get("code")
     return code if isinstance(code, str) else None
+
+
+async def _invoke_handler(
+    tool_name: str,
+    handler,
+    arguments: dict[str, Any],
+    context: ToolContext,
+    *,
+    side_effecting: bool = False,
+) -> ToolResult:
+    """Convert handler failures into the common typed result envelope."""
+    try:
+        if inspect.iscoroutinefunction(handler):
+            result = await handler(arguments, context)
+        else:
+            result = await asyncio.to_thread(handler, arguments, context)
+        if not isinstance(result, ToolResult):
+            logger.error("Tool %s returned an invalid result type", tool_name)
+            invalid_result = ToolResult(
+                tool=tool_name,
+                success=False,
+                data={
+                    "code": "INVALID_TOOL_RESPONSE",
+                    "message": "Tool returned an invalid response.",
+                },
+            )
+            invalid_result = _add_contract_metadata(invalid_result, arguments)
+            if side_effecting:
+                invalid_result.effect_status = ToolEffectStatus.UNKNOWN
+            return invalid_result
+        result = _add_contract_metadata(result, arguments)
+        if side_effecting:
+            result.effect_status = _effect_status_for(result)
+        return result
+    except RetailerHttpError as exc:
+        return _failure_result(
+            tool_name, exc.code, exc.message, arguments, side_effecting
+        )
+    except AppError as exc:
+        return _failure_result(
+            tool_name, exc.code, exc.message, arguments, side_effecting
+        )
+    except TimeoutError:
+        return _failure_result(
+            tool_name,
+            "TOOL_TIMEOUT",
+            "The tool request timed out.",
+            arguments,
+            side_effecting,
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Tool handler failed", extra={"tool": tool_name})
+        return _failure_result(
+            tool_name,
+            "INTERNAL_ERROR",
+            "Tool execution failed.",
+            arguments,
+            side_effecting,
+        )
+
+
+def _failure_result(
+    tool_name: str,
+    code: str,
+    message: str,
+    arguments: dict[str, Any],
+    side_effecting: bool,
+) -> ToolResult:
+    result = ToolResult(
+        tool=tool_name,
+        success=False,
+        data={"code": code, "message": message},
+    )
+    result = _add_contract_metadata(result, arguments)
+    if side_effecting:
+        result.effect_status = _effect_status_for(result)
+    return result
+
+
+def _effect_status_for(result: ToolResult) -> ToolEffectStatus:
+    if result.success:
+        return ToolEffectStatus.APPLIED
+    if result.result_status in {
+        ToolResultStatus.UNSUPPORTED,
+        ToolResultStatus.INVALID_INPUT,
+        ToolResultStatus.UNAUTHORIZED,
+        ToolResultStatus.NOT_FOUND,
+    }:
+        return ToolEffectStatus.NOT_APPLIED
+    return ToolEffectStatus.UNKNOWN
+
+
+def _add_contract_metadata(
+    result: ToolResult, arguments: dict[str, Any]
+) -> ToolResult:
+    if result.success and not result.data:
+        result.success = False
+        result.result_status = ToolResultStatus.INTERNAL_ERROR
+        result.data = {
+            "code": "INVALID_TOOL_RESPONSE",
+            "message": "The tool returned no structured result.",
+        }
+
+    if result.applied_filters is None:
+        filters: dict[str, Any] = {"storeScoped": True}
+        for key in (
+            "startDate",
+            "endDate",
+            "fromDate",
+            "toDate",
+            "invoiceStatus",
+            "paymentStatus",
+            "status",
+            "category",
+            "limit",
+            "cursor",
+            "periodDays",
+            "analyticsType",
+            "includeItems",
+            "includeServices",
+            "type",
+        ):
+            value = arguments.get(key)
+            if value is not None:
+                filters[key] = value
+        for key in ("query", "customerId", "supplierId", "invoiceId"):
+            if arguments.get(key):
+                filters[f"{key}Applied"] = True
+        result.applied_filters = filters
+
+    data = result.data if isinstance(result.data, dict) else {}
+    pagination = data.get("pagination")
+    meta = data.get("meta")
+    if not isinstance(pagination, dict) and isinstance(meta, dict):
+        pagination = meta.get("pagination")
+    if result.pagination is None and isinstance(pagination, dict):
+        result.pagination = ToolPagination.model_validate(pagination)
+    if result.total_count is None and result.pagination is not None:
+        result.total_count = result.pagination.total_count
+    if result.source is None:
+        result.source = "retailer_api"
+    return result

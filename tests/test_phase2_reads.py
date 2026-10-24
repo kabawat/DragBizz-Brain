@@ -15,7 +15,7 @@ import pytest
 from app.integrations.retailer_client import RetailerHttpError, RetailerResponse
 from app.orchestrator.tool_selector import resolve_turn_intent
 from app.prompts.system.chat import build_chat_system_prompt
-from app.schemas.tool import ToolRisk
+from app.schemas.tool import ToolResultStatus, ToolRisk
 from app.tools.context import ToolContext
 from app.tools.definitions import READ_TOOL_DEFINITIONS
 from app.tools.handlers.read_tools import (
@@ -506,7 +506,53 @@ async def test_failure_handling_in_handlers() -> None:
     result = await stock_items({"storeId": STORE_ID}, ctx)
     assert result.success is False
     assert result.data["code"] == "RETAILER_ERROR"
-    assert result.data["message"] == "Internal DB failure"
+    assert result.data["message"] == (
+        "Store data is temporarily unavailable; the result could not be verified."
+    )
+
+
+@pytest.mark.asyncio
+async def test_invoice_list_reports_partial_page_and_total_count() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.list_invoices.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "invoices": [
+                    {
+                        "id": f"inv-{i}",
+                        "invoiceNumber": f"INV-{i}",
+                        "grandTotal": 100 + i,
+                    }
+                    for i in range(5)
+                ]
+            }
+        },
+    )
+
+    result = await list_invoices(
+        {"storeId": STORE_ID, "limit": 2}, _dummy_context(mock_retailer)
+    )
+
+    assert result.result_status == ToolResultStatus.SUCCESS_PARTIAL
+    assert result.returned_count == 2
+    assert result.total_count == 5
+    assert result.pagination.has_more is True
+    assert len(result.data["invoices"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_invalid_invoice_date_is_not_reported_as_not_found() -> None:
+    mock_retailer = AsyncMock()
+    result = await list_invoices(
+        {"storeId": STORE_ID, "startDate": "2026-99-99"},
+        _dummy_context(mock_retailer),
+    )
+
+    assert result.success is False
+    assert result.result_status == ToolResultStatus.INVALID_INPUT
+    assert result.data["code"] == "TOOL_ARGS_INVALID"
+    mock_retailer.list_invoices.assert_not_called()
 
 
 def test_intent_routing_for_phase2_queries() -> None:

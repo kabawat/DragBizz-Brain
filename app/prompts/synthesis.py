@@ -38,11 +38,28 @@ _NATURAL_REPLY = (
     "Keep the final answer under ~60 words unless listing several matches. "
 )
 
+_RESULT_SEMANTICS = (
+    "Treat each tool resultStatus as authoritative: success_with_data means use only "
+    "the returned facts; success_empty means the lookup succeeded with no matches; "
+    "success_partial means disclose that the result is incomplete and do not present "
+    "partial counts or totals as complete; unsupported means the operation is not "
+    "available; invalid_input means ask for corrected input; unauthorized means state "
+    "you cannot access it; not_found means the requested record was not found; "
+    "timeout, "
+    "dependency_error, and internal_error mean the result could not be verified. "
+    "Never convert a failed result into an empty result or zero. For writes, "
+    "effectStatus "
+    "unknown means the change may or may not have happened: do not claim success or "
+    "failure and advise checking the relevant record before retrying. "
+)
+
 
 def build_continuation_instruction(*, language: str) -> str:
     return (
         _DATA_NOT_AUTHORITY
-        + "Tool results are above. If finishing the user's request still "
+        + "Tool results are above. "
+        + _RESULT_SEMANTICS
+        + "If finishing the user's request still "
         "needs more tool calls (e.g. you now have customer/product ids and "
         "must create the invoice draft, or call ledger_debit/ledger_credit "
         "for udhaar/jama the user already asked), call those tools NOW — "
@@ -72,7 +89,9 @@ def build_continuation_instruction(*, language: str) -> str:
 def build_synthesis_instruction(*, language: str) -> str:
     return (
         _DATA_NOT_AUTHORITY
-        + "Tool results are above. Answer the user's original question using "
+        + "Tool results are above. "
+        + _RESULT_SEMANTICS
+        + "Answer the user's original question using "
         "ONLY those results for live business numbers (sales, stock, prices, "
         "payments, balances). You may use Documentation from the system "
         "prompt for how-to or feature context. "

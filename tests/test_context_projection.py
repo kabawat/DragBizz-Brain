@@ -664,4 +664,10 @@ def test_pending_confirmation_and_errors_passthrough() -> None:
             data={"code": "RETAILER_ERROR", "message": "down"},
         )
     )
-    assert error.data == {"code": "RETAILER_ERROR", "message": "down"}
+    assert error.data == {
+        "code": "RETAILER_ERROR",
+        "message": (
+            "Store data is temporarily unavailable; "
+            "the result could not be verified."
+        ),
+    }
