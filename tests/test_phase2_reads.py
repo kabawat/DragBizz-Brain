@@ -209,7 +209,16 @@ async def test_expense_summary_and_list_expenses() -> None:
                         "paymentMode": "CASH",
                         "date": "2025-02-01",
                         "status": "PAID",
-                    }
+                    },
+                    {
+                        "id": "e2",
+                        "title": "Shop rent",
+                        "category": "Rent",
+                        "amount": 20000.0,
+                        "paymentMode": "CASH",
+                        "date": "2025-02-01",
+                        "status": "UNPAID",
+                    },
                 ]
             }
         },
@@ -224,10 +233,11 @@ async def test_expense_summary_and_list_expenses() -> None:
 
     list_res = await list_expenses({"storeId": STORE_ID, "limit": 10}, ctx)
     assert list_res.success is True
-    assert list_res.data["count"] == 1
+    assert list_res.data["count"] == 2
 
     projected_list = project_list_expenses(list_res.data)
     assert projected_list["expenses"][0]["title"] == "Shop Tea"
+    assert projected_list["expenses"][1]["status"] == "PENDING"
 
 
 @pytest.mark.asyncio

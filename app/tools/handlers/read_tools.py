@@ -1600,7 +1600,15 @@ async def list_expenses(arguments: dict[str, Any], context: ToolContext) -> Tool
                 "amount": exp.get("amount"),
                 "paymentMode": exp.get("paymentMode"),
                 "date": format_iso_to_ist(exp.get("date") or exp.get("createdAt")),
-                "status": exp.get("status"),
+                # Core persists legacy unpaid expenses as UNPAID while the
+                # merchant UI calls that state Pending. Present the same
+                # operational meaning to chat so it can count outstanding
+                # expenses consistently with the dashboard.
+                "status": (
+                    "PENDING"
+                    if str(exp.get("status") or "").upper() == "UNPAID"
+                    else exp.get("status")
+                ),
             }
         )
     data = {"count": len(expenses), "expenses": expenses}
