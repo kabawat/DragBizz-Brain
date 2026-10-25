@@ -117,6 +117,7 @@ async def test_supplier_bill_list_uses_bill_domain_and_preserves_pagination() ->
         "hasMore": True,
         "nextCursor": "cursor-2",
         "totalCount": 37,
+        "pageSize": 10,
     }
     assert "internalStoreField" not in result.data["bills"][0]
     retailer.get_supplier_bills.assert_awaited_once_with(

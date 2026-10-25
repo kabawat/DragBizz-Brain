@@ -115,7 +115,7 @@ def test_projection_preserves_result_contract() -> None:
     assert projected.correlation_id == original.correlation_id
 
 
-def test_model_compaction_discloses_a_truncated_result() -> None:
+def test_invoice_model_preview_preserves_source_status_and_discloses_truncation() -> None:
     result = ToolResult(
         tool="list_invoices",
         success=True,
@@ -126,10 +126,37 @@ def test_model_compaction_discloses_a_truncated_result() -> None:
     )
     compacted = compact_result_for_model(result)
 
-    assert compacted.result_status == ToolResultStatus.SUCCESS_PARTIAL
-    assert compacted.returned_count == 8
-    assert compacted.total_count == 10
-    assert compacted.pagination.has_more is True
+    assert compacted.result_status == ToolResultStatus.SUCCESS_WITH_DATA
+    assert compacted.returned_count == 10
+    assert compacted.total_count is None
+    assert compacted.pagination is None
+    assert compacted.data["previewCount"] == 8
+    assert compacted.data["truncated"] is True
+
+
+def test_invoice_model_preview_does_not_change_source_counts_or_pagination() -> None:
+    result = ToolResult(
+        tool="list_invoices",
+        success=True,
+        data={
+            "count": 10,
+            "invoices": [{"id": f"inv-{i}"} for i in range(10)],
+            "pagination": {"hasMore": False, "pageSize": 10},
+        },
+        returned_count=10,
+        pagination={"hasMore": False, "pageSize": 10},
+    )
+
+    compacted = compact_result_for_model(result)
+
+    assert len(compacted.data["invoices"]) == 8
+    assert compacted.data["count"] == 10
+    assert compacted.data["previewCount"] == 8
+    assert compacted.data["truncated"] is True
+    assert compacted.result_status == ToolResultStatus.SUCCESS_WITH_DATA
+    assert compacted.returned_count == 10
+    assert compacted.total_count is None
+    assert compacted.pagination.has_more is False
 
 
 def test_every_registered_tool_has_side_effect_and_retry_classification() -> None:

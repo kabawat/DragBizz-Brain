@@ -175,6 +175,20 @@ async def test_list_invoices_handler_and_projection() -> None:
     assert "secretDbField" not in projected["invoices"][0]
     assert projected["invoices"][0]["invoiceNumber"] == "INV-2025-0"
     assert projected["invoices"][0]["customer"]["name"] == "Ramesh"
+    assert projected["pagination"]["hasMore"] is True
+    assert projected["pagination"]["pageSize"] == 20
+    mock_retailer.list_invoices.assert_awaited_once_with(
+        access_token="test-token",
+        store_id=STORE_ID,
+        limit=20,
+        invoice_status="RELEASED",
+        payment_status=None,
+        customer_id=None,
+        start_date=None,
+        end_date=None,
+        include_items=False,
+        next_cursor=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -619,7 +633,7 @@ async def test_failure_handling_in_handlers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_invoice_list_reports_partial_page_and_total_count() -> None:
+async def test_invoice_list_marks_partial_page_without_inventing_total() -> None:
     mock_retailer = AsyncMock()
     mock_retailer.list_invoices.return_value = RetailerResponse(
         status_code=200,
@@ -643,9 +657,134 @@ async def test_invoice_list_reports_partial_page_and_total_count() -> None:
 
     assert result.result_status == ToolResultStatus.SUCCESS_PARTIAL
     assert result.returned_count == 2
-    assert result.total_count == 5
+    assert result.total_count is None
     assert result.pagination.has_more is True
+    assert result.pagination.page_size == 2
     assert len(result.data["invoices"]) == 2
+
+
+@pytest.mark.parametrize("limit", [1, 3, 5])
+@pytest.mark.asyncio
+async def test_invoice_list_returns_the_requested_page_size(limit: int) -> None:
+    retailer = AsyncMock()
+    retailer.list_invoices.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "invoices": [
+                    {"id": f"inv-{index}", "invoiceNumber": f"INV-{index}"}
+                    for index in range(limit)
+                ],
+                "pagination": {
+                    "hasNextPage": True,
+                    "nextCursor": "b" * 24,
+                    "limit": limit,
+                    "total": limit,
+                },
+            }
+        },
+    )
+
+    result = await list_invoices(
+        {"storeId": STORE_ID, "limit": limit}, _dummy_context(retailer)
+    )
+
+    assert result.result_status == ToolResultStatus.SUCCESS_PARTIAL
+    assert result.returned_count == limit
+    assert len(result.data["invoices"]) == limit
+    assert result.pagination.page_size == limit
+    assert result.pagination.next_cursor == "b" * 24
+
+
+@pytest.mark.asyncio
+async def test_invoice_list_empty_result_stays_successfully_empty() -> None:
+    retailer = AsyncMock()
+    retailer.list_invoices.return_value = RetailerResponse(
+        status_code=200, body={"data": {"invoices": []}}
+    )
+
+    result = await list_invoices(
+        {"storeId": STORE_ID}, _dummy_context(retailer)
+    )
+
+    assert result.result_status == ToolResultStatus.SUCCESS_EMPTY
+    assert result.returned_count == 0
+    assert result.data["invoices"] == []
+
+
+@pytest.mark.asyncio
+async def test_invoice_list_uses_opaque_cursor_and_preserves_all_requested_rows() -> None:
+    mock_retailer = AsyncMock()
+    cursor = "a" * 24
+    mock_retailer.list_invoices.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "invoices": [
+                    {
+                        "id": f"id-{i}",
+                        "invoiceNumber": f"INV-2026-VERY-LONG-{i}-\u540d\u524d-\ud83d\uded2",
+                        "customer": {"id": "customer-1", "name": "\u0ba8\u0bbe\u0bae\u0bae"},
+                        "invoiceDate": "2026-10-25T09:30:00+05:30",
+                        "grandTotal": 123456.78,
+                        "paymentStatus": "PARTIALLY_PAID",
+                        "invoiceStatus": "RELEASED",
+                        "items": [{"name": "hidden line detail"}],
+                    }
+                    for i in range(50)
+                ],
+                "pagination": {
+                    "hasNextPage": True,
+                    "nextCursor": cursor,
+                    "limit": 50,
+                    # Core's current `total` field is the page size, not an all-time total.
+                    "total": 50,
+                },
+            }
+        },
+    )
+
+    result = await list_invoices(
+        {"storeId": STORE_ID, "limit": 50, "nextCursor": cursor},
+        _dummy_context(mock_retailer),
+    )
+    projected = project_list_invoices(result.data)
+
+    assert result.result_status == ToolResultStatus.SUCCESS_PARTIAL
+    assert result.returned_count == 50
+    assert result.total_count is None
+    assert result.pagination.next_cursor == cursor
+    assert len(projected["invoices"]) == 50
+    assert projected["invoices"][0]["invoiceNumber"].endswith("\u540d\u524d-\ud83d\uded2")
+    assert projected["invoices"][0]["customer"]["name"] == "\u0ba8\u0bbe\u0bae\u0bae"
+    assert projected["invoices"][0]["totalAmount"] == 123456.78
+    assert projected["invoices"][0]["itemCount"] == 1
+    assert "items" not in projected["invoices"][0]
+    mock_retailer.list_invoices.assert_awaited_once_with(
+        access_token="test-token",
+        store_id=STORE_ID,
+        limit=50,
+        invoice_status="RELEASED",
+        payment_status=None,
+        customer_id=None,
+        start_date=None,
+        end_date=None,
+        include_items=False,
+        next_cursor=cursor,
+    )
+
+
+@pytest.mark.asyncio
+async def test_invalid_invoice_cursor_is_rejected_without_store_call() -> None:
+    retailer = AsyncMock()
+    result = await list_invoices(
+        {"storeId": STORE_ID, "nextCursor": "not-a-cursor"},
+        _dummy_context(retailer),
+    )
+
+    assert result.result_status == ToolResultStatus.INVALID_INPUT
+    assert result.data["code"] == "TOOL_ARGS_INVALID"
+    retailer.list_invoices.assert_not_awaited()
 
 
 @pytest.mark.asyncio

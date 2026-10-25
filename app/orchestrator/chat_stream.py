@@ -154,6 +154,10 @@ async def stream_chat(
             "sessionId": response.session_id,
             "provider": response.provider,
             "model": response.model,
+            "toolResults": [
+                result.model_dump(mode="json", by_alias=True)
+                for result in response.tool_results
+            ],
             "pendingConfirmation": pending_payload,
         },
     )

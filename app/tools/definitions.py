@@ -368,12 +368,7 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="list_invoices",
-        description=(
-            "List invoices/bills with invoiceNumber, customer, date/time (IST), "
-            "totalAmount, totalProfit, and paymentStatus. Use startDate and endDate "
-            "(YYYY-MM-DD) to get invoices for a specific calendar day (e.g. yesterday 'kal', "
-            "today 'aaj', or past dates)."
-        ),
+        description="List invoice headers (not line items). Use nextCursor to continue; date filters use YYYY-MM-DD.",
         risk=ToolRisk.READ,
         allows_parallel=True,
         parameters={
@@ -405,11 +400,17 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
                     "format": "date",
                     "description": "End date filter (YYYY-MM-DD)",
                 },
+                "nextCursor": {
+                    "type": "string",
+                    "minLength": 24,
+                    "maxLength": 24,
+                    "description": "Previous page cursor",
+                },
                 "limit": {
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 50,
-                    "description": "Max invoices to return (default 20, capped at 50)",
+                    "description": "Invoices to return per page (default 20, maximum 50)",
                 },
             },
             "required": ["storeId"],

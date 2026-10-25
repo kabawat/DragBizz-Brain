@@ -1338,16 +1338,29 @@ async def stock_items(arguments: dict[str, Any], context: ToolContext) -> ToolRe
 
 async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
     limit = arguments.get("limit")
-    limit_val = min(_safe_limit(limit), 30)
+    limit_val = min(_safe_limit(limit), 50)
     invoice_status = arguments.get("invoiceStatus")
     payment_status = arguments.get("paymentStatus")
     customer_id = arguments.get("customerId")
     start_date = arguments.get("startDate")
     end_date = arguments.get("endDate")
+    next_cursor = arguments.get("nextCursor")
 
     date_error = _validate_date_range(start_date, end_date)
     if date_error:
         return ToolResult(tool="list_invoices", success=False, data=date_error)
+    if next_cursor is not None and (
+        not isinstance(next_cursor, str)
+        or re.fullmatch(r"[a-fA-F0-9]{24}", next_cursor) is None
+    ):
+        return ToolResult(
+            tool="list_invoices",
+            success=False,
+            data={
+                "code": "TOOL_ARGS_INVALID",
+                "message": "Invoice page cursor is invalid; use a cursor returned by the previous page.",
+            },
+        )
 
     try:
         response = await context.retailer.list_invoices(
@@ -1368,6 +1381,7 @@ async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> Tool
             start_date=start_date if isinstance(start_date, str) else None,
             end_date=end_date if isinstance(end_date, str) else None,
             include_items=False,
+            next_cursor=next_cursor,
         )
     except RetailerHttpError as exc:
         return _failure("list_invoices", exc)
@@ -1420,7 +1434,14 @@ async def list_invoices(arguments: dict[str, Any], context: ToolContext) -> Tool
         "invoices": invoices,
         "status": invoice_status or "RELEASED",
     }
-    _add_list_pagination(data, response.body, payload, len(raw_invoices), limit_val)
+    _add_list_pagination(
+        data,
+        response.body,
+        payload,
+        len(raw_invoices),
+        limit_val,
+        exact_total_keys=("totalCount",),
+    )
     return ToolResult(
         tool="list_invoices",
         success=True,
@@ -1463,6 +1484,8 @@ def _add_list_pagination(
     payload: Any,
     raw_count: int,
     limit: int,
+    *,
+    exact_total_keys: tuple[str, ...] = ("totalCount", "total"),
 ) -> None:
     """Carry upstream completeness metadata through list projections."""
     pagination = payload.get("pagination") if isinstance(payload, dict) else None
@@ -1473,7 +1496,14 @@ def _add_list_pagination(
         pagination = meta.get("pagination") if isinstance(meta, dict) else None
     pagination = dict(pagination) if isinstance(pagination, dict) else {}
     has_more = pagination.get("hasMore", pagination.get("hasNextPage"))
-    total = pagination.get("totalCount", pagination.get("total"))
+    total = next(
+        (
+            pagination.get(key)
+            for key in exact_total_keys
+            if pagination.get(key) is not None
+        ),
+        None,
+    )
     if isinstance(total, int) and total > raw_count and has_more is None:
         has_more = True
     if raw_count > limit:
@@ -1488,8 +1518,8 @@ def _add_list_pagination(
                 value = total
             if value is not None:
                 normalized[key] = value
-        if raw_count > limit and "totalCount" not in normalized:
-            normalized["totalCount"] = raw_count
+        if not isinstance(normalized.get("pageSize"), int):
+            normalized["pageSize"] = limit
         output["pagination"] = normalized
 
 

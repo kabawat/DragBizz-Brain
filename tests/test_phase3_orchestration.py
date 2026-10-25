@@ -26,6 +26,7 @@ from app.schemas.chat import (
     GenerationRequest,
     GenerationResponse,
 )
+from app.schemas.tool import ToolResult
 from app.tools.definitions import (
     READ_TOOL_DEFINITIONS,
     SENSITIVE_TOOL_DEFINITIONS,
@@ -153,6 +154,13 @@ async def test_genuine_token_streaming_emits_deltas() -> None:
             user_id="u1",
             provider="mock_stream",
             model="mock_stream",
+            tool_results=[
+                ToolResult(
+                    tool="list_invoices",
+                    success=True,
+                    data={"invoices": [{"invoiceNumber": "INV-1"}]},
+                )
+            ],
         )
 
     req = ChatRequest(text="hi", sessionId="s1", storeId="a" * 24)
@@ -179,6 +187,11 @@ async def test_genuine_token_streaming_emits_deltas() -> None:
     completed_payload = events[-1][1]
     assert completed_payload["sessionId"] == req.session_id
     assert completed_payload["provider"] == "mock_stream"
+    assert completed_payload["toolResults"][0]["tool"] == "list_invoices"
+    assert (
+        completed_payload["toolResults"][0]["data"]["invoices"][0]["invoiceNumber"]
+        == "INV-1"
+    )
 
 
 @pytest.mark.asyncio

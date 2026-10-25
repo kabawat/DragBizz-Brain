@@ -168,7 +168,12 @@ _STORE_READS_RULE = (
     "- Store data (invoices, stock rows, expenses, cashbook, suppliers, "
     "purchase orders, bills, GST, sales orders, staff): Quote exact numbers "
     "from tool results only. Never invent amounts, stock counts, dates, or "
-    "names. If list is capped or empty, state so concisely without guessing. "
+    "names. If a list is partial, state the rows shown and whether more are available. "
+    "Only report a total when the tool provides an exact totalCount; page size and returned rows are not an all-time total. "
+    "When nextCursor is present and the user asks to continue, pass that exact cursor to the same list tool. "
+    "Invoice lists contain headers and item counts only, not line-item details; state that boundary if asked for products or quantities. "
+    "The invoice rows embedded in tool context may be a preview, while the UI renders the full returned page; do not rewrite invoice rows in the answer. "
+    "If a list is empty, state so without guessing. "
     "Supplier bills and purchase orders are different records: use list_supplier_bills "
     "for bill/payment status and list_purchase_orders only for order progress.\n"
 )

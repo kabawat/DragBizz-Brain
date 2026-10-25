@@ -1148,7 +1148,7 @@ def project_list_invoices(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(raw, list):
         return {"count": 0, "invoices": []}
     invoices: list[dict[str, Any]] = []
-    for inv in raw[:30]:
+    for inv in raw[:50]:
         if not isinstance(inv, dict):
             continue
         entry: dict[str, Any] = {}
@@ -1157,6 +1157,7 @@ def project_list_invoices(data: dict[str, Any]) -> dict[str, Any]:
             "invoiceNumber",
             "invoiceDate",
             "totalAmount",
+            "totalProfit",
             "paymentStatus",
             "invoiceStatus",
             "itemCount",
@@ -1170,6 +1171,8 @@ def project_list_invoices(data: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"count": len(invoices), "invoices": invoices}
     if isinstance(data.get("status"), str):
         out["status"] = data["status"]
+    if isinstance(data.get("pagination"), dict):
+        out["pagination"] = dict(data["pagination"])
     return out
 
 

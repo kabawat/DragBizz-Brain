@@ -108,15 +108,21 @@ def compact_result_for_model(result: ToolResult) -> ToolResult:
     returned_count = result.returned_count
     total_count = result.total_count
     if truncated:
-        if pagination is None:
-            pagination = {}
-        pagination["has_more"] = True
-        for key in ("items", "suppliers", "invoices", "expenses", "orders"):
-            rows = out.get(key)
-            if isinstance(rows, list) and returned_count is not None:
-                total_count = total_count or returned_count
-                returned_count = len(rows)
-                break
+        if result.tool == "list_invoices":
+            # This is an LLM-context preview only. The full page remains in the
+            # result sent to the UI, so do not turn the preview length into a
+            # returned/total count or pretend the source has another page.
+            out["previewCount"] = len(out.get("invoices", []))
+        else:
+            if pagination is None:
+                pagination = {}
+            pagination["has_more"] = True
+            for key in ("items", "suppliers", "invoices", "expenses", "orders"):
+                rows = out.get(key)
+                if isinstance(rows, list) and returned_count is not None:
+                    total_count = total_count or returned_count
+                    returned_count = len(rows)
+                    break
     if result.tool == "search_customer":
         ledger = out.get("ledger")
         if isinstance(ledger, dict):
@@ -132,7 +138,9 @@ def compact_result_for_model(result: ToolResult) -> ToolResult:
         success=result.success,
         data=out,
         result_status=(
-            ToolResultStatus.SUCCESS_PARTIAL if truncated else result.result_status
+            ToolResultStatus.SUCCESS_PARTIAL
+            if truncated and result.tool != "list_invoices"
+            else result.result_status
         ),
         applied_filters=result.applied_filters,
         returned_count=returned_count,
