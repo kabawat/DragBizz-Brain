@@ -28,7 +28,13 @@ _STOCK_TOTAL_KEYS = (
     "lowStockItems",
     "outOfStockItems",
 )
-_STOCK_VALUE_KEYS = ("averageCost", "totalStockValue")
+_STOCK_VALUE_KEYS = (
+    "averageCost",
+    "totalStockValue",
+    "costedQuantity",
+    "unvaluedQuantity",
+    "valueComplete",
+)
 _PRODUCT_KEYS = (
     "id",
     "name",
@@ -1173,7 +1179,19 @@ def project_expense_summary(data: dict[str, Any]) -> dict[str, Any]:
     if isinstance(totals, dict):
         out["totals"] = _pick(
             totals,
-            ("totalExpenses", "totalAmount", "paidAmount", "pendingAmount"),
+            (
+                "totalExpenses",
+                "paidExpenses",
+                "pendingExpenses",
+                "todayExpenses",
+                "totalAmount",
+                "totalNetAmount",
+                "totalGstAmount",
+                "totalItcAmount",
+                "paidAmount",
+                "pendingAmount",
+                "todayAmount",
+            ),
         )
     cats = data.get("byCategory")
     if isinstance(cats, list):
@@ -1218,6 +1236,8 @@ def project_cashbook_summary(data: dict[str, Any]) -> dict[str, Any]:
     return _pick(
         data,
         (
+            "from",
+            "to",
             "openingBalance",
             "closingBalance",
             "totalCashIn",
@@ -1225,6 +1245,8 @@ def project_cashbook_summary(data: dict[str, Any]) -> dict[str, Any]:
             "netBalance",
             "cashSales",
             "dayStatus",
+            "dayCount",
+            "entryCount",
         ),
     )
 

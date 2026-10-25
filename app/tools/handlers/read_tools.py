@@ -230,7 +230,18 @@ async def stock_summary(arguments: dict[str, Any], context: ToolContext) -> Tool
         if isinstance(payload.get("totals"), dict):
             data["totals"] = payload["totals"]
         if isinstance(payload.get("valueSummary"), dict):
-            data["valueSummary"] = payload["valueSummary"]
+            value_summary = payload["valueSummary"]
+            data["valueSummary"] = {
+                key: value_summary[key]
+                for key in (
+                    "averageCost",
+                    "totalStockValue",
+                    "costedQuantity",
+                    "unvaluedQuantity",
+                    "valueComplete",
+                )
+                if key in value_summary
+            }
     return ToolResult(tool="stock_summary", success=True, data=data)
 
 
@@ -1497,24 +1508,49 @@ async def expense_summary(
     if not isinstance(payload, dict):
         payload = {}
 
-    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    counts = payload.get("counts") if isinstance(payload.get("counts"), dict) else {}
+    amounts = payload.get("amounts") if isinstance(payload.get("amounts"), dict) else {}
+    legacy_totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    totals: dict[str, Any] = {}
+    for key in (
+        "totalExpenses",
+        "paidExpenses",
+        "pendingExpenses",
+        "todayExpenses",
+    ):
+        if key in counts:
+            totals[key] = counts[key]
+        elif key in legacy_totals:
+            totals[key] = legacy_totals[key]
+    for key in (
+        "totalAmount",
+        "totalNetAmount",
+        "totalGstAmount",
+        "totalItcAmount",
+        "paidAmount",
+        "pendingAmount",
+        "todayAmount",
+    ):
+        if key in amounts:
+            totals[key] = amounts[key]
+        elif key in legacy_totals:
+            totals[key] = legacy_totals[key]
+
     by_category_raw = payload.get("byCategory") or payload.get("categories") or []
-    by_category = by_category_raw[:10] if isinstance(by_category_raw, list) else []
+    if isinstance(by_category_raw, dict):
+        by_category = [
+            {"category": name, **value}
+            for name, value in by_category_raw.items()
+            if isinstance(name, str) and isinstance(value, dict)
+        ][:10]
+    else:
+        by_category = by_category_raw[:10] if isinstance(by_category_raw, list) else []
 
     return ToolResult(
         tool="expense_summary",
         success=True,
         data={
-            "totals": {
-                k: totals[k]
-                for k in (
-                    "totalExpenses",
-                    "totalAmount",
-                    "paidAmount",
-                    "pendingAmount",
-                )
-                if k in totals
-            },
+            "totals": totals,
             "byCategory": by_category,
         },
     )
@@ -1595,14 +1631,50 @@ async def cashbook_summary(
     if not isinstance(payload, dict):
         payload = {}
 
+    days = payload.get("days") if isinstance(payload.get("days"), list) else []
+    totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+    first_day = days[0] if days and isinstance(days[0], dict) else {}
+    last_day = days[-1] if days and isinstance(days[-1], dict) else {}
+    cash_in = totals.get("cashIn")
+    if cash_in is None:
+        cash_in = payload.get("totalCashIn", payload.get("cashIn"))
+    if cash_in is None and days:
+        cash_in = sum(
+            day.get("totalCashIn", 0)
+            for day in days
+            if isinstance(day, dict) and isinstance(day.get("totalCashIn", 0), (int, float))
+        )
+    cash_out = totals.get("cashOut")
+    if cash_out is None:
+        cash_out = payload.get("totalCashOut", payload.get("cashOut"))
+    if cash_out is None and days:
+        cash_out = sum(
+            day.get("totalCashOut", 0)
+            for day in days
+            if isinstance(day, dict) and isinstance(day.get("totalCashOut", 0), (int, float))
+        )
+    net_balance = totals.get("netFlow")
+    if net_balance is None:
+        net_balance = payload.get("netBalance", payload.get("currentBalance"))
+    if net_balance is None and isinstance(cash_in, (int, float)) and isinstance(cash_out, (int, float)):
+        net_balance = cash_in - cash_out
+
     summary = {
-        "openingBalance": payload.get("openingBalance"),
-        "closingBalance": payload.get("closingBalance"),
-        "totalCashIn": payload.get("totalCashIn") or payload.get("cashIn"),
-        "totalCashOut": payload.get("totalCashOut") or payload.get("cashOut"),
-        "netBalance": (payload.get("netBalance") or payload.get("currentBalance")),
+        "from": payload.get("from"),
+        "to": payload.get("to"),
+        "openingBalance": first_day.get("openingBalance", payload.get("openingBalance")),
+        "closingBalance": last_day.get("closingBalance", payload.get("closingBalance")),
+        "totalCashIn": cash_in,
+        "totalCashOut": cash_out,
+        "netBalance": net_balance,
         "cashSales": payload.get("cashSales"),
-        "dayStatus": payload.get("dayStatus") or payload.get("status"),
+        "dayStatus": payload.get("dayStatus", payload.get("status")),
+        "dayCount": len(days) if days else payload.get("dayCount"),
+        "entryCount": sum(
+            day.get("entryCount", 0)
+            for day in days
+            if isinstance(day, dict) and isinstance(day.get("entryCount", 0), (int, float))
+        ) if days else payload.get("entryCount"),
     }
     return ToolResult(
         tool="cashbook_summary",

@@ -32,6 +32,7 @@ from app.tools.handlers.read_tools import (
     list_sales_orders,
     list_staff,
     search_supplier,
+    stock_summary,
     stock_items,
     supplier_summary,
 )
@@ -49,6 +50,7 @@ from app.tools.projection import (
     project_list_sales_orders,
     project_list_staff,
     project_search_supplier,
+    project_stock_summary,
     project_stock_items,
     project_supplier_summary,
 )
@@ -229,6 +231,70 @@ async def test_expense_summary_and_list_expenses() -> None:
 
 
 @pytest.mark.asyncio
+async def test_expense_summary_maps_core_counts_amounts_and_category_map() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_expense_analytics.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "counts": {
+                    "totalExpenses": 4,
+                    "paidExpenses": 1,
+                    "pendingExpenses": 3,
+                    "todayExpenses": 2,
+                },
+                "amounts": {
+                    "totalAmount": 2400.0,
+                    "paidAmount": 500.0,
+                    "pendingAmount": 1900.0,
+                    "todayAmount": 800.0,
+                },
+                "byCategory": {
+                    "Rent": {"count": 1, "amount": 1500.0},
+                    "Utilities": {"count": 3, "amount": 900.0},
+                },
+            }
+        },
+    )
+    result = await expense_summary({}, _dummy_context(mock_retailer))
+    projected = project_expense_summary(result.data)
+
+    assert projected["totals"]["totalExpenses"] == 4
+    assert projected["totals"]["pendingExpenses"] == 3
+    assert projected["totals"]["totalAmount"] == 2400.0
+    assert {row["category"]: row["amount"] for row in projected["byCategory"]} == {
+        "Rent": 1500.0,
+        "Utilities": 900.0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_stock_summary_preserves_cost_coverage_state() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_stock.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "totals": {"totalSkus": 3, "availableQuantity": 7, "outOfStockItems": 1},
+                "valueSummary": {
+                    "totalStockValue": 1050.0,
+                    "averageCost": 150.0,
+                    "costedQuantity": 7,
+                    "unvaluedQuantity": 0,
+                    "valueComplete": True,
+                },
+            }
+        },
+    )
+    result = await stock_summary({}, _dummy_context(mock_retailer))
+    projected = project_stock_summary(result.data)
+
+    assert projected["totals"]["availableQuantity"] == 7
+    assert projected["valueSummary"]["totalStockValue"] == 1050.0
+    assert projected["valueSummary"]["valueComplete"] is True
+
+
+@pytest.mark.asyncio
 async def test_cashbook_summary_handler() -> None:
     mock_retailer = AsyncMock()
     mock_retailer.get_cashbook_summary.return_value = RetailerResponse(
@@ -253,6 +319,37 @@ async def test_cashbook_summary_handler() -> None:
     projected = project_cashbook_summary(result.data)
     assert projected["closingBalance"] == 3500.0
     assert projected["dayStatus"] == "OPEN"
+
+
+@pytest.mark.asyncio
+async def test_cashbook_summary_maps_date_range_response() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_cashbook_summary.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "from": "2026-10-20",
+                "to": "2026-10-21",
+                "days": [
+                    {"openingBalance": 1000.0, "closingBalance": 1450.0, "totalCashIn": 700.0, "totalCashOut": 250.0, "entryCount": 3},
+                    {"openingBalance": 1450.0, "closingBalance": 1800.0, "totalCashIn": 500.0, "totalCashOut": 150.0, "entryCount": 2},
+                ],
+                "totals": {"cashIn": 1200.0, "cashOut": 400.0, "netFlow": 800.0},
+            }
+        },
+    )
+    result = await cashbook_summary({"fromDate": "2026-10-20", "toDate": "2026-10-21"}, _dummy_context(mock_retailer))
+    projected = project_cashbook_summary(result.data)
+
+    assert projected["from"] == "2026-10-20"
+    assert projected["to"] == "2026-10-21"
+    assert projected["openingBalance"] == 1000.0
+    assert projected["closingBalance"] == 1800.0
+    assert projected["totalCashIn"] == 1200.0
+    assert projected["totalCashOut"] == 400.0
+    assert projected["netBalance"] == 800.0
+    assert projected["dayCount"] == 2
+    assert projected["entryCount"] == 5
 
 
 @pytest.mark.asyncio
@@ -574,6 +671,15 @@ def test_intent_routing_for_phase2_queries() -> None:
     # Cashbook
     intent = resolve_turn_intent("galle ka hisaab dikhao", available=available)
     assert "cashbook_summary" in intent.tool_names
+
+    # Finance overview must include payable and payment reads as well as cashbook.
+    intent = resolve_turn_intent(
+        "aaj ke cashbook ka opening, cash in, cash out, closing balance aur entry count batao",
+        available=available,
+        use_domain_routing=True,
+    )
+    assert "cashbook_summary" in intent.tool_names
+    assert "bill_summary" in intent.tool_names
 
     # Supplier
     intent = resolve_turn_intent("suppliers list", available=available)

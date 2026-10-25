@@ -118,6 +118,11 @@ DOMAIN_READ_BUNDLES: dict[ToolDomain, frozenset[str]] = {
             "expense_summary",
             "list_expenses",
             "cashbook_summary",
+            "bill_summary",
+            "list_supplier_bills",
+            "search_supplier",
+            "supplier_summary",
+            "payment_history",
             "gst_summary",
             "today_sale",
         }
