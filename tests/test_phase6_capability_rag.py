@@ -75,6 +75,40 @@ def test_help_shortcut_and_natural_how_to_prompt_share_capability_answer() -> No
     assert shortcut.message == natural.message
 
 
+def test_broad_natural_capability_question_uses_the_catalog() -> None:
+    enabled = [_tool("product_summary", ToolRisk.READ, permission="inventory:read")]
+    shortcut = try_fast_conversational_turn(
+        "/help", language="en", capabilities=enabled
+    )
+    natural = try_fast_conversational_turn(
+        "What can DragAI help me manage in my shop?",
+        language="en",
+        capabilities=enabled,
+    )
+
+    assert shortcut is not None and natural is not None
+    assert natural.message == shortcut.message
+    assert "Products and stock" in natural.message
+    assert "GST & Financial Reports" not in natural.message
+
+
+def test_hinglish_capability_question_uses_the_catalog() -> None:
+    enabled = [_tool("product_summary", ToolRisk.READ, permission="inventory:read")]
+    shortcut = try_fast_conversational_turn(
+        "/help", language="hi-en", capabilities=enabled
+    )
+    natural = try_fast_conversational_turn(
+        "mere store me DragAI kya-kya manage kar sakta hai?",
+        language="hi-en",
+        capabilities=enabled,
+    )
+
+    assert shortcut is not None and natural is not None
+    assert natural.message == shortcut.message
+    assert "Products and stock" in natural.message
+    assert "Tally" not in natural.message
+
+
 def test_retrieval_rejects_unknown_tenant_and_unauthorized_role_chunks() -> None:
     public = RetrievedChunk(
         text="Public how-to",

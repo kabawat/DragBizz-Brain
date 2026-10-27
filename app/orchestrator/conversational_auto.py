@@ -67,6 +67,11 @@ _DATETIME_QUERY_RE = re.compile(
 # 5. Bot Identity & Capabilities
 _IDENTITY_RE = re.compile(
     r"^(?:/?help|how do i use dragbizz chat|dragbizz chat kaise use karein|"
+    r"what can (?:dragai|you) (?:help me (?:manage|with)|do)"
+    r"(?:\s+(?:in|for) my (?:shop|store))?|"
+    r"mere (?:store|shop|dukaan) me (?:"
+    r"(?:tum|aap) kya[\s-]+kya (?:manage|kar) sakte ho|"
+    r"dragai kya[\s-]+kya manage kar sakta hai)|"
     r"aap kaun ho|tum kaun ho|who are you|aapka naam kya hai|tumhara naam kya hai|"
     r"tum kya kar sakte ho|aap kya kar sakte ho|kya kar sakte ho|"
     r"help chahiye|help|kya help kar sakte ho|kya kaam karte ho)\W*$",
