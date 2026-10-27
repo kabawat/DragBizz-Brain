@@ -13,6 +13,7 @@ import httpx
 from app.config import Settings, get_settings
 from app.observability.pricing import PricingConfig, pricing_from_settings
 from app.rag.chunker import DocumentChunk, chunk_markdown, estimate_tokens
+from app.rag.corpus import knowledge_corpus_version
 from app.rag.embedding_service import EmbeddingService
 from app.rag.vector_store import VectorStore
 
@@ -33,6 +34,7 @@ class IndexSummary:
     usage_source: str
     cost_source: str
     pricing_version: str
+    corpus_version: str
 
 
 async def index_knowledge(
@@ -49,11 +51,19 @@ async def index_knowledge(
     maps to any current chunk are deleted.
     """
     files = sorted(root.rglob("*.md"))
+    corpus_version = knowledge_corpus_version(root)
     desired: dict[str, DocumentChunk] = {}
     for path in files:
         source = str(path.relative_to(root))
         for chunk in chunk_markdown(path.read_text(encoding="utf-8"), source=source):
-            desired[chunk.id] = chunk
+            desired[chunk.id] = chunk.model_copy(
+                update={
+                    "metadata": {
+                        **chunk.metadata,
+                        "corpus_version": corpus_version,
+                    }
+                }
+            )
 
     existing_ids = await vector_store.list_point_ids()
     new_chunks = [c for cid, c in desired.items() if cid not in existing_ids]
@@ -64,6 +74,9 @@ async def index_knowledge(
         await vector_store.upsert_chunks(new_chunks, vectors)
     if stale_ids:
         await vector_store.delete_points(stale_ids)
+    await vector_store.update_corpus_version(
+        existing_ids - set(stale_ids), corpus_version=corpus_version
+    )
 
     embedded_tokens = sum(estimate_tokens(c.content) for c in new_chunks)
     pricing_cfg = pricing or pricing_from_settings(get_settings())
@@ -79,6 +92,7 @@ async def index_knowledge(
         usage_source=cost.usage_source,
         cost_source=cost.cost_source,
         pricing_version=cost.pricing_version,
+        corpus_version=corpus_version,
     )
     logger.info(
         "Index summary: files=%s chunks=%s embedded=%s skipped=%s deleted=%s "

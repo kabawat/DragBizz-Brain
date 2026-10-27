@@ -144,3 +144,19 @@ def filter_tool_definitions(
         if not definition.required_permissions
         or set(definition.required_permissions).issubset(permissions)
     )
+
+
+def runtime_tool_definitions(
+    definitions: Any, permissions: frozenset[str] | None
+) -> tuple[Any, ...]:
+    """Return the same tool set the verified chat runtime may route to.
+
+    Chat requests are store-authorized by Core before reaching ChatService. If
+    Core supplies explicit store permissions, narrow the registry to those
+    permissions; otherwise Core remains the authorization authority and the
+    runtime's registered tools are available. Capability help must describe
+    this exact set instead of treating absent per-tool claims as no tools.
+    """
+    if permissions is None:
+        return tuple(definitions)
+    return filter_tool_definitions(definitions, permissions)

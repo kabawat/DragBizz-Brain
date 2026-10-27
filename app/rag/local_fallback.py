@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from app.rag.corpus import knowledge_corpus_version
 from app.rag.models import RetrievedChunk
 
 DEFAULT_KNOWLEDGE_ROOT = Path(__file__).resolve().parents[2] / "knowledge"
@@ -97,7 +98,11 @@ def retrieve_local_knowledge(
             RetrievedChunk(
                 id=f"local:{relative}",
                 text=body[:3500],
-                metadata={"source": relative, "fallback": "local"},
+                metadata={
+                    "source": relative,
+                    "fallback": "local",
+                    "corpus_version": knowledge_corpus_version(),
+                },
                 score=round(score, 4),
             )
         )

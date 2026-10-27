@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.config import Settings
+from app.rag.corpus import knowledge_corpus_version
 from app.rag.embedding_service import EmbeddingService
 from app.rag.models import RetrievedChunk
 from app.rag.retrieval_cache import NoOpRagCache, RagCache
@@ -32,11 +33,16 @@ class Retriever:
         self._vector_store = vector_store
         self._cache: RagCache = cache or NoOpRagCache()
 
-    async def retrieve(self, question: str) -> list[RetrievedChunk]:
+    async def retrieve(
+        self, question: str, *, cache_scope: str = "public"
+    ) -> list[RetrievedChunk]:
         top_k = self._settings.rag.top_k
         score_threshold = self._settings.rag.score_threshold
         cached = await self._cache.get_chunks(
-            question, top_k=top_k, score_threshold=score_threshold
+            question,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            cache_scope=cache_scope,
         )
         if cached is not None:
             return cached
@@ -47,6 +53,7 @@ class Retriever:
                 vector,
                 limit=top_k,
                 score_threshold=score_threshold,
+                corpus_version=knowledge_corpus_version(),
             )
         except Exception:
             logger.warning(
@@ -75,5 +82,6 @@ class Retriever:
             top_k=top_k,
             score_threshold=score_threshold,
             chunks=chunks,
+            cache_scope=cache_scope,
         )
         return chunks

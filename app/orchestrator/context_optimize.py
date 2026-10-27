@@ -199,14 +199,23 @@ def _truncate_list_field(data: dict[str, Any], key: str, limit: int) -> bool:
 
 
 def _strip_documentation(content: str) -> tuple[str, int]:
-    marker = "\nDocumentation:\n"
-    if marker not in content:
-        return content, 0
-    head, _, docs = content.partition(marker)
+    marker = "\n<untrusted_documentation>\n"
+    end_marker = "\n</untrusted_documentation>"
+    if marker in content:
+        head, _, body = content.partition(marker)
+        docs, found_end, _ = body.partition(end_marker)
+        if not found_end:
+            return content, 0
+        stub = head + marker + "(earlier turn documentation omitted)" + end_marker
+    else:
+        marker = "\nDocumentation:\n"
+        if marker not in content:
+            return content, 0
+        head, _, docs = content.partition(marker)
+        stub = head + marker + "(earlier turn; use tool results for live data)\n"
     # Tiny docs can be smaller than the stub; leave them alone.
     if estimate_tokens(docs) < 40:
         return content, 0
-    stub = head + "\nDocumentation: (earlier turn; use tool results for live data)\n"
     removed = max(0, estimate_tokens(content) - estimate_tokens(stub))
     return stub, removed
 

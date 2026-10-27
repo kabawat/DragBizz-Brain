@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -23,6 +24,7 @@ from app.prompts.system.chat import (
     build_chat_system_prompt,
     build_documentation_block,
 )
+from app.rag.corpus import authorize_knowledge_chunks
 from app.rag.local_fallback import retrieve_local_knowledge
 from app.rag.models import RetrievedChunk
 from app.rag.retrieval_cache import NoOpRagCache, RagCache
@@ -48,6 +50,7 @@ async def retrieve_documentation(
     *,
     metrics: MetricsRegistry | None = None,
     cache_hit: bool = False,
+    cache_scope: str = "public",
 ) -> tuple[list[RetrievedChunk], bool]:
     """Returns (chunks, failed). failed=True when RAG/Qdrant errored."""
     if retriever is None:
@@ -62,7 +65,10 @@ async def retrieve_documentation(
         return [], True
     started = time.perf_counter()
     try:
-        chunks = await retriever.retrieve(question)
+        if isinstance(retriever, Retriever):
+            chunks = await retriever.retrieve(question, cache_scope=cache_scope)
+        else:
+            chunks = await retriever.retrieve(question)
         latency_ms = (time.perf_counter() - started) * 1000
         if metrics is not None:
             metrics.record_rag(latency_ms, failed=False, cache_hit=cache_hit)
@@ -133,6 +139,8 @@ async def build_chat_context(
     rag_cache: RagCache | None = None,
     metrics: MetricsRegistry | None = None,
     prior_turns: list[SessionTurn] | None = None,
+    actor_role: str | None = None,
+    permissions: frozenset[str] | None = None,
 ) -> ChatContext:
     cache: RagCache = rag_cache or NoOpRagCache()
     if prior_turns is None:
@@ -146,6 +154,16 @@ async def build_chat_context(
         faq_budget=settings.rag.context_max_tokens,
         action_budget=settings.rag.context_max_tokens_action,
     )
+    scope_material = "|".join(
+        [
+            store_id,
+            (actor_role or "unknown").casefold(),
+            ",".join(sorted(permissions or ()))
+            if permissions is not None
+            else "core-authority",
+        ]
+    )
+    cache_scope = hashlib.sha256(scope_material.encode()).hexdigest()[:24]
 
     retrieved: list[RetrievedChunk] = []
     documentation = ""
@@ -153,20 +171,28 @@ async def build_chat_context(
     docs_unavailable = False
     tool_names = frozenset(tool.name for tool in tools)
     if should_retrieve_docs(routing, tool_names=tool_names):
-        cached_docs = await cache.get_documentation_block(question, budget=docs_budget)
+        cached_docs = await cache.get_documentation_block(
+            question, budget=docs_budget, cache_scope=cache_scope
+        )
         if cached_docs is not None:
             documentation = cached_docs
             rag_cache_hit = True
             retrieved = []
         else:
             retrieved, rag_failed = await retrieve_documentation(
-                retriever, question, metrics=metrics, cache_hit=False
+                retriever,
+                question,
+                metrics=metrics,
+                cache_hit=False,
+                cache_scope=cache_scope,
             )
             if rag_failed:
                 # Fallback when embeddings/Qdrant are down.
                 local_chunks = retrieve_local_knowledge(question)
                 if local_chunks:
-                    retrieved = local_chunks
+                    retrieved = authorize_knowledge_chunks(
+                        local_chunks, actor_role=actor_role, permissions=permissions
+                    )
                     documentation = build_documentation_block(
                         retrieved,
                         max_tokens=docs_budget,
@@ -185,13 +211,21 @@ async def build_chat_context(
                 else:
                     documentation = ""
             else:
+                retrieved = authorize_knowledge_chunks(
+                    retrieved, actor_role=actor_role, permissions=permissions
+                )
                 documentation = build_documentation_block(
                     retrieved,
                     max_tokens=docs_budget,
                 )
                 await cache.set_documentation_block(
-                    question, budget=docs_budget, block=documentation
+                    question,
+                    budget=docs_budget,
+                    block=documentation,
+                    cache_scope=cache_scope,
                 )
+        if routing == "docs" and not documentation:
+            docs_unavailable = True
 
     if docs_unavailable:
         return ChatContext(

@@ -17,6 +17,8 @@ from app.core.dates import (
     current_ist_human_str,
     current_ist_time_str,
 )
+from app.schemas.tool import ToolDefinition
+from app.tools.capability_catalog import build_capability_help
 
 # Business keywords that must NEVER be intercepted by conversational fast-path
 _BUSINESS_DISQUALIFIERS = re.compile(
@@ -64,7 +66,8 @@ _DATETIME_QUERY_RE = re.compile(
 
 # 5. Bot Identity & Capabilities
 _IDENTITY_RE = re.compile(
-    r"^(aap kaun ho|tum kaun ho|who are you|aapka naam kya hai|tumhara naam kya hai|"
+    r"^(?:/?help|how do i use dragbizz chat|dragbizz chat kaise use karein|"
+    r"aap kaun ho|tum kaun ho|who are you|aapka naam kya hai|tumhara naam kya hai|"
     r"tum kya kar sakte ho|aap kya kar sakte ho|kya kar sakte ho|"
     r"help chahiye|help|kya help kar sakte ho|kya kaam karte ho)\W*$",
     re.IGNORECASE,
@@ -91,6 +94,7 @@ def try_fast_conversational_turn(
     *,
     language: str = "hi-IN",
     user_name: str = "",
+    capabilities: list[ToolDefinition] | tuple[ToolDefinition, ...] = (),
 ) -> FastConversationalOutcome | None:
     """Return an instant response for pure conversational queries, or None.
 
@@ -154,26 +158,7 @@ def try_fast_conversational_turn(
 
     # 5. Identity & Capabilities
     if _IDENTITY_RE.match(text):
-        if is_english:
-            msg = (
-                "I am **DragAI**! 🛒\n"
-                "I help you manage daily retail operations:\n"
-                "• **Sales & Stock**: Check today's sales, product stock levels\n"
-                "• **Expenses & Invoices**: Record expenses (chai, rent), "
-                "create invoices\n"
-                "• **Customer Khata**: Track customer dues, payments, reminders\n\n"
-                "What would you like to check or do right now? 😊"
-            )
-        else:
-            msg = (
-                "Main **DragAI** hoon! 🛒\n"
-                "Main aapke daily store operations me madad karta hoon:\n"
-                "• **Sales & Stock**: Aaj ki sale dekhna, stock summary\n"
-                "• **Kharcha & Invoices**: Daily kharcha add karna (chai, rent), "
-                "invoice banana\n"
-                "• **Khata & Customer**: Customer udhaar (due) aur payment hisab\n\n"
-                "Bataiye, abhi kya check ya add karna hai? 😊"
-            )
+        msg = build_capability_help(capabilities, language=language)
         return FastConversationalOutcome(message=msg, tool_calls=[], tool_results=[])
 
     # 6. Acknowledgments & Closures

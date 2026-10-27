@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable
 from typing import Protocol
 
+from app.rag.corpus import knowledge_corpus_version
 from app.rag.models import RetrievedChunk
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class RagCache(Protocol):
         *,
         top_k: int,
         score_threshold: float,
+        cache_scope: str = "public",
     ) -> list[RetrievedChunk] | None: ...
 
     async def set_chunks(
@@ -38,14 +40,15 @@ class RagCache(Protocol):
         top_k: int,
         score_threshold: float,
         chunks: list[RetrievedChunk],
+        cache_scope: str = "public",
     ) -> None: ...
 
     async def get_documentation_block(
-        self, question: str, *, budget: int
+        self, question: str, *, budget: int, cache_scope: str = "public"
     ) -> str | None: ...
 
     async def set_documentation_block(
-        self, question: str, *, budget: int, block: str
+        self, question: str, *, budget: int, block: str, cache_scope: str = "public"
     ) -> None: ...
 
 
@@ -58,6 +61,7 @@ class NoOpRagCache:
         *,
         top_k: int,
         score_threshold: float,
+        cache_scope: str = "public",
     ) -> list[RetrievedChunk] | None:
         return None
 
@@ -68,16 +72,17 @@ class NoOpRagCache:
         top_k: int,
         score_threshold: float,
         chunks: list[RetrievedChunk],
+        cache_scope: str = "public",
     ) -> None:
         return None
 
     async def get_documentation_block(
-        self, question: str, *, budget: int
+        self, question: str, *, budget: int, cache_scope: str = "public"
     ) -> str | None:
         return None
 
     async def set_documentation_block(
-        self, question: str, *, budget: int, block: str
+        self, question: str, *, budget: int, block: str, cache_scope: str = "public"
     ) -> None:
         return None
 
@@ -95,8 +100,14 @@ class InMemoryRagCache:
         *,
         top_k: int,
         score_threshold: float,
+        cache_scope: str = "public",
     ) -> list[RetrievedChunk] | None:
-        key = _chunks_key(question, top_k=top_k, score_threshold=score_threshold)
+        key = _chunks_key(
+            question,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            cache_scope=cache_scope,
+        )
         entry = self._chunks.get(key)
         if entry is None:
             return None
@@ -113,17 +124,23 @@ class InMemoryRagCache:
         top_k: int,
         score_threshold: float,
         chunks: list[RetrievedChunk],
+        cache_scope: str = "public",
     ) -> None:
-        key = _chunks_key(question, top_k=top_k, score_threshold=score_threshold)
+        key = _chunks_key(
+            question,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            cache_scope=cache_scope,
+        )
         self._chunks[key] = (
             self._clock() + self._ttl_seconds,
             [chunk.model_copy() for chunk in chunks],
         )
 
     async def get_documentation_block(
-        self, question: str, *, budget: int
+        self, question: str, *, budget: int, cache_scope: str = "public"
     ) -> str | None:
-        key = _docs_key(question, budget=budget)
+        key = _docs_key(question, budget=budget, cache_scope=cache_scope)
         entry = self._docs.get(key)
         if entry is None:
             return None
@@ -134,9 +151,9 @@ class InMemoryRagCache:
         return block
 
     async def set_documentation_block(
-        self, question: str, *, budget: int, block: str
+        self, question: str, *, budget: int, block: str, cache_scope: str = "public"
     ) -> None:
-        key = _docs_key(question, budget=budget)
+        key = _docs_key(question, budget=budget, cache_scope=cache_scope)
         self._docs[key] = (self._clock() + self._ttl_seconds, block)
 
 
@@ -153,8 +170,14 @@ class RedisRagCache:
         *,
         top_k: int,
         score_threshold: float,
+        cache_scope: str = "public",
     ) -> list[RetrievedChunk] | None:
-        key = _chunks_key(question, top_k=top_k, score_threshold=score_threshold)
+        key = _chunks_key(
+            question,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            cache_scope=cache_scope,
+        )
         try:
             raw = await self._redis.get(key)
         except Exception:
@@ -176,8 +199,14 @@ class RedisRagCache:
         top_k: int,
         score_threshold: float,
         chunks: list[RetrievedChunk],
+        cache_scope: str = "public",
     ) -> None:
-        key = _chunks_key(question, top_k=top_k, score_threshold=score_threshold)
+        key = _chunks_key(
+            question,
+            top_k=top_k,
+            score_threshold=score_threshold,
+            cache_scope=cache_scope,
+        )
         payload = json.dumps(
             [chunk.model_dump() for chunk in chunks], ensure_ascii=False
         )
@@ -187,9 +216,9 @@ class RedisRagCache:
             logger.warning("RAG chunk cache set failed", exc_info=True)
 
     async def get_documentation_block(
-        self, question: str, *, budget: int
+        self, question: str, *, budget: int, cache_scope: str = "public"
     ) -> str | None:
-        key = _docs_key(question, budget=budget)
+        key = _docs_key(question, budget=budget, cache_scope=cache_scope)
         try:
             return await self._redis.get(key)
         except Exception:
@@ -197,9 +226,9 @@ class RedisRagCache:
             return None
 
     async def set_documentation_block(
-        self, question: str, *, budget: int, block: str
+        self, question: str, *, budget: int, block: str, cache_scope: str = "public"
     ) -> None:
-        key = _docs_key(question, budget=budget)
+        key = _docs_key(question, budget=budget, cache_scope=cache_scope)
         try:
             await self._redis.set(key, block, ex=self._ttl_seconds)
         except Exception:
@@ -226,11 +255,17 @@ def _hash(parts: str) -> str:
     return hashlib.sha256(parts.encode()).hexdigest()[:32]
 
 
-def _chunks_key(question: str, *, top_k: int, score_threshold: float) -> str:
-    digest = _hash(f"{_normalize_question(question)}|{top_k}|{score_threshold:.4f}")
+def _chunks_key(
+    question: str, *, top_k: int, score_threshold: float, cache_scope: str = "public"
+) -> str:
+    digest = _hash(
+        f"{knowledge_corpus_version()}|{cache_scope}|{_normalize_question(question)}|{top_k}|{score_threshold:.4f}"
+    )
     return f"{_CHUNKS_PREFIX}:{digest}"
 
 
-def _docs_key(question: str, *, budget: int) -> str:
-    digest = _hash(f"{_normalize_question(question)}|{budget}")
+def _docs_key(question: str, *, budget: int, cache_scope: str = "public") -> str:
+    digest = _hash(
+        f"{knowledge_corpus_version()}|{cache_scope}|{_normalize_question(question)}|{budget}"
+    )
     return f"{_DOCS_PREFIX}:{digest}"

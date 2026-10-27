@@ -113,15 +113,40 @@ class VectorStore:
         *,
         limit: int,
         score_threshold: float,
+        corpus_version: str | None = None,
     ) -> list[qmodels.ScoredPoint]:
+        query_filter = None
+        if corpus_version:
+            query_filter = qmodels.Filter(
+                must=[
+                    qmodels.FieldCondition(
+                        key="corpus_version",
+                        match=qmodels.MatchValue(value=corpus_version),
+                    )
+                ]
+            )
         response = await self._client.query_points(
             collection_name=self.collection_name,
             query=vector,
             limit=limit,
             score_threshold=score_threshold,
+            query_filter=query_filter,
             with_payload=True,
         )
         return response.points
+
+    async def update_corpus_version(
+        self, point_ids: set[str], *, corpus_version: str
+    ) -> None:
+        """Tag existing current points after indexing the matching source corpus."""
+        if not point_ids:
+            return
+        await self._client.set_payload(
+            collection_name=self.collection_name,
+            payload={"corpus_version": corpus_version},
+            points=list(point_ids),
+            wait=True,
+        )
 
     async def delete_points(self, ids: list[str]) -> None:
         if not ids:

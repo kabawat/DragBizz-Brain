@@ -9,7 +9,7 @@ from typing import Any
 from app.config import Settings
 from app.confirmations import ConfirmationStore, InMemoryConfirmationStore
 from app.core.exceptions import AppError
-from app.core.store_access import explicit_store_permissions, filter_tool_definitions
+from app.core.store_access import explicit_store_permissions, runtime_tool_definitions
 from app.executors.tool_executor import ToolExecutor
 from app.guards.input_guard import InputGuard
 from app.guards.output_guard import (
@@ -193,10 +193,16 @@ class ChatService:
         await self._enforce_usage_cap(store_id)
 
         user_name = str(user.get("name") or user.get("given_name") or "")
+        registered_definitions = self._registry.definitions()
+        permissions = explicit_store_permissions(user, store_id)
+        authorized_definitions = runtime_tool_definitions(
+            registered_definitions, permissions
+        )
         fast_conv = try_fast_conversational_turn(
             body.text,
             language=body.language,
             user_name=user_name,
+            capabilities=authorized_definitions,
         )
         if fast_conv is not None:
             return await self._finish_deterministic(
@@ -221,15 +227,7 @@ class ChatService:
             if res is not None:
                 await res
 
-        available = {definition.name for definition in self._registry.definitions()}
-        permissions = explicit_store_permissions(user, store_id)
-        if permissions is not None:
-            available = {
-                definition.name
-                for definition in filter_tool_definitions(
-                    self._registry.definitions(), permissions
-                )
-            }
+        available = {definition.name for definition in authorized_definitions}
         prior_turns = await self._sessions.load_history(
             session_id=body.session_id,
             user_id=user_id,
@@ -415,6 +413,8 @@ class ChatService:
                 rag_cache=self._rag_cache,
                 metrics=self._metrics,
                 prior_turns=prior_turns,
+                actor_role=str(user.get("role") or "") or None,
+                permissions=permissions,
             )
         if context.docs_unavailable:
             await self._prompt_abuse.clear(user_id=user_id, store_id=store_id)
