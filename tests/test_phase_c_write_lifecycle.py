@@ -423,6 +423,39 @@ async def test_valid_confirmation_executes_exact_staged_payload() -> None:
     assert call_kwargs["idempotency_key"].startswith(prefix)
 
 
+@pytest.mark.asyncio
+async def test_invoice_draft_write_forwards_idempotency_key() -> None:
+    retailer = AsyncMock()
+    retailer.create_invoice_draft.return_value = RetailerResponse(
+        status_code=201,
+        body={"data": {"id": "invoice-draft-1", "invoiceStatus": "DRAFT"}},
+    )
+    executor = ToolExecutor(registry=_build_test_registry(), retailer=retailer)
+    call = ToolCall(
+        id="draft-1",
+        name="create_invoice_draft",
+        arguments={
+            "storeId": STORE_ID,
+            "items": [{"product": PRODUCT_ID, "quantity": 1}],
+        },
+    )
+
+    results = await executor.execute_writes(
+        [call],
+        access_token="tok_123",
+        store_id=STORE_ID,
+        session_id=SESSION_ID,
+        user_id=USER_ID,
+        allowed_names={"create_invoice_draft"},
+    )
+
+    assert results[0].success is True
+    kwargs = retailer.create_invoice_draft.call_args.kwargs
+    assert kwargs["idempotency_key"].startswith(
+        f"ai:idempotency:{SESSION_ID}:create_invoice_draft:"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 8 & 9. A confirmation cannot be reused; Concurrent confirmations rejected
 # ---------------------------------------------------------------------------

@@ -523,10 +523,15 @@ class ToolExecutor:
             return cached
 
         with trace_tool_execution(call.name, call.arguments):
+            arguments = dict(call.arguments)
+            if call.name == "create_invoice_draft":
+                # Draft invoices are safe to create before release confirmation,
+                # but a lost HTTP response must not leave duplicate drafts.
+                arguments["idempotencyKey"] = key
             result = await _invoke_handler(
                 call.name,
                 handler,
-                dict(call.arguments),
+                arguments,
                 context,
                 side_effecting=True,
             )

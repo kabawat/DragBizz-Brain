@@ -635,10 +635,14 @@ class RetailerClient:
         items: list[dict[str, Any]],
         customer_id: str | None = None,
         is_walkin: bool = False,
+        idempotency_key: str | None = None,
     ) -> RetailerResponse:
         body: dict[str, Any] = {"items": items, "isWalkin": is_walkin}
         if customer_id is not None:
             body["customer"] = customer_id
+        if idempotency_key:
+            body["idempotencyKey"] = idempotency_key
+            body["clientLocalId"] = idempotency_key
         return await self._request(
             "POST",
             "/invoices",

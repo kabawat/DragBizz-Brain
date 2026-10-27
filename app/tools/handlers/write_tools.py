@@ -178,6 +178,11 @@ async def create_invoice_draft(
             items=list(arguments["items"]),
             customer_id=customer_id,
             is_walkin=customer_id is None,
+            idempotency_key=(
+                str(arguments["idempotencyKey"])
+                if arguments.get("idempotencyKey")
+                else None
+            ),
         )
     except RetailerHttpError as exc:
         return _failure("create_invoice_draft", exc)

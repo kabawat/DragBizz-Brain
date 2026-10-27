@@ -63,6 +63,7 @@ from app.orchestrator.tool_selector import (
 )
 from app.prompts.fallback import (
     get_budget_exceeded_message,
+    get_confirmation_review_message,
     get_docs_unavailable_message,
     get_fallback_message,
 )
@@ -621,15 +622,18 @@ class ChatService:
                             prior_numbers.add(_normalize_amount(m.group(0)))
 
         reply = normalize_dashboard_links(outcome.generation.content or "")
-        message = self._guard_output(
-            reply,
-            tool_results=outcome.all_results,
-            language=body.language,
-            prior_numbers=prior_numbers,
-            protected_prompt=(
-                context.messages[0].content if context.messages else None
-            ),
-        )
+        if pending is not None and not reply.strip():
+            message = get_confirmation_review_message(body.language)
+        else:
+            message = self._guard_output(
+                reply,
+                tool_results=outcome.all_results,
+                language=body.language,
+                prior_numbers=prior_numbers,
+                protected_prompt=(
+                    context.messages[0].content if context.messages else None
+                ),
+            )
         if not message.strip():
             message = get_fallback_message(body.language)
 

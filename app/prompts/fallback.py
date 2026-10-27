@@ -45,6 +45,21 @@ _BUDGET_MESSAGES = {
     ),
 }
 
+_CONFIRMATION_REVIEW_MESSAGES = {
+    "en": (
+        "Review the details below. Confirm to complete this action, or cancel "
+        "to leave the record unchanged."
+    ),
+    "hi": (
+        "Neeche di hui details check karein. Action complete karne ke liye "
+        "confirm karein, ya bina badlav ke chhodne ke liye cancel karein."
+    ),
+    "gu": (
+        "Niche aapeli vigato tapaso. Aa action purn karva confirm karo, athva "
+        "record badalya vagar rakhva cancel karo."
+    ),
+}
+
 _DEFAULT_LANGUAGE = "hi"
 
 
@@ -63,3 +78,10 @@ def get_docs_unavailable_message(language: str) -> str:
 def get_budget_exceeded_message(language: str) -> str:
     prefix = language.split("-", 1)[0].lower()
     return _BUDGET_MESSAGES.get(prefix, _BUDGET_MESSAGES[_DEFAULT_LANGUAGE])
+
+
+def get_confirmation_review_message(language: str) -> str:
+    prefix = language.split("-", 1)[0].lower()
+    return _CONFIRMATION_REVIEW_MESSAGES.get(
+        prefix, _CONFIRMATION_REVIEW_MESSAGES[_DEFAULT_LANGUAGE]
+    )
