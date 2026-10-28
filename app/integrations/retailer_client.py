@@ -45,6 +45,26 @@ class RetailerClient:
             params={"search": query, "limit": limit},
         )
 
+    async def get_variants(
+        self,
+        *,
+        access_token: str,
+        store_id: str,
+        product_id: str,
+        limit: int = 20,
+    ) -> RetailerResponse:
+        return await self._request(
+            "GET",
+            "/variant",
+            access_token=access_token,
+            store_id=store_id,
+            params={
+                "product": product_id,
+                "limit": min(max(limit, 1), 50),
+                "lightweight": "true",
+            },
+        )
+
     async def get_revenue(
         self, *, access_token: str, store_id: str
     ) -> RetailerResponse:

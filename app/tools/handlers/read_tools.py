@@ -17,28 +17,80 @@ from app.integrations.retailer_client import RetailerHttpError
 from app.schemas.tool import ToolResult
 from app.tools.context import ToolContext
 
+# Small, reviewable vocabulary for common shop terms. Keep this limited to
+# equivalent product words; fuzzy matching must never select a write target.
+_PRODUCT_TERM_GROUPS = (
+    ("atta", "aata", "आटा"),
+    ("oil", "tel", "तेल"),
+    ("mustard", "sarso", "सरसों", "rai", "राई"),
+    ("rice", "chawal", "चावल"),
+    ("milk", "doodh", "दूध"),
+    ("sugar", "chini", "चीनी"),
+    ("turmeric", "haldi", "हल्दी", "tumeric"),
+    ("salt", "namak", "नमक"),
+    ("biscuit", "biskut"),
+    ("toothpaste", "toothpast"),
+    ("maggi", "magy"),
+)
+
+
+def product_search_queries(query: str) -> list[str]:
+    """Return the original query and a canonicalized Hindi/Hinglish variant."""
+    original = query.strip()
+    if not original:
+        return [original]
+
+    canonical = original
+    for group in _PRODUCT_TERM_GROUPS:
+        canonical_term = group[0]
+        for synonym in group[1:]:
+            canonical = re.sub(
+                rf"(?<!\w){re.escape(synonym)}(?!\w)",
+                canonical_term,
+                canonical,
+                flags=re.IGNORECASE,
+            )
+    if canonical.casefold() == original.casefold():
+        return [original]
+    return [original, canonical]
+
+
+def _first_present_value(*values: Any) -> Any:
+    return next((value for value in values if value is not None), None)
+
 
 async def search_product(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
+    query = str(arguments.get("query", "")).strip()
+    raw_items_by_id: dict[str, dict[str, Any]] = {}
     try:
-        response = await context.retailer.get_products(
-            access_token=context.access_token,
-            store_id=context.store_id,
-            query=arguments["query"],
-        )
+        for candidate_query in product_search_queries(query):
+            response = await context.retailer.get_products(
+                access_token=context.access_token,
+                store_id=context.store_id,
+                query=candidate_query,
+            )
+            candidate_items, _ = _extract_list_payload(
+                response.body, ("products", "items")
+            )
+            if candidate_items is None:
+                return _invalid_read_response("search_product")
+            for item in candidate_items:
+                if isinstance(item, dict):
+                    item_id = str(item.get("id") or item.get("_id") or "")
+                    key = item_id or f"{item.get('name', '')}:{item.get('sku', '')}"
+                    raw_items_by_id[key] = item
+            # Preserve exact-query results as the preferred match. Only use
+            # transliteration/spelling equivalents when the exact query misses.
+            if raw_items_by_id:
+                break
     except RetailerHttpError as exc:
         return _failure("search_product", exc)
-
-    raw_items, _ = _extract_list_payload(
-        response.body, ("products", "items")
-    )
-    if raw_items is None:
-        return _invalid_read_response("search_product")
     # Compact projection: enough for the LLM to pick a real id and
     # quote price/stock without dumping full productsSerializer docs.
     # Contract: GET /product list nests price under pricing; GST rate
     # at gstInfo.gstRate; unit is pricing.uom.
     items = []
-    for item in raw_items:
+    for item in raw_items_by_id.values():
         if not isinstance(item, dict):
             continue
         pricing = item.get("pricing") if isinstance(item.get("pricing"), dict) else {}
@@ -63,13 +115,80 @@ async def search_product(arguments: dict[str, Any], context: ToolContext) -> Too
                 "id": str(item.get("id") or ""),
                 "name": item.get("name"),
                 "sku": item.get("sku"),
-                "sellingPrice": item.get("sellingPrice", pricing.get("sellingPrice")),
+                "sellingPrice": _first_present_value(
+                    item.get("sellingPrice"),
+                    pricing.get("sellingPrice"),
+                ),
                 "stock": stock_qty,
-                "taxRate": item.get("taxRate", gst.get("gstRate")),
+                "taxRate": _first_present_value(
+                    item.get("taxRate"),
+                    gst.get("gstRate"),
+                ),
                 "unit": item.get("unit") or item.get("uom") or pricing.get("uom"),
                 "status": item.get("status"),
             }
         )
+
+    # Products are catalog records; sellable identifiers and prices are owned
+    # by the variant endpoint. Join only with variants for the matched product
+    # IDs, within the authenticated store scope supplied by the retailer client.
+    needs_sellable_details = bool(
+        re.search(
+            r"\b(price|rate|bhav|sku|barcode|variant|price|कीमत|दाम)\b",
+            context.question or "",
+            re.IGNORECASE,
+        )
+    )
+    get_variants = getattr(context.retailer, "get_variants", None)
+    for entry in items[:5]:
+        if (
+            not needs_sellable_details
+            or not callable(get_variants)
+            or not entry.get("id")
+            or (entry.get("sku") is not None and entry.get("sellingPrice") is not None)
+        ):
+            continue
+        try:
+            variant_response = await get_variants(
+                access_token=context.access_token,
+                store_id=context.store_id,
+                product_id=entry["id"],
+                limit=20,
+            )
+        except RetailerHttpError as exc:
+            return _failure("search_product", exc)
+        variants, _ = _extract_list_payload(
+            variant_response.body, ("variants", "items")
+        )
+        if variants is None:
+            return _invalid_read_response("search_product")
+        projected_variants = []
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            projected_variants.append(
+                {
+                    "id": str(variant.get("id") or variant.get("_id") or ""),
+                    "name": variant.get("displayName") or variant.get("name"),
+                    "sku": variant.get("sku"),
+                    "barcode": variant.get("barcode"),
+                    "sellingPrice": variant.get("sellingPrice"),
+                    "mrp": variant.get("mrp"),
+                    "status": variant.get("status"),
+                    "isDefault": variant.get("isDefault") is True,
+                }
+            )
+        if projected_variants:
+            entry["variants"] = projected_variants
+            default_variant = next(
+                (variant for variant in projected_variants if variant["isDefault"]),
+                projected_variants[0] if len(projected_variants) == 1 else None,
+            )
+            if default_variant is not None:
+                if entry.get("sku") is None:
+                    entry["sku"] = default_variant.get("sku")
+                if entry.get("sellingPrice") is None:
+                    entry["sellingPrice"] = default_variant.get("sellingPrice")
 
     for entry in items[:5]:
         if entry.get("stock") is None and entry.get("id") and context.access_token:
