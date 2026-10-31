@@ -134,6 +134,8 @@ class ToolExecutor:
         timeout = min(tool_timeout_seconds or 5.0, 5.0)
 
         async def _one(call: ToolCall) -> ToolResult:
+            started = time.perf_counter()
+            execution_error: str | None = None
             try:
                 res = await asyncio.wait_for(
                     self._run_read(
@@ -149,6 +151,7 @@ class ToolExecutor:
                 )
             except TimeoutError:
                 logger.warning("Tool %s timed out after %ss", call.name, timeout)
+                execution_error = "TOOL_TIMEOUT"
                 res = ToolResult(
                     tool=call.name,
                     success=False,
@@ -158,8 +161,15 @@ class ToolExecutor:
                     },
                 )
             except asyncio.CancelledError:
+                if self._metrics is not None:
+                    self._metrics.record_tool(
+                        call.name,
+                        success=False,
+                        latency_ms=round((time.perf_counter() - started) * 1000, 1),
+                    )
                 raise
             except AppError as exc:
+                execution_error = exc.code
                 res = ToolResult(
                     tool=call.name,
                     success=False,
@@ -167,6 +177,7 @@ class ToolExecutor:
                 )
             except Exception:
                 logger.exception("Parallel read failed", extra={"tool": call.name})
+                execution_error = "RETAILER_UNAVAILABLE"
                 res = ToolResult(
                     tool=call.name,
                     success=False,
@@ -174,6 +185,19 @@ class ToolExecutor:
                         "code": "RETAILER_UNAVAILABLE",
                         "message": "Tool execution failed",
                     },
+                )
+            res.latency_ms = round((time.perf_counter() - started) * 1000, 1)
+            if execution_error is not None:
+                self._audit(
+                    session_id=session_id,
+                    user_id=user_id,
+                    store_id=store_id,
+                    tool=call.name,
+                    success=False,
+                    error_code=execution_error,
+                    idempotency_key=None,
+                    cache_hit=None,
+                    latency_ms=res.latency_ms,
                 )
             if on_tool_complete is not None:
                 try:
@@ -480,6 +504,7 @@ class ToolExecutor:
                     call.name, handler, call.arguments, context
                 )
         latency_ms = (time.perf_counter() - started) * 1000
+        result.latency_ms = round(latency_ms, 1)
         self._audit(
             session_id=session_id,
             user_id=user_id,

@@ -175,6 +175,7 @@ class ToolResult(BaseModel):
     correlation_id: str | None = Field(
         default_factory=get_request_id, serialization_alias="correlationId"
     )
+    latency_ms: float | None = Field(default=None, ge=0, serialization_alias="latencyMs")
 
     @model_validator(mode="after")
     def complete_result_contract(self) -> "ToolResult":

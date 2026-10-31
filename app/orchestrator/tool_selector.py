@@ -672,6 +672,9 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "price kya",
         "price batao",
         "product search",
+        "atta",
+        "aata",
+        "आटा",
         "sku",
     ),
     "product_stats": (
@@ -1411,6 +1414,12 @@ def _is_app_document_query(text: str) -> bool:
     """Avoid treating a store-profile lookup as product documentation."""
     if not _APP_DOC_QUERY_RE.search(text):
         return False
+    if (
+        _GENERIC_CONCEPT_QUERY_RE.search(text)
+        and _STORE_OPERATIONAL_CUES_RE.search(text)
+        and not _APP_BRAND_OR_DOC_TOPIC_RE.search(text)
+    ):
+        return False
     return not (
         _GENERIC_CONCEPT_QUERY_RE.search(text)
         and _FAMILY_RES["store"].search(text)
@@ -1793,7 +1802,7 @@ _PURE_CHITCHAT_RE = re.compile(
 
 _STORE_OPERATIONAL_CUES_RE = re.compile(
     r"\b(sale|sales|bikri|invoice|bill|stock|inventory|maal|saman|saaman|"
-    r"product|item|supplier|vendor|purchase|po\b|order|customer|grahak|"
+    r"product|item|atta|aata|आटा|supplier|vendor|purchase|po\b|order|customer|grahak|"
     r"khata|udhaar|udhari|jama|baki|due|balance|ledger|expense|kharcha|kharch|"
     r"cashbook|galla|counter\s+cash|staff|store|dukan|dukaan|gst|tax|"
     r"price|rate|cost|profit|rupaye|rs\.?|₹|\d+\s*(qty|packet|kg|gm|piece|box|nag))\b",
@@ -1802,7 +1811,7 @@ _STORE_OPERATIONAL_CUES_RE = re.compile(
 
 _DOMAIN_PATTERNS: dict[ToolDomain, re.Pattern[str]] = {
     ToolDomain.INVENTORY: re.compile(
-        r"\b(stock|inventory|maal|saman|saaman|product|item|items|sku|godown|"
+        r"\b(stock|inventory|maal|saman|saaman|product|item|items|sku|atta|aata|आटा|godown|"
         r"godam|velocity|low\s+stock|out\s+of\s+stock|maal\s+aya|stock\s+add|"
         r"item\s+add|inventory\s+velocity|products?)\b",
         re.IGNORECASE,

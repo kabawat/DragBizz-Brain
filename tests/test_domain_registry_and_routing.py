@@ -107,6 +107,15 @@ def test_case2_hinglish_stock_queries_expose_inventory_tools(
     assert "stock_summary" in intent.tool_names
 
 
+def test_hinglish_atta_price_question_routes_to_product_search() -> None:
+    query = "Aashirvaad atta ka rate kya hai?"
+
+    for resolver in (resolve_turn_intent, resolve_domain_turn_intent):
+        intent = resolver(query, available=ALL_NAMES)
+        assert intent.routing == "tools"
+        assert "search_product" in intent.tool_names
+
+
 # 3. 'Amul cheese slices ka 10 packet PO Amul supplier se banao'
 # exposes both search tools.
 def test_case3_po_prompt_exposes_product_and_supplier_search() -> None:

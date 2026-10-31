@@ -188,6 +188,13 @@ async def test_genuine_token_streaming_emits_deltas() -> None:
     assert completed_payload["sessionId"] == req.session_id
     assert completed_payload["provider"] == "mock_stream"
     assert completed_payload["toolResults"][0]["tool"] == "list_invoices"
+    assert completed_payload["toolOutcomes"] == [
+        {
+            "tool": "list_invoices",
+            "success": True,
+            "status": "success_with_data",
+        }
+    ]
     assert (
         completed_payload["toolResults"][0]["data"]["invoices"][0]["invoiceNumber"]
         == "INV-1"

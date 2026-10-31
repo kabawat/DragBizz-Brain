@@ -17,6 +17,21 @@ ChatHandler = Callable[..., Awaitable[ChatResponse]]
 StreamEvent = tuple[str, dict[str, Any]]
 
 
+def _safe_tool_summary(result) -> dict[str, Any]:
+    status = result.result_status.value if result.result_status is not None else None
+    code = result.data.get("code") if isinstance(result.data, dict) else None
+    summary: dict[str, Any] = {
+        "tool": result.tool,
+        "success": result.success,
+        "status": status or ("success_with_data" if result.success else "internal_error"),
+    }
+    if result.latency_ms is not None:
+        summary["latencyMs"] = result.latency_ms
+    if code:
+        summary["code"] = code
+    return summary
+
+
 async def stream_chat(
     handle_chat: ChatHandler,
     body: ChatRequest,
@@ -158,6 +173,9 @@ async def stream_chat(
                 result.model_dump(mode="json", by_alias=True)
                 for result in response.tool_results
             ],
+            "toolOutcomes": [_safe_tool_summary(result) for result in response.tool_results],
             "pendingConfirmation": pending_payload,
+            "executionStatus": response.execution_status,
+            "errorCode": response.error_code,
         },
     )

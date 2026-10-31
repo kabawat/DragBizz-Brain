@@ -557,6 +557,8 @@ class ChatService:
                 user_id=user_id,
                 provider="budget",
                 model="",
+                execution_status="error",
+                error_code="AI_REQUEST_BUDGET_EXCEEDED",
             )
         except AppError as exc:
             if exc.code in {"TOOL_ARGS_INVALID", "TOOL_NOT_ALLOWED"}:
@@ -588,6 +590,8 @@ class ChatService:
                 user_id=user_id,
                 provider="error",
                 model="",
+                execution_status="error",
+                error_code=exc.code,
             )
 
         pending: PendingConfirmation | None = None

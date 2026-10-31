@@ -102,6 +102,8 @@ class ChatResponse(BaseModel):
     pending_confirmation: PendingConfirmation | None = Field(
         default=None, serialization_alias="pendingConfirmation"
     )
+    execution_status: str = Field(default="completed", serialization_alias="executionStatus")
+    error_code: str | None = Field(default=None, serialization_alias="errorCode")
 
     model_config = {"populate_by_name": True}
 
