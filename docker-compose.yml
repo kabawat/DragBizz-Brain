@@ -25,10 +25,6 @@ services:
     - ${HOST_HTTP_PORT:-8004}:4004
     env_file:
     - .env
-    environment:
-      AI_QDRANT_URL: http://qdrant:6333
-      AI_ENVIRONMENT: production
-      AI_DOCS_ENABLED: 'false'
     depends_on:
       qdrant:
         condition: service_started
