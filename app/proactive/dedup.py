@@ -14,8 +14,8 @@ from app.proactive.models import AlertState, AlertType
 
 logger = logging.getLogger(__name__)
 
-ALERT_STATE_PREFIX = "ai:alert:state:"
-ALERT_CLAIM_PREFIX = "ai:alert:claim:"
+ALERT_STATE_PREFIX = "brain:ai:alert:state:"
+ALERT_CLAIM_PREFIX = "brain:ai:alert:claim:"
 
 
 class AlertDedupStore(abc.ABC):

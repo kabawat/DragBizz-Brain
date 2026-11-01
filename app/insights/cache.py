@@ -40,7 +40,7 @@ def _format_cache_key(store_id: str, tool: str, window: str) -> str:
         raise ValueError("store_id is required for insight caching")
     cleaned_tool = str(tool).strip().lower()
     cleaned_window = str(window).strip().lower()
-    return f"ai:insight:{cleaned_store}:{cleaned_tool}:{cleaned_window}"
+    return f"brain:ai:insight:{cleaned_store}:{cleaned_tool}:{cleaned_window}"
 
 
 class NoOpInsightCache:
@@ -99,7 +99,7 @@ class InMemoryInsightCache:
         cleaned_store = str(store_id).strip()
         if not _STORE_ID_RE.match(cleaned_store):
             return 0
-        prefix = f"ai:insight:{cleaned_store}:"
+        prefix = f"brain:ai:insight:{cleaned_store}:"
         matched_keys = [k for k in self._store if k.startswith(prefix)]
         for k in matched_keys:
             self._store.pop(k, None)
@@ -137,6 +137,10 @@ class RedisInsightCache:
         try:
             key = _format_cache_key(store_id, tool, window)
             payload = json.dumps(value)
+            await self._redis.sadd(f"brain:ai:insight-index:{store_id}", key)
+            await self._redis.expire(
+                f"brain:ai:insight-index:{store_id}", self._ttl_seconds * 2
+            )
             await self._redis.set(key, payload, ex=self._ttl_seconds)
         except Exception:
             logger.warning(
@@ -166,14 +170,15 @@ class RedisInsightCache:
                 store_id,
             )
             return 0
-        match_pattern = f"ai:insight:{cleaned_store}:*"
+        index_key = f"brain:ai:insight-index:{cleaned_store}"
         deleted = 0
         try:
             keys: list[str] = []
-            async for key in self._redis.scan_iter(match=match_pattern, count=100):
+            async for key in self._redis.sscan_iter(index_key, count=100):
                 keys.append(key)
             if keys:
                 deleted = await self._redis.delete(*keys)
+                await self._redis.srem(index_key, *keys)
         except Exception:
             logger.warning(
                 "Redis insight cache invalidate_store failed for %s",

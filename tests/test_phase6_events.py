@@ -368,7 +368,7 @@ async def test_crash_between_dedup_storage_and_xack() -> None:
     }
 
     # Simulate: dedup key was stored in Redis by prior attempt before crash
-    dedup_key = f"ai:event:processed:{event_id}"
+    dedup_key = f"brain:ai:event:processed:{event_id}"
     await redis.set(dedup_key, "1")
 
     # Set fresh cache data to verify handler does not run
@@ -410,7 +410,7 @@ async def test_failed_handler_not_marked_processed() -> None:
     assert res is False
 
     # Dedup key must NOT exist
-    dedup_key = f"ai:event:processed:{event_id}"
+    dedup_key = f"brain:ai:event:processed:{event_id}"
     assert await redis.get(dedup_key) is None
 
 
@@ -971,8 +971,8 @@ async def test_automatic_replay_trigger_on_stream_truncation() -> None:
     # Set existing checkpoint from previously consumed events
     last_ts = "2026-10-20T10:00:00Z"
     last_id = "evt_prev_999"
-    await redis.set("ai:events:checkpoint:last_occurred_at", last_ts)
-    await redis.set("ai:events:checkpoint:last_event_id", last_id)
+    await redis.set("brain:ai:events:checkpoint:last_occurred_at", last_ts)
+    await redis.set("brain:ai:events:checkpoint:last_event_id", last_id)
 
     # Simulate stream truncation: first-entry in stream is newer than
     # the consumer group's last-delivered ID
@@ -987,7 +987,7 @@ async def test_automatic_replay_trigger_on_stream_truncation() -> None:
     assert triggered is True
 
     # Verify replay request was written to Redis
-    raw_req = await redis.get("ai:events:replay_request")
+    raw_req = await redis.get("core:ai:events:replay_request")
     assert raw_req is not None
     req = json.loads(raw_req)
     assert req["sinceTimestamp"] == last_ts
@@ -1042,7 +1042,7 @@ async def test_deterministic_regression_gap_recovery_out_of_order() -> None:
     replay_triggered = await consumer.check_and_request_replay()
     assert replay_triggered is True
 
-    raw_req = await redis.get("ai:events:replay_request")
+    raw_req = await redis.get("core:ai:events:replay_request")
     assert raw_req is not None
     req = json.loads(raw_req)
     # The replay MUST be requested from sinceSeq=0 (contiguous_seq),
@@ -1145,8 +1145,8 @@ async def test_gap_unresolved_beyond_ttl_recovers_without_stalling() -> None:
     await consumer.ensure_group()
 
     # Baseline checkpoint: sequences up to 10 are already contiguously processed
-    await redis.set("ai:events:checkpoint:last_contiguous_seq", "10")
-    await redis.set("ai:events:checkpoint:max_seq", "10")
+    await redis.set("brain:ai:events:checkpoint:last_contiguous_seq", "10")
+    await redis.set("brain:ai:events:checkpoint:max_seq", "10")
 
     # Sequence 12 arrives while sequence 11 was missing
     await consumer.process_message(
@@ -1168,7 +1168,7 @@ async def test_gap_unresolved_beyond_ttl_recovers_without_stalling() -> None:
     assert 12 in cp_mid["pending_processed"]
 
     # Simulate 7-day TTL expiration: ephemeral seq_processed key is deleted
-    await redis.delete("ai:events:seq_processed:12")
+    await redis.delete("brain:ai:events:seq_processed:12")
 
     # Day 8: Missing sequence 11 is finally recovered
     await consumer.process_message(

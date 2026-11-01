@@ -86,10 +86,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     redis_client = None
     if settings.limits.redis_url:
+        from urllib.parse import urlparse
+
         import redis.asyncio as aioredis
 
+        redis_url = urlparse(settings.limits.redis_url)
+        if (
+            redis_url.username != "brain_user"
+            or redis_url.path not in ("", "/0")
+            or not redis_url.password
+            or redis_url.query
+            or redis_url.fragment
+        ):
+            raise RuntimeError("Brain Redis requires brain_user credentials and DB 0")
         redis_client = aioredis.from_url(
-            settings.limits.redis_url, decode_responses=True
+            settings.limits.redis_url,
+            decode_responses=True,
+            max_connections=32,
+            socket_connect_timeout=5,
+            socket_timeout=max(10, settings.events.consumer_poll_timeout_ms / 1000 + 5),
+            health_check_interval=30,
+            retry_on_timeout=False,
         )
         try:
             await redis_client.ping()
@@ -99,9 +116,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "AI_REDIS_URL is set but Redis is unreachable; "
                 "refusing to start without shared safety controls"
             ) from exc
-    elif settings.server.environment == "production":
-        # Settings validator should already catch this; belt-and-suspenders.
-        raise RuntimeError("AI_REDIS_URL is required in production")
+    else:
+        raise RuntimeError(
+            "AI_REDIS_URL is required for centralized Redis safety controls"
+        )
     app.state.redis = redis_client
 
     metrics = MetricsRegistry()

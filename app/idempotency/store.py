@@ -74,7 +74,7 @@ class RedisIdempotencyStore:
 
     async def get(self, key: str) -> ToolResult | None:
         try:
-            raw = await self._redis.get(key)
+            raw = await self._redis.get(f"brain:{key}")
         except Exception as exc:
             logger.warning("Idempotency cache read failed", exc_info=True)
             raise AppError(
@@ -91,7 +91,7 @@ class RedisIdempotencyStore:
             logger.warning("Idempotency cache corrupt for key=%s", key)
             return None
         try:
-            await self._redis.expire(key, self._ttl_seconds)
+            await self._redis.expire(f"brain:{key}", self._ttl_seconds)
         except Exception as exc:
             logger.warning("Idempotency TTL refresh failed", exc_info=True)
             raise AppError(
@@ -106,7 +106,7 @@ class RedisIdempotencyStore:
             return
         try:
             await self._redis.set(
-                key,
+                f"brain:{key}",
                 json.dumps(result.model_dump(), ensure_ascii=False),
                 ex=self._ttl_seconds,
             )

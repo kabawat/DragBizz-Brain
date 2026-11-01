@@ -23,8 +23,8 @@ from app.proactive.notification_store import NotificationStore
 
 logger = logging.getLogger(__name__)
 
-BRIEFING_LOCK_PREFIX = "ai:briefing:lock:"
-BRIEFING_DONE_PREFIX = "ai:briefing:done:"
+BRIEFING_LOCK_PREFIX = "brain:ai:briefing:lock:"
+BRIEFING_DONE_PREFIX = "brain:ai:briefing:done:"
 
 
 def resolve_yesterday_ist_date(target_now: datetime | None = None) -> str:

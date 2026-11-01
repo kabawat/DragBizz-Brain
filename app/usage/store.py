@@ -16,7 +16,7 @@ from app.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
 
-_KEY_PREFIX = "ai:usage"
+_KEY_PREFIX = "brain:ai:usage"
 # Keep yesterday's counters around briefly for inspection, then expire.
 _REDIS_TTL_SECONDS = 2 * 86_400
 # Cost is stored as integer micro-USD so Redis HINCRBY stays atomic.

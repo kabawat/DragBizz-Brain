@@ -15,7 +15,7 @@ from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
-_REDIS_KEY = "ai:model_selection"
+_REDIS_KEY = "brain:ai:model_selection"
 
 
 @dataclass(frozen=True)

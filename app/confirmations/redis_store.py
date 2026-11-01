@@ -16,7 +16,7 @@ from app.confirmations.redis_scripts import _CLAIM_LUA, _COMPLETE_LUA, _REJECT_L
 from app.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
-_KEY_PREFIX = "ai:confirmation"
+_KEY_PREFIX = "brain:ai:confirmation"
 
 
 class RedisConfirmationStore:

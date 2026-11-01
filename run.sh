@@ -51,7 +51,7 @@ run_index_local() {
 
 run_index_docker() {
   echo "Indexing knowledge/ into Qdrant (docker)..."
-  docker compose exec -T dragbizz-ai python -m app.rag.indexer --yes
+  docker compose -f docker-compose.dev.yml exec -T dragbizz-ai python -m app.rag.indexer --yes
 }
 
 if [ "$MODE" = "normal" ]; then
@@ -79,12 +79,12 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-docker compose up --build -d "${PASS_ARGS[@]}"
+docker compose -f docker-compose.dev.yml up --build -d "${PASS_ARGS[@]}"
 
 if [ "$DO_INDEX" -eq 1 ]; then
   echo "Waiting for dragbizz-ai..."
   for _ in $(seq 1 60); do
-    if docker compose exec -T dragbizz-ai \
+    if docker compose -f docker-compose.dev.yml exec -T dragbizz-ai \
       python -c "import urllib.request; urllib.request.urlopen('http://localhost:4004/api/v1/health')" \
       >/dev/null 2>&1; then
       break

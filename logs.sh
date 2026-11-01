@@ -22,4 +22,4 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-exec docker compose logs -f --tail=100 "$@"
+exec docker compose -f docker-compose.dev.yml logs -f --tail=100 "$@"

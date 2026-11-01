@@ -15,7 +15,7 @@ from app.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
 
-_KEY_PREFIX = "ai:concurrency"
+_KEY_PREFIX = "brain:ai:concurrency"
 
 _RELEASE_LUA = """
 if redis.call("get", KEYS[1]) == ARGV[1] then

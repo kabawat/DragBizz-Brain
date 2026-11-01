@@ -19,8 +19,8 @@ from app.rag.models import RetrievedChunk
 logger = logging.getLogger(__name__)
 
 Clock = Callable[[], float]
-_CHUNKS_PREFIX = "ai:rag:chunks"
-_DOCS_PREFIX = "ai:rag:docs"
+_CHUNKS_PREFIX = "brain:ai:rag:chunks"
+_DOCS_PREFIX = "brain:ai:rag:docs"
 
 
 class RagCache(Protocol):

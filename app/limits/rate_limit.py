@@ -16,7 +16,7 @@ from app.core.exceptions import AppError
 
 logger = logging.getLogger(__name__)
 
-_KEY_PREFIX = "ai:ratelimit"
+_KEY_PREFIX = "brain:ai:ratelimit"
 
 
 class RateLimiter:

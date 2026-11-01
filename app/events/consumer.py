@@ -24,17 +24,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEDUP_KEY_PREFIX = "ai:event:processed:"
-ATTEMPT_KEY_PREFIX = "ai:event:attempts:"
+DEDUP_KEY_PREFIX = "brain:ai:event:processed:"
+ATTEMPT_KEY_PREFIX = "brain:ai:event:attempts:"
 DEDUP_TTL_SECONDS = 86400  # 24 hours
-CHECKPOINT_TIMESTAMP_KEY = "ai:events:checkpoint:last_occurred_at"
-CHECKPOINT_EVENT_KEY = "ai:events:checkpoint:last_event_id"
-CHECKPOINT_CONTIGUOUS_SEQ_KEY = "ai:events:checkpoint:last_contiguous_seq"
-CHECKPOINT_MAX_SEQ_KEY = "ai:events:checkpoint:max_seq"
-CHECKPOINT_GAPS_KEY = "ai:events:checkpoint:unprocessed_gaps"
-CHECKPOINT_PENDING_PROCESSED_KEY = "ai:events:checkpoint:pending_processed"
-SEQ_PROCESSED_PREFIX = "ai:events:seq_processed:"
-REPLAY_REQUEST_KEY = "ai:events:replay_request"
+CHECKPOINT_TIMESTAMP_KEY = "brain:ai:events:checkpoint:last_occurred_at"
+CHECKPOINT_EVENT_KEY = "brain:ai:events:checkpoint:last_event_id"
+CHECKPOINT_CONTIGUOUS_SEQ_KEY = "brain:ai:events:checkpoint:last_contiguous_seq"
+CHECKPOINT_MAX_SEQ_KEY = "brain:ai:events:checkpoint:max_seq"
+CHECKPOINT_GAPS_KEY = "brain:ai:events:checkpoint:unprocessed_gaps"
+CHECKPOINT_PENDING_PROCESSED_KEY = "brain:ai:events:checkpoint:pending_processed"
+SEQ_PROCESSED_PREFIX = "brain:ai:events:seq_processed:"
+REPLAY_REQUEST_KEY = "core:ai:events:replay_request"
 
 
 class RedisStreamConsumer:
@@ -46,7 +46,7 @@ class RedisStreamConsumer:
         insight_cache: InsightCache,
         dead_letter_store: DeadLetterStore,
         *,
-        stream_name: str = "stream:events:domain",
+        stream_name: str = "core:stream:events:domain",
         group_name: str = "group:brain-ai",
         consumer_name: str | None = None,
         min_idle_ms: int = 30000,

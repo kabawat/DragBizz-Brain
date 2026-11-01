@@ -21,7 +21,7 @@ from app.schemas.tool import ToolResult
 logger = logging.getLogger(__name__)
 
 Clock = Callable[[], float]
-_KEY_PREFIX = "ai:session"
+_KEY_PREFIX = "brain:ai:session"
 # Keep tool snapshots only on the newest turn — older JSON is bulky and
 # rarely needed once the conversation has moved on.
 _TOOL_CONTEXT_RECENT_TURNS = 1

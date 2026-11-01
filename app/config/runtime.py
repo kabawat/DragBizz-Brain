@@ -178,7 +178,7 @@ class EventSettings(BaseSettings):
     model_config = _group_config()
 
     stream_name: str = Field(
-        default="stream:events:domain",
+        default="core:stream:events:domain",
         validation_alias="AI_EVENTS_STREAM_NAME",
     )
     consumer_group: str = Field(

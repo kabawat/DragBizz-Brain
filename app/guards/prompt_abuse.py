@@ -8,7 +8,7 @@ import time
 
 from app.core.exceptions import AppError
 
-_KEY_PREFIX = "ai:security:prompt"
+_KEY_PREFIX = "brain:ai:security:prompt"
 
 
 class PromptAbuseLimiter:
