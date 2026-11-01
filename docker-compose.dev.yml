@@ -1,0 +1,74 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    container_name: db-qdrant
+    ports:
+    - 6333:6333
+    - 6334:6334
+    volumes:
+    - qdrant_storage:/qdrant/storage
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e "GET /readyz HTTP/1.0\r\n\r\n"
+        >&3 && cat <&3 | grep -q "200\|ok"'
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+  dragbizz-ai:
+    build: .
+    container_name: db-brain
+    ports:
+    - ${HOST_HTTP_PORT:-8004}:4004
+    env_file:
+    - .env
+    environment:
+      AI_QDRANT_URL: http://qdrant:6333
+    depends_on:
+      qdrant:
+        condition: service_started
+    command:
+    - uvicorn
+    - app.main:app
+    - --host
+    - 0.0.0.0
+    - --port
+    - '4004'
+    - --reload
+    volumes:
+    - ./app:/app/app
+    - ./knowledge:/app/knowledge:ro
+    - ./.env:/app/.env:ro
+    - ./data:/app/data
+    - /etc/dragbizz/pki/brain/ca.crt:/run/dragbizz/pki/brain/ca.crt:ro
+    - /etc/dragbizz/pki/brain/client.crt:/run/dragbizz/pki/brain/client.crt:ro
+    - /etc/dragbizz/pki/brain/client.key:/run/dragbizz/pki/brain/client.key:ro
+    extra_hosts:
+    - host.docker.internal:host-gateway
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:4004/api/v1/health')
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+    - default
+    - brain-core-private
+    - redis-private
+    stop_grace_period: 45s
+volumes:
+  qdrant_storage: null
+networks:
+  brain-core-private:
+    name: dragbizz-brain-core-private
+    external: true
+  redis-private:
+    name: ${REDIS_NETWORK_NAME:-redis-private}
+    external: true

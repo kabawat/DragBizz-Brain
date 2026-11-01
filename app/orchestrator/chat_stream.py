@@ -1,0 +1,181 @@
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any
+
+from app.observability.metrics import MetricsRegistry
+from app.orchestrator.cancel import CancelScope
+from app.schemas.chat import ChatRequest, ChatResponse
+
+logger = logging.getLogger(__name__)
+
+ChatHandler = Callable[..., Awaitable[ChatResponse]]
+StreamEvent = tuple[str, dict[str, Any]]
+
+
+def _safe_tool_summary(result) -> dict[str, Any]:
+    status = result.result_status.value if result.result_status is not None else None
+    code = result.data.get("code") if isinstance(result.data, dict) else None
+    summary: dict[str, Any] = {
+        "tool": result.tool,
+        "success": result.success,
+        "status": status or ("success_with_data" if result.success else "internal_error"),
+    }
+    if result.latency_ms is not None:
+        summary["latencyMs"] = result.latency_ms
+    if code:
+        summary["code"] = code
+    return summary
+
+
+async def stream_chat(
+    handle_chat: ChatHandler,
+    body: ChatRequest,
+    *,
+    user: dict[str, Any],
+    request_id: str,
+    store_id: str,
+    access_token: str,
+    metrics: MetricsRegistry | None,
+    cancel: CancelScope | None = None,
+) -> AsyncIterator[StreamEvent]:
+    if metrics is not None:
+        metrics.record_stream_request()
+    started = time.perf_counter()
+    ttft_recorded = False
+    yield (
+        "request.started",
+        {
+            "requestId": request_id,
+            "sessionId": body.session_id,
+        },
+    )
+
+    queue: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
+
+    async def _emit(event: str, payload: dict[str, Any]) -> None:
+        await queue.put((event, payload))
+
+    scope = cancel or CancelScope()
+
+    async def _run() -> ChatResponse:
+        return await handle_chat(
+            body,
+            user=user,
+            request_id=request_id,
+            store_id=store_id,
+            access_token=access_token,
+            cancel=scope,
+            emit=_emit,
+        )
+
+    task = asyncio.create_task(_run())
+    response: ChatResponse | None = None
+    aborted = False
+    delta_emitted = False
+    try:
+        while True:
+            if scope.cancelled:
+                aborted = True
+                task.cancel()
+                break
+            if task.done() and queue.empty():
+                break
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=0.05)
+            except TimeoutError:
+                if task.done():
+                    while not queue.empty():
+                        item = queue.get_nowait()
+                        if item is not None:
+                            if item[0] == "assistant.delta":
+                                delta_emitted = True
+                                if not ttft_recorded and metrics is not None:
+                                    elapsed = (time.perf_counter() - started) * 1000
+                                    metrics.record_stream_ttft(elapsed)
+                                    ttft_recorded = True
+                            yield item
+                    break
+                continue
+            if item is None:
+                break
+            if item[0] == "assistant.delta":
+                delta_emitted = True
+                if not ttft_recorded and metrics is not None:
+                    metrics.record_stream_ttft((time.perf_counter() - started) * 1000)
+                    ttft_recorded = True
+            yield item
+
+        try:
+            response = await task
+        except asyncio.CancelledError:
+            aborted = True
+            response = None
+        except Exception as exc:
+            logger.exception("Stream worker failed: %s", exc)
+            aborted = True
+            response = None
+    except asyncio.CancelledError:
+        aborted = True
+        scope.cancel()
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+        response = None
+
+    if aborted or response is None:
+        if metrics is not None:
+            metrics.record_stream_aborted()
+            metrics.record_cancel()
+        yield ("request.aborted", {"requestId": request_id})
+        return
+
+    if not delta_emitted:
+        message = response.message or ""
+        chunk_size = 48
+        for index in range(0, len(message), chunk_size):
+            if scope.cancelled:
+                if metrics is not None:
+                    metrics.record_stream_aborted()
+                    metrics.record_cancel()
+                yield ("request.aborted", {"requestId": request_id})
+                return
+            delta = message[index : index + chunk_size]
+            if not ttft_recorded and metrics is not None:
+                metrics.record_stream_ttft((time.perf_counter() - started) * 1000)
+                ttft_recorded = True
+            yield ("assistant.delta", {"text": delta})
+
+    pending_payload = None
+    if response.pending_confirmation is not None:
+        pending = response.pending_confirmation
+        pending_payload = {
+            "confirmationId": pending.confirmation_id,
+            "draftId": pending.draft_id,
+            "type": pending.type,
+            "summary": pending.summary,
+            "expiresAt": pending.expires_at,
+        }
+    if metrics is not None:
+        metrics.record_stream_completed()
+    yield (
+        "request.completed",
+        {
+            "requestId": request_id,
+            "sessionId": response.session_id,
+            "provider": response.provider,
+            "model": response.model,
+            "toolResults": [
+                result.model_dump(mode="json", by_alias=True)
+                for result in response.tool_results
+            ],
+            "toolOutcomes": [_safe_tool_summary(result) for result in response.tool_results],
+            "pendingConfirmation": pending_payload,
+            "executionStatus": response.execution_status,
+            "errorCode": response.error_code,
+        },
+    )

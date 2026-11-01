@@ -7,12 +7,27 @@ __pycache__/
 env/
 venv/
 ENV/
-.venv
+.venv/
+*.egg-info
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
 
-# Environment
+# Environment and secrets — never commit
 .env
+.env.*
+!env.example
+.env.bak
+.env.*.bak
 .env.local
-
+.env.*.local
+.env.production
+.env.development
+.env.test
+phases.md
+ENGINEERING.md
 # IDE
 .vscode/
 .idea/
@@ -21,22 +36,32 @@ ENV/
 
 # Logs
 logs/
+docs/
 *.log
 
-# Storage
+# Storage / local persisted data
 storage/
+data/
 *.wav
 *.mp3
 *.webm
 
-# Testing
+# Testing / coverage
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 htmlcov/
+.tox/
+.cache/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Docker
-.dockerignore
+# Local dumps / keys
+dump/
+mongodb-backup.zip
+keys/
+*.pem
+/key

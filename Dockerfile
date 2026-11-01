@@ -1,28 +1,24 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+RUN addgroup --system dragbizz \
+    && adduser --system --ingroup dragbizz dragbizz
 
-# Copy requirements
-COPY requirements.txt .
+COPY pyproject.toml ./
+COPY app ./app
+COPY knowledge ./knowledge
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install .
 
-# Copy application code
-COPY . .
+COPY docker-entrypoint.py /docker-entrypoint.py
 
-# Create necessary directories
-RUN mkdir -p storage/audio logs
+EXPOSE 4004
 
-# Expose port
-EXPOSE 8000
-
-# Run application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Starts as root so it can fix ./data permissions, then drops to dragbizz.
+ENTRYPOINT ["python", "/docker-entrypoint.py"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "4004"]

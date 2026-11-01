@@ -1,0 +1,280 @@
+"""Session history, RAG retrieval, and chat message assembly."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import time
+from dataclasses import dataclass
+from typing import Any
+
+from app.config import Settings
+from app.core.exceptions import AppError
+from app.observability.events import RAG_RETRIEVE, emit_event
+from app.observability.metrics import MetricsRegistry
+from app.orchestrator.prompt_tokens import (
+    PromptTokenBreakdown,
+    estimate_prompt_token_breakdown,
+)
+from app.orchestrator.rag_budget import rag_docs_budget_for_routing
+from app.orchestrator.tool_selector import RoutingLabel, should_retrieve_docs
+from app.prompts.abuse import count_abuse_strikes
+from app.prompts.system.chat import (
+    build_chat_system_prompt,
+    build_documentation_block,
+)
+from app.rag.corpus import authorize_knowledge_chunks
+from app.rag.local_fallback import retrieve_local_knowledge
+from app.rag.models import RetrievedChunk
+from app.rag.retrieval_cache import NoOpRagCache, RagCache
+from app.rag.retriever import Retriever
+from app.schemas.chat import ChatMessage
+from app.schemas.tool import ToolDefinition
+from app.sessions import SessionStore, SessionTurn, turns_to_messages
+
+
+@dataclass(frozen=True)
+class ChatContext:
+    prior_turns: list[SessionTurn]
+    retrieved: list[RetrievedChunk]
+    messages: list[ChatMessage]
+    token_breakdown: PromptTokenBreakdown
+    rag_cache_hit: bool = False
+    docs_unavailable: bool = False
+
+
+async def retrieve_documentation(
+    retriever: Retriever | None,
+    question: str,
+    *,
+    metrics: MetricsRegistry | None = None,
+    cache_hit: bool = False,
+    cache_scope: str = "public",
+) -> tuple[list[RetrievedChunk], bool]:
+    """Returns (chunks, failed). failed=True when RAG/Qdrant errored."""
+    if retriever is None:
+        if metrics is not None:
+            metrics.record_rag(0.0, failed=True, cache_hit=cache_hit)
+        emit_event(
+            RAG_RETRIEVE,
+            level=logging.WARNING,
+            failed=True,
+            cache_hit=cache_hit,
+        )
+        return [], True
+    started = time.perf_counter()
+    try:
+        if isinstance(retriever, Retriever):
+            chunks = await retriever.retrieve(question, cache_scope=cache_scope)
+        else:
+            chunks = await retriever.retrieve(question)
+        latency_ms = (time.perf_counter() - started) * 1000
+        if metrics is not None:
+            metrics.record_rag(latency_ms, failed=False, cache_hit=cache_hit)
+        emit_event(
+            RAG_RETRIEVE,
+            level=logging.DEBUG,
+            failed=False,
+            cache_hit=cache_hit,
+            latency_ms=round(latency_ms, 1),
+            chunks=len(chunks),
+        )
+        return chunks, False
+    except AppError as exc:
+        latency_ms = (time.perf_counter() - started) * 1000
+        if metrics is not None:
+            metrics.record_rag(latency_ms, failed=True, cache_hit=cache_hit)
+        emit_event(
+            RAG_RETRIEVE,
+            level=logging.WARNING,
+            failed=True,
+            cache_hit=cache_hit,
+            latency_ms=round(latency_ms, 1),
+            error=exc.code,
+            reason=exc.message,
+        )
+        return [], True
+
+
+def _extract_recent_expense(
+    prior_turns: list[SessionTurn],
+) -> dict[str, Any] | None:
+    for turn in reversed(prior_turns):
+        if not turn.tool_context:
+            continue
+        try:
+            items = json.loads(turn.tool_context)
+            if isinstance(items, list):
+                for item in reversed(items):
+                    if item.get("tool") in ("create_expense", "update_expense"):
+                        data = item.get("data")
+                        if isinstance(data, dict):
+                            eid = data.get("id") or data.get("_id")
+                            if eid:
+                                return {
+                                    "id": str(eid).strip(),
+                                    "title": data.get("title"),
+                                    "amount": data.get("amount"),
+                                    "status": data.get("status"),
+                                    "category": data.get("category"),
+                                }
+        except Exception:
+            continue
+    return None
+
+
+async def build_chat_context(
+    *,
+    sessions: SessionStore,
+    retriever: Retriever | None,
+    settings: Settings,
+    question: str,
+    language: str,
+    session_id: str,
+    user_id: str,
+    store_id: str,
+    tools: list[ToolDefinition],
+    routing: RoutingLabel = "unknown",
+    rag_cache: RagCache | None = None,
+    metrics: MetricsRegistry | None = None,
+    prior_turns: list[SessionTurn] | None = None,
+    actor_role: str | None = None,
+    permissions: frozenset[str] | None = None,
+) -> ChatContext:
+    cache: RagCache = rag_cache or NoOpRagCache()
+    if prior_turns is None:
+        prior_turns = await sessions.load_history(
+            session_id=session_id,
+            user_id=user_id,
+            store_id=store_id,
+        )
+    docs_budget = rag_docs_budget_for_routing(
+        routing,
+        faq_budget=settings.rag.context_max_tokens,
+        action_budget=settings.rag.context_max_tokens_action,
+    )
+    scope_material = "|".join(
+        [
+            store_id,
+            (actor_role or "unknown").casefold(),
+            ",".join(sorted(permissions or ()))
+            if permissions is not None
+            else "core-authority",
+        ]
+    )
+    cache_scope = hashlib.sha256(scope_material.encode()).hexdigest()[:24]
+
+    retrieved: list[RetrievedChunk] = []
+    documentation = ""
+    rag_cache_hit = False
+    docs_unavailable = False
+    tool_names = frozenset(tool.name for tool in tools)
+    if should_retrieve_docs(routing, tool_names=tool_names):
+        cached_docs = await cache.get_documentation_block(
+            question, budget=docs_budget, cache_scope=cache_scope
+        )
+        if cached_docs is not None:
+            documentation = cached_docs
+            rag_cache_hit = True
+            retrieved = []
+        else:
+            retrieved, rag_failed = await retrieve_documentation(
+                retriever,
+                question,
+                metrics=metrics,
+                cache_hit=False,
+                cache_scope=cache_scope,
+            )
+            if rag_failed:
+                # Fallback when embeddings/Qdrant are down.
+                local_chunks = retrieve_local_knowledge(question)
+                if local_chunks:
+                    retrieved = authorize_knowledge_chunks(
+                        local_chunks, actor_role=actor_role, permissions=permissions
+                    )
+                    documentation = build_documentation_block(
+                        retrieved,
+                        max_tokens=docs_budget,
+                    )
+                    emit_event(
+                        RAG_RETRIEVE,
+                        level=logging.INFO,
+                        failed=False,
+                        cache_hit=False,
+                        fallback="local",
+                        chunks=len(local_chunks),
+                    )
+                elif routing == "docs":
+                    docs_unavailable = True
+                    documentation = ""
+                else:
+                    documentation = ""
+            else:
+                retrieved = authorize_knowledge_chunks(
+                    retrieved, actor_role=actor_role, permissions=permissions
+                )
+                documentation = build_documentation_block(
+                    retrieved,
+                    max_tokens=docs_budget,
+                )
+                await cache.set_documentation_block(
+                    question,
+                    budget=docs_budget,
+                    block=documentation,
+                    cache_scope=cache_scope,
+                )
+        if routing == "docs" and not documentation:
+            docs_unavailable = True
+
+    if docs_unavailable:
+        return ChatContext(
+            prior_turns=prior_turns,
+            retrieved=[],
+            messages=[],
+            token_breakdown=estimate_prompt_token_breakdown(
+                system_content="",
+                documentation="",
+                tools=tools,
+                history_messages=[],
+                user_text=question,
+            ),
+            rag_cache_hit=False,
+            docs_unavailable=True,
+        )
+
+    history_messages = turns_to_messages(prior_turns)
+    abuse_strikes = count_abuse_strikes(
+        [turn.user_text for turn in prior_turns],
+        question,
+    )
+    active_expense = _extract_recent_expense(prior_turns)
+    system_content = build_chat_system_prompt(
+        language=language,
+        store_id=store_id,
+        tools=tools,
+        documentation=documentation,
+        routing=routing,
+        abuse_strikes=abuse_strikes,
+        active_expense=active_expense,
+    )
+    messages = [
+        ChatMessage(role="system", content=system_content),
+        *history_messages,
+        ChatMessage(role="user", content=question),
+    ]
+    token_breakdown = estimate_prompt_token_breakdown(
+        system_content=system_content,
+        documentation=documentation,
+        tools=tools,
+        history_messages=history_messages,
+        user_text=question,
+    )
+    return ChatContext(
+        prior_turns=prior_turns,
+        retrieved=retrieved,
+        messages=messages,
+        token_breakdown=token_breakdown,
+        rag_cache_hit=rag_cache_hit,
+        docs_unavailable=False,
+    )

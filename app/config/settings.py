@@ -1,84 +1,106 @@
-"""
-Application Configuration
-"""
+from functools import lru_cache
+from urllib.parse import urljoin
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
-from typing import List
-import os
-from pathlib import Path
+
+from app.config.base import _group_config
+from app.config.providers import (
+    ChatSettings,
+    CheaperInferenceSettings,
+    GoogleAISettings,
+    OpenAISettings,
+)
+from app.config.rag import RagSettings
+from app.config.runtime import (
+    EventSettings,
+    GuardSettings,
+    LimitSettings,
+    ProactiveSettings,
+    SessionSettings,
+)
+from app.config.middleware_obs import MiddlewareObservabilitySettings
+from app.config.server import ServerSettings
+from app.config.services import JwtSettings, ServiceSettings
 
 
 class Settings(BaseSettings):
-    """Application settings"""
-    
-    # App Settings
-    APP_NAME: str = "DragBizz Voice AI Service"
-    VERSION: str = "1.0.0"
-    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
-    HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", 8000))
-    
-    # CORS
-    CORS_ORIGINS: List[str] = [
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "https://dragbizz.com",
-    ]
-    
-    # MongoDB
-    MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-    MONGODB_DB_NAME: str = os.getenv("MONGODB_DB_NAME", "dragbizz")
-    
-    # Redis
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
-    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
-    REDIS_DB: int = int(os.getenv("REDIS_DB", 0))
-    
-    # JWT/Auth
-    JWT_SECRET: str = os.getenv("JWT_SECRET", "")
-    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "RS256")
-    JWT_ISSUER: str = os.getenv("JWT_ISSUER", "dragbizz-auth")
-    JWT_AUDIENCE: str = os.getenv("JWT_AUDIENCE", "dragbizz-services")
-    JWKS_URL: str = os.getenv("JWKS_URL", "http://localhost:3001/auth/.well-known/jwks.json")
-    
-    # OpenAI
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4")
-    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "whisper-1")
-    
-    # Retailer Service
-    RETAILER_SERVICE_URL: str = os.getenv("RETAILER_SERVICE_URL", "http://localhost:3002/api")
-    AUTH_SERVICE_URL: str = os.getenv("AUTH_SERVICE_URL", "http://localhost:3001/auth")
-    
-    # Voice Settings
-    MAX_AUDIO_SIZE_MB: int = int(os.getenv("MAX_AUDIO_SIZE_MB", 10))
-    MAX_AUDIO_DURATION_SEC: int = int(os.getenv("MAX_AUDIO_DURATION_SEC", 60))
-    SUPPORTED_AUDIO_FORMATS: List[str] = ["webm", "wav", "mp3", "m4a", "ogg"]
-    
-    # Session Settings
-    SESSION_TIMEOUT_SEC: int = int(os.getenv("SESSION_TIMEOUT_SEC", 3600))  # 1 hour
-    MAX_COMMANDS_PER_SESSION: int = int(os.getenv("MAX_COMMANDS_PER_SESSION", 50))
-    
-    # Rate Limiting
-    RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", 10))
-    RATE_LIMIT_PER_HOUR: int = int(os.getenv("RATE_LIMIT_PER_HOUR", 100))
-    
-    # File Storage
-    AUDIO_STORAGE_PATH: str = os.getenv("AUDIO_STORAGE_PATH", "./storage/audio")
-    AUDIO_RETENTION_HOURS: int = int(os.getenv("AUDIO_RETENTION_HOURS", 24))
-    
-    # Logging
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
-    LOG_FILE: str = os.getenv("LOG_FILE", "./logs/voice-ai.log")
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = _group_config()
+
+    server: ServerSettings = Field(default_factory=ServerSettings)
+    services: ServiceSettings = Field(default_factory=ServiceSettings)
+    jwt: JwtSettings = Field(default_factory=JwtSettings)
+    active_provider: str = Field(
+        default="openai_compatible",
+        validation_alias="AI_ACTIVE_PROVIDER",
+    )
+    openai: OpenAISettings = Field(default_factory=OpenAISettings)
+    google: GoogleAISettings = Field(default_factory=GoogleAISettings)
+    chat: ChatSettings = Field(default_factory=ChatSettings)
+    cheaper_inference: CheaperInferenceSettings = Field(
+        default_factory=CheaperInferenceSettings
+    )
+    rag: RagSettings = Field(default_factory=RagSettings)
+    guards: GuardSettings = Field(default_factory=GuardSettings)
+    session: SessionSettings = Field(default_factory=SessionSettings)
+    limits: LimitSettings = Field(default_factory=LimitSettings)
+    events: EventSettings = Field(default_factory=EventSettings)
+    proactive: ProactiveSettings = Field(default_factory=ProactiveSettings)
+    middleware: MiddlewareObservabilitySettings = Field(
+        default_factory=MiddlewareObservabilitySettings
+    )
+
+    @model_validator(mode="after")
+    def resolve_jwks_url_and_guards(self) -> "Settings":
+        resolved = self.jwt.url or urljoin(
+            f"{self.services.auth_url}/",
+            ".well-known/jwks.json",
+        )
+        object.__setattr__(self, "jwt", self.jwt.model_copy(update={"url": resolved}))
+
+        if self.server.environment == "production" and not resolved.startswith(
+            "https://"
+        ):
+            raise ValueError("JWKS URL must use HTTPS in production")
+
+        openai_https = self.openai.base_url.startswith("https://")
+        if self.server.environment == "production" and not openai_https:
+            raise ValueError("OpenAI base URL must use HTTPS in production")
+
+        if (
+            self.server.environment == "production"
+            and self.cheaper_inference.api_key
+            and not self.cheaper_inference.base_url.startswith("https://")
+        ):
+            raise ValueError("Cheaper Inference base URL must use HTTPS in production")
+
+        if (
+            self.server.environment == "production"
+            and self.google.api_key
+            and not self.google.base_url.startswith("https://")
+        ):
+            raise ValueError("Google AI base URL must use HTTPS in production")
+
+        if self.server.environment == "production":
+            if not self.limits.redis_url:
+                raise ValueError(
+                    "AI_REDIS_URL is required in production "
+                    "(shared rate limits, concurrency, and confirmations)"
+                )
+            if self.guards.input_mode != "enforce":
+                raise ValueError(
+                    "AI_INPUT_GUARD_MODE must be 'enforce' in production "
+                    "(use 'log' in staging to tune false positives first)"
+                )
+            if self.guards.output_mode != "enforce":
+                raise ValueError(
+                    "AI_OUTPUT_GUARD_MODE must be 'enforce' in production "
+                    "(use 'log' in staging to tune false positives first)"
+                )
+
+        return self
 
 
-# Create settings instance
-settings = Settings()
-
-# Create necessary directories
-Path(settings.AUDIO_STORAGE_PATH).mkdir(parents=True, exist_ok=True)
-Path(settings.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

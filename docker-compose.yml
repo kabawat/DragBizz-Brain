@@ -1,49 +1,83 @@
-version: '3.8'
-
+name: dragbizz-brain-prod
 services:
-  voice-ai:
+  qdrant:
+    image: qdrant/qdrant:v1.13.2
+    container_name: db-qdrant-prod
+    ports:
+    - 6333:6333
+    - 6334:6334
+    volumes:
+    - qdrant_storage:/qdrant/storage
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e "GET /readyz HTTP/1.0\r\n\r\n"
+        >&3 && cat <&3 | grep -q "200\|ok"'
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+  dragbizz-ai:
     build: .
-    container_name: dragbizz_voice_ai
+    container_name: db-brain-prod
     ports:
-      - "8000:8000"
+    - ${HOST_HTTP_PORT:-8004}:4004
+    env_file:
+    - .env.production
     environment:
-      - DEBUG=False
-      - MONGODB_URI=mongodb://mongo:27017
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - RETAILER_SERVICE_URL=http://retailer-service:3002/api
-      - AUTH_SERVICE_URL=http://auth-service:3001/auth
-    volumes:
-      - ./storage:/app/storage
-      - ./logs:/app/logs
+      AI_QDRANT_URL: http://qdrant:6333
+      AI_ENVIRONMENT: production
+      AI_DOCS_ENABLED: 'false'
     depends_on:
-      - mongo
-      - redis
-    networks:
-      - dragbizz-network
-
-  mongo:
-    image: mongo:7
-    container_name: dragbizz_voice_mongo
-    ports:
-      - "27018:27017"
+      qdrant:
+        condition: service_started
     volumes:
-      - mongo_data:/data/db
+    - brain_data:/app/data
+    - type: bind
+      source: /etc/dragbizz/production/pki/brain/ca.crt
+      target: /run/dragbizz/pki/brain/ca.crt
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/dragbizz/production/pki/brain/client.crt
+      target: /run/dragbizz/pki/brain/client.crt
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: /etc/dragbizz/production/pki/brain/client.key
+      target: /run/dragbizz/pki/brain/client.key
+      read_only: true
+      bind:
+        create_host_path: false
+    extra_hosts:
+    - host.docker.internal:host-gateway
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:4004/api/v1/health')
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
     networks:
-      - dragbizz-network
-
-  redis:
-    image: redis:7-alpine
-    container_name: dragbizz_voice_redis
-    ports:
-      - "6380:6379"
-    networks:
-      - dragbizz-network
-
+    - default
+    - brain-core-private
+    - redis-private
+    stop_grace_period: 45s
+    image: dragbizz-brain:prod
 volumes:
-  mongo_data:
-
+  qdrant_storage: null
+  brain_data: null
 networks:
-  dragbizz-network:
+  brain-core-private:
+    name: dragbizz-prod-brain-core-private
+    external: true
+  redis-private:
+    name: redis-private
     external: true

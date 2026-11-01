@@ -1,0 +1,16 @@
+{
+  "name": "dragbizz-brain",
+  "private": true,
+  "scripts": {
+    "dev:start": "docker compose -f docker-compose.dev.yml up -d --build",
+    "dev:stop": "docker compose -f docker-compose.dev.yml down",
+    "dev:logs": "docker compose -f docker-compose.dev.yml logs -f",
+    "dev:restart": "docker compose -f docker-compose.dev.yml restart",
+    "dev:clean": "docker compose -f docker-compose.dev.yml down",
+    "prod:start": "docker compose --env-file .env.production -f docker-compose.yml up -d --build",
+    "prod:stop": "docker compose --env-file .env.production -f docker-compose.yml down",
+    "prod:logs": "docker compose --env-file .env.production -f docker-compose.yml logs -f",
+    "prod:restart": "docker compose --env-file .env.production -f docker-compose.yml restart",
+    "prod:clean": "docker compose --env-file .env.production -f docker-compose.yml down"
+  }
+}
