@@ -839,7 +839,7 @@ async def test_scenario_19_purchase_order_product_mismatch_correction() -> None:
 
     mock_retailer = AsyncMock()
 
-    async def mock_get_products(access_token, store_id, query, limit=5):
+    async def mock_get_products(access_token, store_id, query, limit=5, lightweight=False):
         if query == "wrong_id_for_turmeric":
             return SimpleNamespace(
                 body={"data": [{"id": "wrong_id_for_turmeric", "name": "Everest Turmeric / Haldi Powder"}]}

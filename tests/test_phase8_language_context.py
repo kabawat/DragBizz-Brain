@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -30,11 +31,19 @@ def test_product_search_query_variants_are_bounded_and_preserve_original(
 
 
 @pytest.mark.asyncio
-async def test_product_search_retries_common_hinglish_variant_only_after_miss() -> None:
+async def test_product_search_runs_hinglish_fallback_concurrently_and_prefers_exact() -> None:
     retailer = AsyncMock()
-    retailer.get_products.side_effect = [
-        RetailerResponse(status_code=200, body={"data": []}),
-        RetailerResponse(
+    exact_finished = asyncio.Event()
+    fallback_started_before_exact_finished = False
+
+    async def lookup_product(*, query: str, **_: object) -> RetailerResponse:
+        nonlocal fallback_started_before_exact_finished
+        if query == "Aashirvaad aata":
+            await asyncio.sleep(0.02)
+            exact_finished.set()
+            return RetailerResponse(status_code=200, body={"data": []})
+        fallback_started_before_exact_finished = not exact_finished.is_set()
+        return RetailerResponse(
             status_code=200,
             body={
                 "data": [
@@ -49,8 +58,9 @@ async def test_product_search_retries_common_hinglish_variant_only_after_miss() 
                     }
                 ]
             },
-        ),
-    ]
+        )
+
+    retailer.get_products.side_effect = lookup_product
     context = ToolContext(retailer=retailer, access_token="token", store_id=STORE_ID)
 
     result = await search_product({"query": "Aashirvaad aata"}, context)
@@ -59,10 +69,15 @@ async def test_product_search_retries_common_hinglish_variant_only_after_miss() 
     assert result.data["items"][0]["id"] == PRODUCT_ID
     assert result.data["items"][0]["sellingPrice"] == 265
     assert result.data["items"][0]["taxRate"] == 5
+    assert fallback_started_before_exact_finished is True
     assert [call.kwargs["query"] for call in retailer.get_products.await_args_list] == [
         "Aashirvaad aata",
         "Aashirvaad atta",
     ]
+    assert all(
+        call.kwargs["lightweight"] is True
+        for call in retailer.get_products.await_args_list
+    )
 
 
 @pytest.mark.asyncio

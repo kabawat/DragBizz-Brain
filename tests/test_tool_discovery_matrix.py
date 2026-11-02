@@ -20,7 +20,7 @@ from app.orchestrator.tool_selector import (
     resolve_turn_intent,
     user_requested_sensitive_action,
 )
-from app.schemas.tool import ToolAccessType, ToolDomain
+from app.schemas.tool import ToolDomain
 from app.tools.registry import build_unified_tool_registry
 
 REGISTRY = build_unified_tool_registry()
@@ -83,6 +83,8 @@ TYPO_AND_MULTILINGUAL_TEST_MATRIX = [
     ("add stcok for maggi 10 units", "add_stock"),
     ("stock intake 50 packet", "add_stock"),
     ("low stcok items list", "stock_items"),
+    ("out of stock products with names and quantities", "stock_items"),
+    ("stock ke naam aur quantity batao", "stock_items"),
     ("pruduct search maggi", "search_product"),
     ("total catalog items kitne hai", "product_summary"),
     ("inventory velocity report", "inventory_velocity"),

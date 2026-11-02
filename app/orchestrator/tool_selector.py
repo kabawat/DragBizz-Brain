@@ -645,7 +645,6 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
     "stock": (
         "stock me",
         "stock mein",
-        "out of stock",
         "stock kitna",
         "stock kitne",
         "stock bacha",
@@ -1053,6 +1052,20 @@ _FAMILY_CUES: dict[str, tuple[str, ...]] = {
         "stock details",
         "stock report",
         "stock breakdown",
+        "out of stock products",
+        "out-of-stock products",
+        "out of stock items",
+        "out-of-stock items",
+        "low stock items",
+        "low-stock items",
+        "stock me kaun",
+        "stock mein kaun",
+        "stock ke naam",
+        "stock ki list",
+        "stock ki details",
+        "naam aur quantity",
+        "names and quantities",
+        "current available quantity",
         "har product ka stock",
         "products ka stock",
         "saare items ka stock",
@@ -2027,6 +2040,17 @@ def resolve_turn_intent(
     for family, pattern in _FAMILY_RES.items():
         if pattern.search(text):
             matched_reads |= _FAMILY_READS[family]
+
+    # These phrases ask for itemized stock records, not just inventory totals.
+    # Keep the row tool available even if the broader stock family also matches.
+    if re.search(
+        r"\b(out\s+of\s+stock|low\s+stock)\b.*\b(product|products|item|items|name|names|quantity|quantities|list|dikhao|batao)\b|"
+        r"\b(stock|inventory)\b.*\b(name|names|quantity|quantities|list|items|products|details)\b|"
+        r"\b(naam|name)\b.*\b(quantity|quantities|qty|stock|item|product)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        matched_reads.add("stock_items")
 
     # Hybrid typo-tolerant retrieval for reads
     if not matched_reads and not _WHO_IS_RE.search(text):

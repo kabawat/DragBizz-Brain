@@ -1120,7 +1120,7 @@ def project_stock_items(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(raw_items, list):
         return {"count": 0, "items": []}
     items: list[dict[str, Any]] = []
-    for item in raw_items[:30]:
+    for item in raw_items[:60]:
         if not isinstance(item, dict):
             continue
         picked = _pick(
@@ -1140,6 +1140,11 @@ def project_stock_items(data: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"count": len(items), "items": items}
     if isinstance(data.get("coverage"), str):
         out["coverage"] = data["coverage"]
+    pagination = data.get("pagination")
+    if isinstance(pagination, dict):
+        out["pagination"] = _pick(
+            pagination, ("hasMore", "nextCursor", "pageSize", "totalCount")
+        )
     return out
 
 

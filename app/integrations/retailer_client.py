@@ -36,13 +36,17 @@ class RetailerClient:
         store_id: str,
         query: str,
         limit: int = 20,
+        lightweight: bool = False,
     ) -> RetailerResponse:
+        params: dict[str, Any] = {"search": query, "limit": limit}
+        if lightweight:
+            params["lightweight"] = "true"
         return await self._request(
             "GET",
             "/product",
             access_token=access_token,
             store_id=store_id,
-            params={"search": query, "limit": limit},
+            params=params,
         )
 
     async def get_variants(
@@ -142,16 +146,19 @@ class RetailerClient:
         access_token: str,
         store_id: str,
         include_services: bool = False,
+        next_cursor: str | None = None,
     ) -> RetailerResponse:
         params: dict[str, Any] = {}
         if include_services:
             params["includeServices"] = "true"
+        if next_cursor:
+            params["nextCursor"] = next_cursor
         return await self._request(
             "GET",
-            "/analytics/stock/items",
+            "/stock",
             access_token=access_token,
             store_id=store_id,
-            params=params,
+            params={"limit": 30, **params},
         )
 
     async def get_product_analytics(

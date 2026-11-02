@@ -74,12 +74,12 @@ PHASE2_TOOL_NAMES = {
 }
 
 
-def _dummy_context(retailer: Any) -> ToolContext:
+def _dummy_context(retailer: Any, question: str = "test question") -> ToolContext:
     return ToolContext(
         store_id=STORE_ID,
         access_token="test-token",
         retailer=retailer,
-        question="test question",
+        question=question,
     )
 
 
@@ -124,15 +124,195 @@ async def test_stock_items_handler_and_projection() -> None:
     result = await stock_items({"storeId": STORE_ID}, ctx)
 
     assert result.success is True
-    # Handler caps at 30 items
+    # The safety cap is visible to both the model and the UI.
     assert result.data["count"] == 30
     assert len(result.data["items"]) == 30
-    assert result.data["coverage"] == "scanned 30 items"
+    assert result.data["coverage"] == "scanned 30 inventory rows"
+    assert result.result_status == ToolResultStatus.SUCCESS_PARTIAL
+    assert result.data["pagination"]["hasMore"] is True
 
     projected = project_stock_items(result.data)
     assert projected["count"] == 30
     assert "extraInternalField" not in projected["items"][0]
     assert projected["items"][0]["sku"] == "SKU-0"
+    assert projected["pagination"]["hasMore"] is True
+
+
+@pytest.mark.asyncio
+async def test_stock_items_without_cursor_does_not_claim_complete_coverage() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_stock_items.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "items": [{"id": "item-1", "name": "Rice", "quantity": 0}],
+                "pagination": {"hasNextPage": True},
+            }
+        },
+    )
+
+    result = await stock_items(
+        {"storeId": STORE_ID}, _dummy_context(mock_retailer)
+    )
+
+    assert result.result_status == ToolResultStatus.SUCCESS_PARTIAL
+    assert result.data["pagination"] == {"hasMore": True, "pageSize": 30}
+    assert mock_retailer.get_stock_items.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_stock_items_at_page_limit_requires_pagination_metadata() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_stock_items.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "items": [
+                    {"id": f"item-{i}", "name": f"Product {i}", "quantity": 1}
+                    for i in range(30)
+                ]
+            }
+        },
+    )
+
+    result = await stock_items(
+        {"storeId": STORE_ID}, _dummy_context(mock_retailer)
+    )
+
+    assert result.result_status == ToolResultStatus.SUCCESS_PARTIAL
+    assert result.data["pagination"]["hasMore"] is True
+    assert result.data["count"] == 30
+
+
+@pytest.mark.asyncio
+async def test_stock_items_accepts_operational_inventory_response() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_stock_items.return_value = RetailerResponse(
+        status_code=200,
+        body={
+            "data": {
+                "inventories": [
+                    {
+                        "id": "inventory-1",
+                        "product": {"id": "product-1", "name": "Sample rice"},
+                        "stockSummary": {"availableQuantity": 0},
+                        "status": {"isOutOfStock": True},
+                    },
+                    {
+                        "id": "inventory-2",
+                        "product": {"id": "product-2", "name": "Sample tea"},
+                        "variant": {"sku": "TEA-1", "sellingPrice": 25},
+                        "stockSummary": {"availableQuantity": 4},
+                        "status": {"isLowStock": True},
+                    },
+                ],
+                "pagination": {"hasNextPage": False, "limit": 30},
+            }
+        },
+    )
+    result = await stock_items({"storeId": STORE_ID}, _dummy_context(mock_retailer))
+
+    assert result.success is True
+    assert result.data["items"] == [
+        {
+            "id": "inventory-1",
+            "name": "Sample rice",
+            "sku": None,
+            "stock": 0,
+            "status": "OUT_OF_STOCK",
+            "sellingPrice": None,
+            "purchasePrice": None,
+        },
+        {
+            "id": "inventory-2",
+            "name": "Sample tea",
+            "sku": "TEA-1",
+            "stock": 4,
+            "status": "LOW_STOCK",
+            "sellingPrice": 25,
+            "purchasePrice": None,
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stock_items_collects_cursor_pages_and_preserves_completeness() -> None:
+    mock_retailer = AsyncMock()
+    mock_retailer.get_stock_items.side_effect = [
+        RetailerResponse(
+            status_code=200,
+            body={
+                "data": {
+                    "inventories": [
+                        {
+                            "id": f"inventory-{i}",
+                            "product": {"name": f"Product {i}"},
+                            "stockSummary": {
+                                "availableQuantity": 0 if i < 5 else 5
+                            },
+                            "status": {"isOutOfStock": i < 5},
+                        }
+                        for i in range(30)
+                    ],
+                    "pagination": {"hasNextPage": True, "nextCursor": "cursor-30"},
+                }
+            },
+        ),
+        RetailerResponse(
+            status_code=200,
+            body={
+                "data": {
+                    "inventories": [
+                        {
+                            "id": "inventory-30",
+                            "product": {"name": "Out of stock item"},
+                            "stockSummary": {"availableQuantity": 0},
+                            "status": {"isOutOfStock": True},
+                        }
+                    ],
+                    "pagination": {"hasNextPage": False},
+                }
+            },
+        ),
+    ]
+
+    result = await stock_items(
+        {"storeId": STORE_ID},
+        _dummy_context(
+            mock_retailer,
+            "List out of stock products with their names and quantities",
+        ),
+    )
+
+    assert result.success is True
+    assert result.data["count"] == 6
+    assert len(result.data["items"]) == 6
+    assert result.data["items"][-1]["name"] == "Out of stock item"
+    assert result.data["items"][-1]["stock"] == 0
+    assert result.data["items"][-1]["status"] == "OUT_OF_STOCK"
+    assert result.data["pagination"] == {"hasMore": False, "pageSize": 30}
+    assert mock_retailer.get_stock_items.await_count == 2
+    assert mock_retailer.get_stock_items.await_args_list[1].kwargs["next_cursor"] == "cursor-30"
+
+    projected = project_stock_items(result.data)
+    assert projected["count"] == 6
+    assert projected["items"][-1]["name"] == "Out of stock item"
+    assert projected["pagination"]["hasMore"] is False
+
+
+def test_stock_detail_questions_expose_itemized_read_tool() -> None:
+    available = frozenset({"stock_summary", "stock_items"})
+    intent = resolve_turn_intent(
+        "Mere store me out of stock products ke naam aur current available quantity batao.",
+        available=available,
+    )
+    assert "stock_items" in intent.tool_names
+
+    english_intent = resolve_turn_intent(
+        "List the out-of-stock inventory items with each product name and available quantity.",
+        available=available,
+    )
+    assert "stock_items" in english_intent.tool_names
 
 
 @pytest.mark.asyncio
