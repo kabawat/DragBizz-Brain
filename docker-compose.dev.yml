@@ -47,6 +47,7 @@ services:
     - /etc/dragbizz/pki/brain/client.key:/run/dragbizz/pki/brain/client.key:ro
     extra_hosts:
     - host.docker.internal:host-gateway
+    - dragbizz.local:host-gateway
     healthcheck:
       test:
       - CMD
