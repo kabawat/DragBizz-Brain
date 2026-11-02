@@ -176,6 +176,10 @@ _STORE_READS_RULE = (
     "If a list is empty, state so without guessing. "
     "Supplier bills and purchase orders are different records: use list_supplier_bills "
     "for bill/payment status and list_purchase_orders only for order progress.\n"
+    "- Inventory routing: use stock_summary only for aggregate totals/counts. "
+    "When asked which products/items are out of stock or low stock, or asked for "
+    "stock names, quantities, or an itemized list, call stock_items. If the user "
+    "asks for both totals and rows, call both tools.\n"
 )
 
 _BUSINESS_GUIDE_RULE = (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import re
 from datetime import date
@@ -63,12 +64,22 @@ async def search_product(arguments: dict[str, Any], context: ToolContext) -> Too
     query = str(arguments.get("query", "")).strip()
     raw_items_by_id: dict[str, dict[str, Any]] = {}
     try:
-        for candidate_query in product_search_queries(query):
-            response = await context.retailer.get_products(
-                access_token=context.access_token,
-                store_id=context.store_id,
-                query=candidate_query,
+        candidate_queries = product_search_queries(query)
+        responses = await asyncio.gather(
+            *(
+                context.retailer.get_products(
+                    access_token=context.access_token,
+                    store_id=context.store_id,
+                    query=candidate_query,
+                    lightweight=True,
+                )
+                for candidate_query in candidate_queries
             )
+        )
+        # Alias retries are bounded and run concurrently so a slow exact miss
+        # does not consume the whole read-tool deadline before the canonical
+        # Hinglish query starts. Keep response order so an exact result wins.
+        for response in responses:
             candidate_items, _ = _extract_list_payload(
                 response.body, ("products", "items")
             )
@@ -79,8 +90,8 @@ async def search_product(arguments: dict[str, Any], context: ToolContext) -> Too
                     item_id = str(item.get("id") or item.get("_id") or "")
                     key = item_id or f"{item.get('name', '')}:{item.get('sku', '')}"
                     raw_items_by_id[key] = item
-            # Preserve exact-query results as the preferred match. Only use
-            # transliteration/spelling equivalents when the exact query misses.
+            # Prefer an exact-query match; use the canonical result only when
+            # the user's original spelling returns no catalog entries.
             if raw_items_by_id:
                 break
     except RetailerHttpError as exc:
@@ -1393,21 +1404,67 @@ async def list_stores(arguments: dict[str, Any], context: ToolContext) -> ToolRe
 
 
 async def stock_items(arguments: dict[str, Any], context: ToolContext) -> ToolResult:
-    try:
-        response = await context.retailer.get_stock_items(
-            access_token=context.access_token,
-            store_id=context.store_id,
-            include_services=bool(arguments.get("includeServices")),
-        )
-    except RetailerHttpError as exc:
-        return _failure("stock_items", exc)
+    raw_items: list[Any] = []
+    next_cursor: str | None = None
+    partial = False
+    page_limit = 30
+    # The result projector exposes at most 60 rows to the model. Keep the
+    # read cap aligned so a larger result is always marked partial.
+    max_pages = 2
+    for _page_index in range(max_pages):
+        try:
+            response = await context.retailer.get_stock_items(
+                access_token=context.access_token,
+                store_id=context.store_id,
+                include_services=bool(arguments.get("includeServices")),
+                next_cursor=next_cursor,
+            )
+        except RetailerHttpError as exc:
+            return _failure("stock_items", exc)
 
-    raw_items, payload = _extract_list_payload(response.body, ("items", "products"))
-    if raw_items is None:
-        return _invalid_read_response("stock_items")
+        page_items, page_payload = _extract_list_payload(
+            response.body, ("inventories", "items", "products")
+        )
+        if page_items is None:
+            return _invalid_read_response("stock_items")
+        raw_items.extend(page_items[:page_limit])
+        page_was_truncated = len(page_items) > page_limit
+        partial = partial or page_was_truncated
+        pagination = (
+            page_payload.get("pagination")
+            if isinstance(page_payload, dict)
+            else None
+        )
+        if not isinstance(pagination, dict):
+            pagination = {}
+        missing_page_boundary = (
+            not isinstance(page_payload, dict)
+            or not isinstance(page_payload.get("pagination"), dict)
+        ) and len(page_items) >= page_limit
+        partial = partial or missing_page_boundary
+        upstream_has_more = bool(
+            pagination.get("hasNextPage", pagination.get("hasNext", False))
+        )
+        next_cursor = pagination.get("nextCursor") if upstream_has_more else None
+        if upstream_has_more:
+            if isinstance(next_cursor, str) and next_cursor.strip():
+                next_cursor = next_cursor.strip()
+                continue
+            # Keep the result explicitly partial when the source says more
+            # rows exist but omits a usable cursor.
+            partial = True
+            next_cursor = None
+            break
+        next_cursor = None
+        break
+    else:
+        # Do not claim full coverage if the store exceeds the safety page cap.
+        partial = True
+
+    has_more = partial
 
     items = []
-    for item in raw_items[:30]:
+    for item in raw_items:
         if not isinstance(item, dict):
             continue
         stock_summary = (
@@ -1415,6 +1472,9 @@ async def stock_items(arguments: dict[str, Any], context: ToolContext) -> ToolRe
             if isinstance(item.get("stockSummary"), dict)
             else {}
         )
+        product = item.get("product") if isinstance(item.get("product"), dict) else {}
+        variant = item.get("variant") if isinstance(item.get("variant"), dict) else {}
+        status = item.get("status") if isinstance(item.get("status"), dict) else {}
         avail = None
         for candidate in (
             item.get("availableQuantity"),
@@ -1429,25 +1489,86 @@ async def stock_items(arguments: dict[str, Any], context: ToolContext) -> ToolRe
                 avail = candidate
                 break
 
+        stock_status = item.get("stockStatus")
+        if not isinstance(stock_status, str):
+            stock_status = status.get("stockStatus")
+        if not isinstance(stock_status, str):
+            if status.get("isOutOfStock") is True or (avail is not None and avail <= 0):
+                stock_status = "OUT_OF_STOCK"
+            elif status.get("isLowStock") is True:
+                stock_status = "LOW_STOCK"
+            elif isinstance(item.get("status"), str):
+                stock_status = item["status"]
+            elif isinstance(status, dict):
+                stock_status = "IN_STOCK"
+
         items.append(
             {
                 "id": str(
-                    item.get("id") or item.get("_id") or item.get("productId") or ""
+                    item.get("id")
+                    or item.get("_id")
+                    or item.get("productId")
+                    or product.get("id")
+                    or product.get("_id")
+                    or ""
                 ),
-                "name": item.get("name") or item.get("productName"),
-                "sku": item.get("sku"),
+                "name": (
+                    item.get("name")
+                    or item.get("productName")
+                    or variant.get("displayName")
+                    or product.get("name")
+                ),
+                "sku": item.get("sku") or variant.get("sku"),
                 "stock": avail,
-                "status": item.get("stockStatus") or item.get("status"),
-                "sellingPrice": item.get("sellingPrice") or item.get("price"),
+                "status": stock_status,
+                "sellingPrice": (
+                    item.get("sellingPrice")
+                    or item.get("price")
+                    or variant.get("sellingPrice")
+                ),
                 "purchasePrice": (item.get("purchasePrice") or item.get("costPrice")),
             }
         )
+
+    question = context.question or ""
+    wants_out_of_stock = bool(
+        re.search(r"\b(out\s+of\s+stock|out-of-stock)\b", question, re.IGNORECASE)
+    )
+    wants_low_stock = bool(
+        re.search(r"\blow\s+stock\b", question, re.IGNORECASE)
+    )
+    if wants_out_of_stock or wants_low_stock:
+        requested_statuses = set()
+        if wants_out_of_stock:
+            requested_statuses.add("OUT_OF_STOCK")
+        if wants_low_stock:
+            requested_statuses.add("LOW_STOCK")
+        items = [
+            item
+            for item in items
+            if item.get("status") in requested_statuses
+            or (
+                "OUT_OF_STOCK" in requested_statuses
+                and isinstance(item.get("stock"), (int, float))
+                and item["stock"] <= 0
+            )
+        ]
     data: dict[str, Any] = {
         "count": len(items),
         "items": items,
-        "coverage": f"scanned {len(items)} items",
+        "coverage": f"scanned {len(raw_items)} inventory rows",
     }
-    _add_list_pagination(data, response.body, payload, len(raw_items), 30)
+    if has_more:
+        data["pagination"] = {
+            "hasMore": True,
+            "pageSize": page_limit,
+            **({"nextCursor": next_cursor} if next_cursor else {}),
+        }
+    else:
+        data["pagination"] = {
+            "hasMore": False,
+            "pageSize": page_limit,
+        }
     return ToolResult(
         tool="stock_items",
         success=True,

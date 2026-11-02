@@ -2,7 +2,7 @@ name: dragbizz-brain-prod
 services:
   qdrant:
     image: qdrant/qdrant:v1.13.2
-    container_name: db-qdrant-prod
+    container_name: qdrant
     ports:
     - 6333:6333
     - 6334:6334
@@ -20,34 +20,30 @@ services:
     restart: unless-stopped
   dragbizz-ai:
     build: .
-    container_name: db-brain-prod
+    container_name: brain
     ports:
     - ${HOST_HTTP_PORT:-8004}:4004
     env_file:
-    - .env.production
-    environment:
-      AI_QDRANT_URL: http://qdrant:6333
-      AI_ENVIRONMENT: production
-      AI_DOCS_ENABLED: 'false'
+    - .env
     depends_on:
       qdrant:
         condition: service_started
     volumes:
     - brain_data:/app/data
     - type: bind
-      source: /etc/dragbizz/production/pki/brain/ca.crt
+      source: /etc/dragbizz/pki/brain/ca.crt
       target: /run/dragbizz/pki/brain/ca.crt
       read_only: true
       bind:
         create_host_path: false
     - type: bind
-      source: /etc/dragbizz/production/pki/brain/client.crt
+      source: /etc/dragbizz/pki/brain/client.crt
       target: /run/dragbizz/pki/brain/client.crt
       read_only: true
       bind:
         create_host_path: false
     - type: bind
-      source: /etc/dragbizz/production/pki/brain/client.key
+      source: /etc/dragbizz/pki/brain/client.key
       target: /run/dragbizz/pki/brain/client.key
       read_only: true
       bind:

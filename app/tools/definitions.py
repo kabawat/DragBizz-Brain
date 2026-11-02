@@ -53,8 +53,8 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="stock_summary",
         description=(
-            "Inventory/stock totals only (qty on hand, low/out of stock). "
-            "Not the count of listed products — use product_summary for "
+            "Stock totals/counts only; no item rows. Use stock_items for named "
+            "low/out-of-stock items and quantities. Use product_summary for "
             "how many products are created/listed."
         ),
         risk=ToolRisk.READ,
@@ -347,8 +347,8 @@ _RAW_READ_TOOL_DEFINITIONS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
         name="stock_items",
         description=(
-            "Itemized inventory stock rows across products and variants "
-            "(name, SKU, stock quantity, stock status, purchase & selling prices). "
+            "Itemized stock rows: product names, SKUs, quantities, and status. "
+            "Use for low/out-of-stock item lists. Includes prices; capped at 30. "
             "Capped at 30 items."
         ),
         risk=ToolRisk.READ,
