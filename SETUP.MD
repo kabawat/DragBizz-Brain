@@ -29,6 +29,6 @@ Index knowledge after configuring the embedding provider:
 docker compose -f docker-compose.dev.yml exec dragbizz-ai python -m app.rag.indexer --yes
 ```
 
-Each server uses its own `.env` file. Copy `env.example` to `.env` and set values for that server. For production, use production Redis credentials and provision certificates under `/etc/dragbizz/production/pki/brain/`. Start production Core first, then run `yarn prod:start`.
+Each server uses its own `.env` file. Copy `env.example` to `.env` and set values for that server. For production, use production Redis credentials and provision certificates under `/etc/dragbizz/pki/brain/`. Start production Core first, then run `yarn prod:start`.
 
 Stop with `yarn dev:stop` or `yarn prod:stop`. For local Python development, use `bash setup.sh` followed by `bash run.sh --normal` with reachable dependencies.

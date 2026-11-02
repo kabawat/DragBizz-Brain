@@ -31,19 +31,19 @@ services:
     volumes:
     - brain_data:/app/data
     - type: bind
-      source: /etc/dragbizz/production/pki/brain/ca.crt
+      source: /etc/dragbizz/pki/brain/ca.crt
       target: /run/dragbizz/pki/brain/ca.crt
       read_only: true
       bind:
         create_host_path: false
     - type: bind
-      source: /etc/dragbizz/production/pki/brain/client.crt
+      source: /etc/dragbizz/pki/brain/client.crt
       target: /run/dragbizz/pki/brain/client.crt
       read_only: true
       bind:
         create_host_path: false
     - type: bind
-      source: /etc/dragbizz/production/pki/brain/client.key
+      source: /etc/dragbizz/pki/brain/client.key
       target: /run/dragbizz/pki/brain/client.key
       read_only: true
       bind:
