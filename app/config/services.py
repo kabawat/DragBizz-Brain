@@ -47,8 +47,8 @@ class ServiceSettings(BaseSettings):
         return f"{self.retailer_grpc_host}:{self.retailer_grpc_port}"
 
     @property
-    def retailer_url(self) -> str:
-        return f"{self.base_url}/retailer"
+    def core_url(self) -> str:
+        return f"{self.base_url}/core"
 
     @property
     def auth_url(self) -> str:
