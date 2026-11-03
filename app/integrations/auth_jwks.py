@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any
+from urllib.request import Request, urlopen
 
 import httpx
 import jwt
@@ -11,6 +13,19 @@ from jwt import PyJWKClient
 
 from app.config import Settings, get_settings
 from app.core.exceptions import AppError
+
+
+class HeaderedJwkClient(PyJWKClient):
+    def fetch_data(self):
+        request = Request(
+            self.uri,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "DragBizz-Brain/1.0",
+            },
+        )
+        with urlopen(request, timeout=self.timeout) as response:
+            return json.load(response)
 
 
 def normalize_access_claims(payload: dict[str, Any]) -> dict[str, Any]:
@@ -32,7 +47,7 @@ class JwksTokenVerifier:
         jwks_client: PyJWKClient | None = None,
     ) -> None:
         self._settings = settings or get_settings()
-        self._jwks_client = jwks_client or PyJWKClient(
+        self._jwks_client = jwks_client or HeaderedJwkClient(
             self._settings.jwt.url,
             cache_keys=True,
             lifespan=self._settings.jwt.cache_ttl_seconds,
