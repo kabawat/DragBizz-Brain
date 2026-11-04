@@ -40,7 +40,6 @@ services:
     volumes:
     - ./app:/app/app
     - ./knowledge:/app/knowledge:ro
-    - ./.env:/app/.env:ro
     - ./data:/app/data
     - /etc/dragbizz/pki/brain/ca.crt:/run/dragbizz/pki/brain/ca.crt:ro
     - /etc/dragbizz/pki/brain/client.crt:/run/dragbizz/pki/brain/client.crt:ro

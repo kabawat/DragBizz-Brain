@@ -180,7 +180,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.usage_store = usage_store
 
-    retailer = RetailerClient(http_client, settings.services.retailer_url)
+    retailer = RetailerClient(http_client, settings.services.core_url)
     tool_registry = build_unified_tool_registry()
 
     idempotency_store = (

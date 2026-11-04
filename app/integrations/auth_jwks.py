@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import time
 from typing import Any
+from urllib.request import Request, urlopen
 
 import httpx
 import jwt
@@ -10,6 +13,19 @@ from jwt import PyJWKClient
 
 from app.config import Settings, get_settings
 from app.core.exceptions import AppError
+
+
+class HeaderedJwkClient(PyJWKClient):
+    def fetch_data(self):
+        request = Request(
+            self.uri,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "DragBizz-Brain/1.0",
+            },
+        )
+        with urlopen(request, timeout=self.timeout) as response:
+            return json.load(response)
 
 
 def normalize_access_claims(payload: dict[str, Any]) -> dict[str, Any]:
@@ -31,7 +47,7 @@ class JwksTokenVerifier:
         jwks_client: PyJWKClient | None = None,
     ) -> None:
         self._settings = settings or get_settings()
-        self._jwks_client = jwks_client or PyJWKClient(
+        self._jwks_client = jwks_client or HeaderedJwkClient(
             self._settings.jwt.url,
             cache_keys=True,
             lifespan=self._settings.jwt.cache_ttl_seconds,
@@ -43,7 +59,20 @@ class JwksTokenVerifier:
         # PyJWKClient fetches JWKS; keep client for a shared transport later.
         del http_client
         try:
+            header = jwt.get_unverified_header(token)
+            logger.info(
+                "Auth verification started url=%s kid=%s alg=%s",
+                self._settings.jwt.url,
+                header.get("kid"),
+                header.get("alg"),
+            )
+        except jwt.InvalidTokenError:
+            logger.warning("Auth verification received an invalid JWT header")
+        try:
+            logger.info("Auth JWKS key lookup started")
             signing_key = await self._get_signing_key(token)
+            logger.info("Auth JWKS key lookup succeeded kid=%s", signing_key.key_id)
+            logger.info("Auth JWT decode started")
             payload = jwt.decode(
                 token,
                 signing_key.key,
@@ -53,7 +82,9 @@ class JwksTokenVerifier:
                 leeway=self._settings.jwt.clock_skew_seconds,
                 options={"require": ["exp", "iat", "sub"]},
             )
+            logger.info("Auth JWT decode succeeded sub=%s", payload.get("sub"))
         except jwt.ExpiredSignatureError as exc:
+            logger.warning("Auth JWT expired")
             raise AppError(
                 code="AUTH_EXPIRED",
                 message="Access token expired",
@@ -63,12 +94,14 @@ class JwksTokenVerifier:
             jwt.PyJWKClientConnectionError,
             jwt.PyJWKSetError,
         ) as exc:
+            logger.exception("Auth JWKS fetch or parse failed: %s", exc)
             raise AppError(
                 code="AUTH_UNAVAILABLE",
                 message="Auth service unavailable",
                 status_code=503,
             ) from exc
         except jwt.PyJWKClientError as exc:
+            logger.exception("Auth signing key lookup failed: %s", exc)
             err_msg = str(exc).lower()
             if "unable to find a signing key" in err_msg:
                 raise AppError(
@@ -82,6 +115,7 @@ class JwksTokenVerifier:
                 status_code=503,
             ) from exc
         except (jwt.InvalidTokenError, jwt.PyJWKError) as exc:
+            logger.exception("Auth JWT validation failed: %s", exc)
             raise AppError(
                 code="AUTH_INVALID",
                 message="Invalid access token",
@@ -98,6 +132,7 @@ class JwksTokenVerifier:
 
 _verifier: JwksTokenVerifier | None = None
 _verifier_created_at = 0.0
+logger = logging.getLogger(__name__)
 
 
 def get_token_verifier(settings: Settings | None = None) -> JwksTokenVerifier:
